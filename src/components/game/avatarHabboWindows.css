@@ -1,0 +1,438 @@
+.mg-habbo-window {
+  position: fixed;
+  color: #f1f1f1;
+  font-size: 9px;
+  font-family: 'Volter', 'Courier New', monospace;
+  z-index: 9999;
+  background-color: #45474c;
+  border: 1px solid #2b2d31;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+.mg-habbo-window .title {
+  margin: 0;
+  font: inherit;
+  font-weight: bold;
+}
+
+.mg-habbo-window .close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #eeeeee;
+  cursor: pointer;
+  font: inherit;
+}
+
+.mg-habbo-window hr {
+  border: none;
+  border-top: 1px solid #333333;
+  margin: 4px 0;
+}
+
+.mg-user-info {
+  width: 190px;
+  right: 20px;
+  bottom: 100px;
+  padding: 10px;
+}
+
+.mg-user-info .user-container {
+  display: flex;
+  justify-content: space-between;
+}
+
+.mg-user-info .avatar-container {
+  width: 65px;
+  height: 130px;
+  background: #656565;
+  border: 1px solid #2f2f2f;
+  border-radius: 5px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mg-user-info .avatar-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mg-user-info .badge-container {
+  width: 100px;
+  height: 130px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 2px;
+}
+
+.mg-user-info .badge-box {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #2f2f2f;
+  border-radius: 4px;
+  background: #5a5a5a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c8c8c8;
+}
+
+.mg-user-info .motto {
+  color: #9d9ca0;
+  margin: 0;
+  word-break: break-word;
+}
+
+.mg-user-info .motto-clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.mg-user-info .motto-clickable:hover {
+  color: #d4d3d8;
+}
+
+.mg-user-info .motto-edit-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.mg-user-info .motto-input {
+  flex: 1;
+  background: #5a5a5a;
+  border: 1px solid #888;
+  border-radius: 3px;
+  color: #f1f1f1;
+  font-family: 'Volter', 'Courier New', monospace;
+  font-size: 9px;
+  padding: 3px 5px;
+  outline: none;
+}
+
+.mg-user-info .motto-input:focus {
+  border-color: #aaa;
+}
+
+.mg-user-info .motto-save-btn {
+  background: #3d7c3d;
+  border: 1px solid #5a5a5a;
+  border-radius: 3px;
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.mg-user-info .motto-save-btn:hover {
+  background: #4a9a4a;
+}
+
+.mg-user-buttons {
+  position: fixed;
+  right: 20px;
+  bottom: 70px;
+  display: flex;
+  gap: 5px;
+  z-index: 10000;
+}
+
+.mg-user-buttons button,
+.mg-changelooks .button-row button {
+  min-width: 35px;
+  height: 25px;
+  background-color: #3d3d3d;
+  border: 1px solid #cccccc;
+  border-radius: 3px;
+  color: #ffffff;
+  font-family: 'Volter', 'Courier New', monospace;
+  font-size: 9px;
+  padding: 0 9px;
+}
+
+.mg-user-buttons button:hover,
+.mg-changelooks .button-row button:hover {
+  background-color: #5d5d5d;
+}
+
+.mg-changelooks {
+  width: 380px;
+  height: 410px;
+  left: 20px;
+  top: 15px;
+  padding: 6px 15px;
+}
+
+.mg-changelooks .main-tabs {
+  display: flex;
+  padding: 0 10px;
+}
+
+.mg-changelooks .main-tabs button {
+  background: #5f6166;
+  border: 1px solid #37393e;
+  width: 52px;
+  height: 41px;
+  border-radius: 5px 5px 0 0;
+  color: #f8f8f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mg-changelooks .main-tabs button.active {
+  background: #72757b;
+  border-bottom-color: #72757b;
+}
+
+.mg-main-tab-icon {
+  width: 18px;
+  height: 14px;
+  display: block;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.mg-main-tab-icon-image {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mg-changelooks .parts {
+  background: #72757b;
+  border-radius: 5px;
+  height: 300px;
+  padding: 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mg-changelooks .editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.mg-changelooks .figure-input {
+  background: #ececec;
+  border: 1px solid #b9b9b9;
+  border-radius: 5px;
+  padding: 8px;
+  height: 118px;
+  box-sizing: border-box;
+}
+
+.mg-changelooks .figure-input textarea {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #222;
+}
+
+.mg-changelooks .platform {
+  background: #6f7278;
+  border: 1px solid #52555b;
+  border-radius: 5px;
+  height: 118px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mg-changelooks .platform img {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  width: 70px;
+  height: 100px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mg-changelooks .swatches {
+  background: #ececec;
+  border: 1px solid #b9b9b9;
+  border-radius: 5px;
+  padding: 6px;
+  color: #333;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mg-changelooks .button-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.mg-draggable-title {
+  cursor: move;
+  user-select: none;
+}
+
+.mg-second-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.mg-second-tabs button {
+  background: #7b7e84;
+  border: 1px solid #50535a;
+  color: #fff;
+  border-radius: 5px;
+  height: 37px;
+  width: 60px;
+  padding: 0;
+  font-family: 'Volter', 'Courier New', monospace;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mg-second-tabs button.active {
+  background: #94979d;
+}
+
+.mg-second-tabs button img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mg-gender-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.mg-gender-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mg-gender-icon-image {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mg-parts-grid {
+  background: #ececec;
+  border-radius: 5px;
+  height: 118px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px;
+}
+
+.mg-part-tile {
+  background: #f7f7f7;
+  border: 1px solid #bababa;
+  border-radius: 4px;
+  color: #222;
+  font-family: 'Volter', 'Courier New', monospace;
+  font-size: 8px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mg-part-tile.active {
+  background: #d9d9d9;
+  border-color: #8b8b8b;
+}
+
+.mg-part-tile.hc::after {
+  content: '★';
+  margin-left: 3px;
+  color: #9f6b00;
+}
+
+.mg-part-preview {
+  width: 45px;
+  height: 45px;
+  object-fit: none;
+  image-rendering: pixelated;
+}
+
+.mg-part-preview-generic {
+  object-position: 65% 25%;
+}
+
+.mg-part-preview-head {
+  object-position: 65% 17%;
+}
+
+.mg-part-preview-torso {
+  object-position: 65% 65%;
+}
+
+.mg-part-preview-legs {
+  object-position: 65% 100%;
+}
+
+.mg-color-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  align-content: flex-start;
+  padding-right: 2px;
+}
+
+.mg-color-tile {
+  width: 100%;
+  height: 16px;
+  border: 1px solid #666;
+  border-radius: 2px;
+}
+
+.mg-figure-raw {
+  width: 100%;
+  min-height: 46px;
+  resize: vertical;
+  border: 1px solid #bcbcbc;
+  border-radius: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+}
