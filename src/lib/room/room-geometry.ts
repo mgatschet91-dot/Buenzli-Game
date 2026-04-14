@@ -487,7 +487,7 @@ export function createRoomGeometry(scene: THREE.Scene): RoomGeometrySystem {
       const style   = stair.style || 'classic'
       const builder = _ED_STAIR_BUILDERS[style] || _edBuildStairClassic
       const g       = builder(stair, fromY)
-      g.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = m.receiveShadow = true } })
+      g.traverse((m: THREE.Object3D) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = (m as THREE.Mesh).receiveShadow = true } })
       scene.add(g); objs.push(g)
     }
     for (const roller of (geo.rollers || [])) {

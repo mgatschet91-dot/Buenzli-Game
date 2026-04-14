@@ -12,6 +12,9 @@ const volter = localFont({
 export default function IsometricRootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de" className={volter.variable}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `document.addEventListener('contextmenu', function(e){ e.preventDefault(); }, true);` }} />
+      </head>
       <body style={{
         margin: 0, padding: 0,
         background: '#111520',

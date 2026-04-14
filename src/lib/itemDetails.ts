@@ -44,6 +44,7 @@ const ITEM_DETAILS: Partial<Record<BuildingType, ItemDetails>> = {
   fcbasel_stadium: { footprintWidth: 3, footprintHeight: 3 },
   st_ursen_kathedrale: { footprintWidth: 2, footprintHeight: 2 },
   primetower: { footprintWidth: 2, footprintHeight: 2 },
+  disco_solothurn: { footprintWidth: 2, footprintHeight: 2 },
   parking_lot:       { footprintWidth: 2, footprintHeight: 2 },
   parking_lot_large: { footprintWidth: 3, footprintHeight: 3 },
 };

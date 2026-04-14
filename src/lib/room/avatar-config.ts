@@ -3,6 +3,17 @@
  */
 import { box, makeMat } from './materials'
 
+// ─── Richtungen ───────────────────────────────────────────────────────────────
+/** Himmelsrichtungen als Index-Array (für FACING_DIRS[n % 4]) */
+export const FACING_DIRS: readonly string[] = ['N', 'E', 'S', 'W']
+/** Y-Rotation (Radiant) pro Himmelsrichtung */
+export const FACING_Y: Record<string, number> = {
+  N:  0,
+  E:  Math.PI / 2,
+  S:  Math.PI,
+  W: -Math.PI / 2,
+}
+
 // ─── Farbpaletten ─────────────────────────────────────────────────────────────
 export const SKIN_TONES  = [0xfee0c0, 0xf5c5a3, 0xe8a87c, 0xd4956a, 0xb5713c, 0x8d5524, 0x5a3215]
 export const HAIR_COLORS = [

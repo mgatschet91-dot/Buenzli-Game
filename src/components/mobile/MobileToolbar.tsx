@@ -257,7 +257,7 @@ const toolCategories = {
   'SPORTS': ['tennis', 'basketball_courts', 'soccer_field_small', 'baseball_field_small', 'football_field', 'baseball_stadium', 'swimming_pool', 'skate_park', 'bleachers_field'] as Tool[],
   'WATERFRONT': ['marina_docks_small', 'pier_large'] as Tool[],
   'COMMUNITY': ['community_center', 'animal_pens_farm', 'office_building_small', 'woodcutter_house'] as Tool[],
-  'SPECIAL': ['stadium', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
+  'SPECIAL': ['stadium', 'fcbasel_stadium', 'st_ursen_kathedrale', 'disco_solothurn', 'primetower', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
   'VERWALTUNG': ['bauzone', 'bauzone_remove'] as Tool[],
 };
 

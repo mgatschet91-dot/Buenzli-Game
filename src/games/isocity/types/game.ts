@@ -34,7 +34,7 @@ export type Tool =
   | 'woodcutter_house'
   | 'werkhof'
   | 'parking_spot' | 'parking_lot' | 'parking_lot_large'
-  | 'fcbasel_stadium' | 'st_ursen_kathedrale' | 'primetower'
+  | 'fcbasel_stadium' | 'st_ursen_kathedrale' | 'primetower' | 'disco_solothurn'
   | 'bank_house'
   | 'npc_woodcutter'
   | 'npc_gardener'
@@ -162,6 +162,7 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   fcbasel_stadium: { name: msg('Stadion FC Basel'), cost: 50000, description: msg('Heimstadion des FC Basel – einmalig pro Stadt (3x3)'), size: 3 },
   st_ursen_kathedrale: { name: msg('St. Ursen Kathedrale'), cost: 30000, description: msg('Die St. Ursen Kathedrale – einmalig pro Stadt (2x2)'), size: 2 },
   primetower: { name: msg('Prime Tower Zürich'), cost: 75000, description: msg('Der höchste Wolkenkratzer der Schweiz – einmalig pro Stadt (2x2)'), size: 2 },
+  disco_solothurn: { name: msg('Druckerei Solothurn'), cost: 5000, description: msg('Die Druckerei Solothurn – einmalig pro Stadt (2x2)'), size: 2 },
   // NPC Testing Tools
   npc_woodcutter: { name: msg('Woodcutter NPC'), cost: 0, description: msg('Spawn a woodcutter that chops nearby trees') },
   npc_gardener: { name: msg('Gardener NPC'), cost: 0, description: msg('Spawn a gardener that plants trees on empty grass') },

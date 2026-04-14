@@ -179,7 +179,7 @@ export function createCharacter(scene: THREE.Scene): CharacterSystem {
     }
     root.add(makeLeg(-1)); root.add(makeLeg(1))
 
-    root.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = true; m.receiveShadow = true } })
+    root.traverse((m: THREE.Object3D) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true } })
     return root
   }
 

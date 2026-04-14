@@ -8,6 +8,7 @@ import { Tool, Budget, GameState, SavedCityMeta, BuildingType } from '@/types/ga
 import { deltaQueue, sendDeltaBatch, DeltaAction, DeltaActionInput, DisasterStateUpdate, BuildingStateUpdate, CrimeAuthoritativePayload, BuenzliNpcPayload } from '@/lib/deltaSync';
 import { getBackendType } from '@/lib/multiplayer/provider';
 import { getBuildingSize } from '@/lib/simulation';
+import { spawnCarFromParkingRef } from '@/lib/parkingSpawnBridge';
 
 const CLIENT_DEBUG_LOGS_ENABLED =
   typeof window !== 'undefined' &&
@@ -539,6 +540,10 @@ export function useMultiplayerSync() {
       }
     };
     deltaQueue.onVehicleLeftParking = (v) => {
+      // Farbe merken bevor wir das Auto entfernen
+      const leaving = parkedVehiclesRef.current.find(
+        (p) => p.tileX === v.tileX && p.tileY === v.tileY && p.slot === v.slot
+      );
       parkedVehiclesRef.current = parkedVehiclesRef.current.filter(
         (p) => !(p.tileX === v.tileX && p.tileY === v.tileY && p.slot === v.slot)
       );
@@ -546,6 +551,9 @@ export function useMultiplayerSync() {
       parkingViolationsRef.current = parkingViolationsRef.current.filter(
         (pv) => !(pv.tileX === v.tileX && pv.tileY === v.tileY && pv.slot === v.slot)
       );
+      // Auto wieder auf die Strasse spawnen
+      const color = leaving?.color ?? '#cc4444';
+      spawnCarFromParkingRef.current?.(v.tileX, v.tileY, color);
     };
 
     // Parking configs

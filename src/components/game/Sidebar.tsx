@@ -609,7 +609,9 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
   const [bottomActionsDirection, setBottomActionsDirection] = useState<'left' | 'right'>('right');
   const [debugAllowedFromStorage, setDebugAllowedFromStorage] = useState(false);
   const [isInspectorLoading, setIsInspectorLoading] = useState(false);
-  const effectiveCanUseDebug = canUseDebug || debugAllowedFromStorage;
+  const isDev = process.env.NODE_ENV !== 'production';
+  const effectiveCanUseAdmin = canUseDebug || debugAllowedFromStorage;
+  const effectiveCanUseDebug = isDev && effectiveCanUseAdmin;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -765,7 +767,7 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
     {
       key: 'special',
       label: CATEGORY_LABELS.special,
-      tools: ['stadium', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
+      tools: ['stadium', 'fcbasel_stadium', 'st_ursen_kathedrale', 'disco_solothurn', 'primetower', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
       forceOpenUpward: true
     },
     {
@@ -778,7 +780,7 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
 
   const bottomPanelActions = useMemo(() => [
     { panel: 'statistics' as const, icon: <ChartIcon size={18} />, labelKey: 'statistics' as const },
-    { panel: 'growth_debug' as const, icon: <TrendingUp size={18} />, labelKey: 'growth_debug' as const },
+    ...(isDev ? [{ panel: 'growth_debug' as const, icon: <TrendingUp size={18} />, labelKey: 'growth_debug' as const }] : []),
     { panel: 'trade' as const, icon: <Handshake size={18} />, labelKey: 'trade' as const },
     { panel: 'firma' as const, icon: <Building2 size={18} />, labelKey: 'firma' as const },
     { panel: 'gemeinde' as const, icon: <Users size={18} />, labelKey: 'gemeinde' as const },
@@ -879,7 +881,7 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
             </Button>
           )}
 
-          {effectiveCanUseDebug && (
+          {effectiveCanUseAdmin && (
             <Button
               variant={activePanel === 'admin' ? 'default' : 'ghost'}
               size="icon-sm"

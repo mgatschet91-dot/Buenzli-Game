@@ -11,6 +11,8 @@ import {
   CircleDashed, ShieldAlert, Users, Flame, BarChart3, Search,
   Ban, CheckCircle, Trash2, ArrowRightLeft, Map, Pencil, X,
   AlertTriangle, Eye, ChevronDown, ExternalLink, Zap, Plus, FileText, Save, Award,
+  Wifi, CreditCard, Trophy, Server, RefreshCw, Radio, LogOut, TrendingUp, TrendingDown,
+  Cpu, MemoryStick, Activity, Shield,
 } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
 
@@ -33,7 +35,57 @@ async function apiFetch(path: string, opts?: RequestInit) {
   return json.data;
 }
 
-type Tab = 'stats' | 'users' | 'events' | 'maps' | 'errors' | 'notice' | 'changelog' | 'badges';
+type Tab = 'stats' | 'users' | 'events' | 'maps' | 'errors' | 'notice' | 'changelog' | 'badges' | 'sessions' | 'transactions' | 'ranking' | 'actions' | 'roles';
+
+type MuniRole = 'owner' | 'council' | 'citizen' | 'observer';
+interface MuniMember { user_id: number; nickname: string; role: MuniRole; joined_at: string; }
+
+interface LiveSession {
+  userId: number | null;
+  nickname: string | null;
+  socketId: string;
+  roomKey: string;
+  municipalitySlug: string | null;
+  municipalityName: string | null;
+  roomCode: string | null;
+  connectedSince: string | null;
+}
+
+interface Transaction {
+  id: number;
+  user_id: number | null;
+  nickname: string | null;
+  type: string;
+  direction: 'credit' | 'debit';
+  amount: number;
+  balance_after: number;
+  description: string | null;
+  reference: string | null;
+  created_at: string;
+}
+
+interface RankingMunicipality {
+  id: number;
+  name: string;
+  slug: string;
+  canton_code: string;
+  population: number;
+  treasury: number;
+  jobs: number;
+  members_count: number;
+  last_active: string | null;
+}
+
+interface ServerInfo {
+  uptime: number;
+  memHeapUsedMB: number;
+  memHeapTotalMB: number;
+  memRssMB: number;
+  activeRooms: number;
+  activeSessions: number;
+  nodeVersion: string;
+  pid: number;
+}
 
 interface AdminBadge {
   id?: number;
@@ -225,6 +277,32 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
   const [newBadge, setNewBadge] = useState<Omit<AdminBadge, 'id' | 'is_active'>>({ code: '', name: '', description: '', category: 'general', image_url: '', rarity: 0, sort_order: 0 });
   const [editingBadge, setEditingBadge] = useState<AdminBadge | null>(null);
 
+  // Sessions state
+  const [sessions, setSessions] = useState<LiveSession[]>([]);
+  // Transactions state
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txTypes, setTxTypes] = useState<string[]>([]);
+  const [txTypeFilter, setTxTypeFilter] = useState('');
+  const [txMinAmount, setTxMinAmount] = useState('');
+  // Ranking state
+  const [rankingMunis, setRankingMunis] = useState<RankingMunicipality[]>([]);
+  const [rankingSort, setRankingSort] = useState<'population' | 'treasury' | 'jobs' | 'members'>('population');
+  // Rollen state
+  const [rolesMuniSearch, setRolesMuniSearch] = useState('');
+  const [rolesMuniResults, setRolesMuniResults] = useState<Municipality[]>([]);
+  const [rolesMuni, setRolesMuni] = useState<Municipality | null>(null);
+  const [rolesMembers, setRolesMembers] = useState<MuniMember[]>([]);
+  const [rolesUserSearch, setRolesUserSearch] = useState('');
+  const [rolesUserResults, setRolesUserResults] = useState<AdminUser[]>([]);
+  const [rolesAddUser, setRolesAddUser] = useState<AdminUser | null>(null);
+  const [rolesAddRole, setRolesAddRole] = useState<MuniRole>('citizen');
+
+  // Server-Aktionen state
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastType, setBroadcastType] = useState<'info' | 'warning' | 'success'>('info');
+
   const loadStats = useCallback(async () => {
     try {
       setLoading(true);
@@ -301,6 +379,44 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
       setBadges(data.badges || []);
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
     finally { setLoading(false); }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await apiFetch('/api/admin/sessions');
+      setSessions(data.sessions || []);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const loadTransactions = useCallback(async (type?: string, min?: string) => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({ limit: '100' });
+      if (type) params.set('type', type);
+      if (min) params.set('min', min);
+      const data = await apiFetch(`/api/admin/transactions?${params}`);
+      setTransactions(data.transactions || []);
+      setTxTypes(data.types || []);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const loadRanking = useCallback(async (sort: string) => {
+    try {
+      setLoading(true);
+      const data = await apiFetch(`/api/admin/ranking?sort=${sort}`);
+      setRankingMunis(data.municipalities || []);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const loadServerInfo = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/admin/actions/server-info');
+      setServerInfo(data);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
   }, []);
 
   const searchBadgeUsers = useCallback(async (q: string) => {
@@ -409,7 +525,12 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
     else if (tab === 'notice') { setNoticeMessage(''); setNoticeTitle(''); setNoticeFormat('normal'); setNoticeTarget('online'); setNoticeUserId(null); setNoticeMuniId(null); setNoticeMuniSearch(''); setNoticeUserSearch(''); loadMunicipalities(); loadUsers(); }
     else if (tab === 'changelog') loadChangelog();
     else if (tab === 'badges') { loadBadges(); setSelectedBadge(null); setAwardTargetUser(null); setAwardTargetBadges([]); setShowNewBadgeForm(false); setEditingBadge(null); }
-  }, [tab, loadStats, loadUsers, loadEvents, loadMunicipalities, loadErrors, loadChangelog, loadBadges, eventFilter]);
+    else if (tab === 'sessions') loadSessions();
+    else if (tab === 'transactions') loadTransactions();
+    else if (tab === 'ranking') loadRanking(rankingSort);
+    else if (tab === 'actions') loadServerInfo();
+    else if (tab === 'roles') { setRolesMuniSearch(''); setRolesMuniResults([]); setRolesMuni(null); setRolesMembers([]); setRolesUserSearch(''); setRolesUserResults([]); setRolesAddUser(null); }
+  }, [tab, loadStats, loadUsers, loadEvents, loadMunicipalities, loadErrors, loadChangelog, loadBadges, loadSessions, loadTransactions, loadRanking, loadServerInfo, eventFilter, rankingSort]);
 
   const openEditUser = async (u: AdminUser) => {
     setEditUserLoading(true);
@@ -533,7 +654,7 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-2xl bg-slate-900/95 border-slate-700 text-white max-h-[85vh]">
+      <DialogContent className="max-w-5xl w-[90vw] bg-slate-900/95 border-slate-700 text-white max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <ShieldAlert className="w-5 h-5 text-red-400" />
@@ -544,23 +665,36 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
         {error && <div className="px-3 py-2 bg-red-500/15 border border-red-500/30 rounded text-red-400 text-sm">{error}<button className="ml-2 underline" onClick={() => setError(null)}>x</button></div>}
         {msg && <div className="px-3 py-2 bg-emerald-500/15 border border-emerald-500/30 rounded text-emerald-400 text-sm">{msg}<button className="ml-2 underline" onClick={() => setMsg(null)}>x</button></div>}
 
-        <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700">
+        <div className="flex overflow-x-auto border-b border-slate-700/60 -mx-1 px-1 scrollbar-none">
           {([
             ['stats', BarChart3, 'Statistiken'],
+            ['sessions', Wifi, 'Sessions'],
             ['users', Users, 'User'],
+            ['transactions', CreditCard, 'Transaktionen'],
+            ['ranking', Trophy, 'Ranking'],
             ['events', Flame, 'Events'],
             ['maps', Map, 'Maps'],
             ['errors', AlertTriangle, 'Fehler'],
             ['notice', Zap, 'Nachrichten'],
             ['changelog', FileText, 'Log'],
             ['badges', Award, 'Badges'],
+            ['actions', Server, 'Server'],
+            ['roles', Shield, 'Rollen'],
           ] as const).map(([key, Icon, label]) => (
-            <button key={key} onClick={() => setTab(key as Tab)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all ${
-                tab === key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}>
-              <Icon className="w-3.5 h-3.5" />
+            <button
+              key={key}
+              onClick={() => setTab(key as Tab)}
+              className={`relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+                tab === key
+                  ? 'text-white'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <Icon className={`w-3.5 h-3.5 ${tab === key ? 'text-red-400' : ''}`} />
               {label}
+              {tab === key && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-400 rounded-full" />
+              )}
             </button>
           ))}
         </div>
@@ -570,21 +704,21 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
             <CircleDashed className="w-8 h-8 animate-spin" />
           </div>
         ) : (
-          <ScrollArea className="max-h-[55vh]">
+          <ScrollArea className="max-h-[70vh]">
             {/* ─── STATS TAB ─── */}
             {tab === 'stats' && stats && (
-              <div className="grid grid-cols-2 gap-3 pr-2">
+              <div className="grid grid-cols-3 gap-3 pr-2">
                 {[
-                  ['Spieler', stats.users, 'text-blue-400'],
-                  ['Gemeinden', stats.municipalities, 'text-emerald-400'],
-                  ['Aktive Events', stats.active_events, 'text-amber-400'],
-                  ['Firmen', stats.companies, 'text-purple-400'],
-                  ['Online', stats.online_users, 'text-green-400'],
-                  ['Uptime', formatUptime(stats.uptime), 'text-slate-300'],
-                ].map(([label, value, color]) => (
-                  <div key={String(label)} className="p-3 rounded-lg border border-slate-700 bg-slate-800/50">
-                    <div className="text-xs text-slate-400">{label}</div>
-                    <div className={`text-xl font-bold font-mono ${color}`}>{value}</div>
+                  ['Spieler', stats.users, 'text-blue-400', 'border-blue-500/20 bg-blue-500/5'],
+                  ['Gemeinden', stats.municipalities, 'text-emerald-400', 'border-emerald-500/20 bg-emerald-500/5'],
+                  ['Aktive Events', stats.active_events, 'text-amber-400', 'border-amber-500/20 bg-amber-500/5'],
+                  ['Firmen', stats.companies, 'text-purple-400', 'border-purple-500/20 bg-purple-500/5'],
+                  ['Online', stats.online_users, 'text-green-400', 'border-green-500/20 bg-green-500/5'],
+                  ['Uptime', formatUptime(stats.uptime), 'text-slate-300', 'border-slate-600/40 bg-slate-800/50'],
+                ].map(([label, value, color, card]) => (
+                  <div key={String(label)} className={`p-3 rounded-lg border ${card}`}>
+                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">{label}</div>
+                    <div className={`text-2xl font-bold font-mono ${color}`}>{value}</div>
                   </div>
                 ))}
               </div>
@@ -850,7 +984,7 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
                     />
                     {mapFilteredMunis.length === 0 ? (
                       <p className="text-sm text-slate-400 text-center py-8">Keine Gemeinden gefunden</p>
-                    ) : mapFilteredMunis.slice(0, 30).map(m => (
+                    ) : mapFilteredMunis.slice(0, 100).map(m => (
                       <div key={m.id} className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-slate-700 bg-slate-800/30">
                         <Map className="w-4 h-4 text-emerald-400 shrink-0" />
                         <button onClick={() => { setSelectedMapMuni(m); loadRooms(m.id); }}
@@ -1475,6 +1609,360 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
                 )}
               </div>
             )}
+
+            {/* ─── SESSIONS TAB ─── */}
+            {tab === 'sessions' && (
+              <div className="space-y-2 pr-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-slate-500">{sessions.length} aktive WebSocket-Verbindungen</span>
+                  <Button size="sm" variant="outline" onClick={loadSessions}
+                    className="border-slate-700 text-slate-400 hover:bg-slate-700 text-xs h-7">
+                    <RefreshCw className="w-3 h-3 mr-1" /> Aktualisieren
+                  </Button>
+                </div>
+                {sessions.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">Keine aktiven Sessions</p>
+                ) : sessions.map(s => (
+                  <div key={s.socketId} className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-700 bg-slate-800/30">
+                    <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white truncate">{s.nickname || `User #${s.userId}`}</span>
+                        {s.municipalityName && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 shrink-0">{s.municipalityName}</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono truncate">{s.roomKey} {s.connectedSince ? `· seit ${new Date(s.connectedSince).toLocaleTimeString('de-CH')}` : ''}</div>
+                    </div>
+                    <Button size="sm" variant="outline"
+                      onClick={async () => { try { await apiFetch('/api/admin/sessions/kick', { method: 'POST', body: JSON.stringify({ socketId: s.socketId }) }); setSessions(prev => prev.filter(x => x.socketId !== s.socketId)); setMsg('Session gekickt'); } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Fehler'); } }}
+                      className="border-red-500/30 text-red-400 hover:bg-red-500/15 shrink-0 h-7 text-xs"
+                    >
+                      <LogOut className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── TRANSAKTIONEN TAB ─── */}
+            {tab === 'transactions' && (
+              <div className="space-y-2 pr-2">
+                <div className="flex gap-2 items-center flex-wrap">
+                  <select
+                    value={txTypeFilter}
+                    onChange={e => setTxTypeFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 h-8"
+                  >
+                    <option value="">Alle Typen</option>
+                    {txTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <Input
+                    value={txMinAmount}
+                    onChange={e => setTxMinAmount(e.target.value)}
+                    placeholder="Min. Betrag (CHF)"
+                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 text-xs h-8 w-36"
+                  />
+                  <Button size="sm" onClick={() => loadTransactions(txTypeFilter, txMinAmount)}
+                    className="bg-slate-700 hover:bg-slate-600 h-8 text-xs">
+                    <Search className="w-3 h-3 mr-1" /> Filtern
+                  </Button>
+                  <span className="text-xs text-slate-500 ml-auto">{transactions.length} Einträge</span>
+                </div>
+                {transactions.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">Keine Transaktionen gefunden</p>
+                ) : (
+                  <div className="space-y-1">
+                    {transactions.map(tx => (
+                      <div key={tx.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-700/60 bg-slate-800/20 text-xs">
+                        <div className={`shrink-0 font-mono font-bold ${tx.direction === 'credit' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {tx.direction === 'credit' ? '+' : '-'}{Math.abs(tx.amount).toLocaleString('de-CH')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-medium truncate">{tx.nickname || `#${tx.user_id}`}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 shrink-0">{tx.type}</span>
+                          </div>
+                          {tx.description && <div className="text-slate-500 truncate">{tx.description}</div>}
+                        </div>
+                        <div className="text-slate-600 shrink-0">{new Date(tx.created_at).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ─── RANKING TAB ─── */}
+            {tab === 'ranking' && (
+              <div className="space-y-2 pr-2">
+                <div className="flex gap-1.5 flex-wrap mb-2">
+                  {(['population', 'treasury', 'jobs', 'members'] as const).map(s => (
+                    <button key={s} onClick={() => { setRankingSort(s); loadRanking(s); }}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${rankingSort === s ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                      {s === 'population' ? 'Bevölkerung' : s === 'treasury' ? 'Kasse' : s === 'jobs' ? 'Jobs' : 'Mitglieder'}
+                    </button>
+                  ))}
+                </div>
+                {rankingMunis.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">Keine Daten</p>
+                ) : rankingMunis.map((m, i) => (
+                  <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-700/60 bg-slate-800/20">
+                    <span className={`text-sm font-bold shrink-0 w-6 text-center ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-orange-400' : 'text-slate-600'}`}>
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-white truncate">{m.name}</span>
+                        <span className="text-[10px] text-slate-500 shrink-0">{m.canton_code}</span>
+                      </div>
+                      <div className="flex gap-3 text-[10px] text-slate-500 mt-0.5">
+                        <span>👥 {m.population.toLocaleString('de-CH')}</span>
+                        <span>💰 {m.treasury.toLocaleString('de-CH')}</span>
+                        <span>💼 {m.jobs.toLocaleString('de-CH')}</span>
+<span>🏠 {m.members_count}</span>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline"
+                      onClick={() => { onVisitMunicipality?.(m.slug); setActivePanel('none'); }}
+                      className="border-sky-500/30 text-sky-400 hover:bg-sky-500/15 shrink-0 h-7"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── SERVER-AKTIONEN TAB ─── */}
+            {tab === 'actions' && (
+              <div className="space-y-4 pr-2">
+                {/* Server Info */}
+                {serverInfo && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { label: 'Uptime', value: `${Math.floor(serverInfo.uptime / 3600)}h ${Math.floor((serverInfo.uptime % 3600) / 60)}m`, icon: <Activity className="w-3.5 h-3.5 text-green-400" /> },
+                      { label: 'Heap', value: `${serverInfo.memHeapUsedMB}/${serverInfo.memHeapTotalMB} MB`, icon: <MemoryStick className="w-3.5 h-3.5 text-blue-400" /> },
+                      { label: 'RSS', value: `${serverInfo.memRssMB} MB`, icon: <Cpu className="w-3.5 h-3.5 text-purple-400" /> },
+                      { label: 'Rooms', value: `${serverInfo.activeRooms} aktiv`, icon: <Map className="w-3.5 h-3.5 text-amber-400" /> },
+                    ].map(item => (
+                      <div key={item.label} className="p-2.5 rounded-lg border border-slate-700 bg-slate-800/40 flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase">{item.icon}{item.label}</div>
+                        <div className="text-sm font-mono text-white font-medium">{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button size="sm" variant="outline" onClick={loadServerInfo}
+                  className="border-slate-700 text-slate-400 hover:bg-slate-700 text-xs h-7">
+                  <RefreshCw className="w-3 h-3 mr-1" /> Server-Info aktualisieren
+                </Button>
+
+                {/* Broadcast */}
+                <div className="space-y-2 p-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5">
+                  <div className="flex items-center gap-2 text-sm font-medium text-indigo-300">
+                    <Radio className="w-4 h-4" /> Broadcast an alle Online-Spieler
+                  </div>
+                  <Input value={broadcastTitle} onChange={e => setBroadcastTitle(e.target.value)}
+                    placeholder="Titel (optional)"
+                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 text-xs h-8" />
+                  <Input value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}
+                    placeholder="Nachricht..."
+                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 text-xs h-8" />
+                  <div className="flex gap-1.5">
+                    {(['info', 'warning', 'success'] as const).map(t => (
+                      <button key={t} onClick={() => setBroadcastType(t)}
+                        className={`px-2.5 py-1 rounded text-xs transition-colors ${broadcastType === t ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                        {t}
+                      </button>
+                    ))}
+                    <Button size="sm" disabled={!broadcastMsg.trim()}
+                      onClick={async () => { try { await apiFetch('/api/admin/actions/broadcast', { method: 'POST', body: JSON.stringify({ message: broadcastMsg, title: broadcastTitle, type: broadcastType }) }); setMsg('Broadcast gesendet'); setBroadcastMsg(''); setBroadcastTitle(''); } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Fehler'); } }}
+                      className="ml-auto bg-indigo-600 hover:bg-indigo-500 text-white text-xs h-7 px-3">
+                      <Radio className="w-3 h-3 mr-1" /> Senden
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Gefährliche Aktionen */}
+                <div className="space-y-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+                  <div className="text-xs font-medium text-red-400 uppercase tracking-wide mb-2">Gefährliche Aktionen</div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" variant="outline"
+                      onClick={async () => { try { const d = await apiFetch('/api/admin/actions/clear-cache', { method: 'POST' }); setMsg(`${d.cleared} Room-Caches geleert`); } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Fehler'); } }}
+                      className="border-amber-500/30 text-amber-400 hover:bg-amber-500/15 text-xs h-8">
+                      <RefreshCw className="w-3 h-3 mr-1" /> Item-Cache leeren
+                    </Button>
+                    <Button size="sm" variant="outline"
+                      onClick={async () => { if (!confirm('Alle Spieler rauswerfen?')) return; try { const d = await apiFetch('/api/admin/actions/kick-all', { method: 'POST', body: JSON.stringify({ reason: 'Server-Wartung' }) }); setMsg(`${d.kicked} Sessions beendet`); loadSessions(); } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Fehler'); } }}
+                      className="border-red-500/30 text-red-400 hover:bg-red-500/15 text-xs h-8">
+                      <LogOut className="w-3 h-3 mr-1" /> Alle Spieler kicken
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* ─── ROLLEN TAB ─── */}
+            {tab === 'roles' && (
+              <div className="space-y-3 pr-2">
+                {/* Gemeinde suchen */}
+                <div className="space-y-1.5">
+                  <div className="text-xs text-slate-400 uppercase tracking-wide font-medium">Gemeinde auswählen</div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={rolesMuniSearch}
+                      onChange={e => setRolesMuniSearch(e.target.value)}
+                      placeholder="Gemeinde suchen..."
+                      className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 text-sm"
+                      onKeyDown={e => e.key === 'Enter' && (async () => {
+                        try {
+                          const data = await apiFetch(`/api/admin/municipalities?q=${encodeURIComponent(rolesMuniSearch)}`);
+                          setRolesMuniResults(data.municipalities || []);
+                        } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                      })()}
+                    />
+                    <Button size="sm" className="bg-slate-700 hover:bg-slate-600" onClick={async () => {
+                      try {
+                        const data = await apiFetch(`/api/admin/municipalities?q=${encodeURIComponent(rolesMuniSearch)}`);
+                        setRolesMuniResults(data.municipalities || []);
+                      } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                    }}>
+                      <Search className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  {rolesMuniResults.length > 0 && !rolesMuni && (
+                    <div className="border border-slate-700 rounded-lg overflow-hidden">
+                      {rolesMuniResults.map(m => (
+                        <button key={m.id} onClick={async () => {
+                          setRolesMuni(m);
+                          setRolesMuniResults([]);
+                          try {
+                            const data = await apiFetch(`/api/admin/municipality-members?municipality_id=${m.id}`);
+                            setRolesMembers(data.members || []);
+                          } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                        }} className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-700/60 transition-colors border-b border-slate-700/40 last:border-0">
+                          <span className="text-slate-200">{m.name}</span>
+                          <span className="text-xs text-slate-500">{m.canton_code} · {m.members_count} Mitgl.</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Gewählte Gemeinde + Mitglieder */}
+                {rolesMuni && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-700/40 border border-slate-700/60">
+                      <span className="text-sm font-medium text-white">{rolesMuni.name}</span>
+                      <button onClick={() => { setRolesMuni(null); setRolesMembers([]); setRolesUserSearch(''); setRolesUserResults([]); setRolesAddUser(null); }}
+                        className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+                    </div>
+
+                    {/* Mitgliederliste */}
+                    <div className="space-y-1">
+                      {([['owner', 'Präsident', 'text-amber-400 bg-amber-500/15 border-amber-500/30'],
+                         ['council', 'Verwaltung', 'text-blue-400 bg-blue-500/15 border-blue-500/30'],
+                         ['citizen', 'Bürger', 'text-slate-300 bg-slate-700/40 border-slate-600/40'],
+                         ['observer', 'Beobachter', 'text-slate-500 bg-slate-800/40 border-slate-700/40']] as const).map(([roleKey, roleLabel, roleStyle]) => {
+                        const groupMembers = rolesMembers.filter(m => m.role === roleKey);
+                        if (groupMembers.length === 0) return null;
+                        return (
+                          <div key={roleKey}>
+                            <div className={`text-xs font-medium px-2 py-0.5 mb-1 inline-block rounded border ${roleStyle}`}>{roleLabel}</div>
+                            {groupMembers.map(member => (
+                              <div key={member.user_id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800/60 group">
+                                <span className="flex-1 text-sm text-slate-200">{member.nickname}</span>
+                                <select
+                                  value={member.role}
+                                  onChange={async (e) => {
+                                    const newRole = e.target.value as MuniRole;
+                                    try {
+                                      await apiFetch('/api/admin/municipality-role', { method: 'POST', body: JSON.stringify({ municipality_id: rolesMuni.id, user_id: member.user_id, role: newRole }) });
+                                      setRolesMembers(prev => prev.map(m => m.user_id === member.user_id ? { ...m, role: newRole } : (newRole === 'owner' && m.role === 'owner' ? { ...m, role: 'council' } : m)));
+                                      setMsg(`${member.nickname} → ${newRole}`);
+                                    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                                  }}
+                                  className="bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded px-1.5 py-0.5 cursor-pointer"
+                                >
+                                  <option value="owner">Präsident</option>
+                                  <option value="council">Verwaltung</option>
+                                  <option value="citizen">Bürger</option>
+                                  <option value="observer">Beobachter</option>
+                                </select>
+                                {member.role !== 'owner' && (
+                                  <button onClick={async () => {
+                                    if (!confirm(`${member.nickname} aus der Gemeinde entfernen?`)) return;
+                                    try {
+                                      await apiFetch('/api/admin/municipality-role', { method: 'DELETE', body: JSON.stringify({ municipality_id: rolesMuni.id, user_id: member.user_id }) });
+                                      setRolesMembers(prev => prev.filter(m => m.user_id !== member.user_id));
+                                      setMsg(`${member.nickname} entfernt`);
+                                    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                                  }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* User hinzufügen */}
+                    <div className="space-y-2 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                      <div className="text-xs font-medium text-emerald-400 uppercase tracking-wide">Mitglied hinzufügen / Rolle setzen</div>
+                      {!rolesAddUser ? (
+                        <div className="flex gap-2">
+                          <Input value={rolesUserSearch} onChange={e => setRolesUserSearch(e.target.value)}
+                            placeholder="User suchen..."
+                            className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 text-sm"
+                            onKeyDown={async e => {
+                              if (e.key !== 'Enter') return;
+                              try { const d = await apiFetch(`/api/admin/users?q=${encodeURIComponent(rolesUserSearch)}&limit=10`); setRolesUserResults(d.users); } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                            }} />
+                          <Button size="sm" className="bg-slate-700 hover:bg-slate-600" onClick={async () => {
+                            try { const d = await apiFetch(`/api/admin/users?q=${encodeURIComponent(rolesUserSearch)}&limit=10`); setRolesUserResults(d.users); } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                          }}><Search className="w-4 h-4" /></Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-white font-medium">{rolesAddUser.nickname}</span>
+                          <select value={rolesAddRole} onChange={e => setRolesAddRole(e.target.value as MuniRole)}
+                            className="bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded px-1.5 py-1 cursor-pointer">
+                            <option value="owner">Präsident</option>
+                            <option value="council">Verwaltung</option>
+                            <option value="citizen">Bürger</option>
+                            <option value="observer">Beobachter</option>
+                          </select>
+                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-7 px-2" onClick={async () => {
+                            try {
+                              await apiFetch('/api/admin/municipality-role', { method: 'POST', body: JSON.stringify({ municipality_id: rolesMuni.id, user_id: rolesAddUser.id, role: rolesAddRole }) });
+                              const data = await apiFetch(`/api/admin/municipality-members?municipality_id=${rolesMuni.id}`);
+                              setRolesMembers(data.members || []);
+                              setMsg(`${rolesAddUser.nickname} → ${rolesAddRole}`);
+                              setRolesAddUser(null); setRolesUserSearch(''); setRolesUserResults([]);
+                            } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler'); }
+                          }}><Plus className="w-3 h-3 mr-1" /> Speichern</Button>
+                          <button onClick={() => { setRolesAddUser(null); setRolesUserSearch(''); setRolesUserResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>
+                        </div>
+                      )}
+                      {rolesUserResults.length > 0 && !rolesAddUser && (
+                        <div className="border border-slate-700 rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                          {rolesUserResults.map(u => (
+                            <button key={u.id} onClick={() => { setRolesAddUser(u); setRolesUserResults([]); }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-700/60 transition-colors border-b border-slate-700/40 last:border-0 text-left">
+                              <span className="text-slate-200">{u.nickname}</span>
+                              <span className="text-xs text-slate-500">Lv.{u.level} · {u.municipality_name || 'Keine Gemeinde'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
           </ScrollArea>
         )}
       </DialogContent>

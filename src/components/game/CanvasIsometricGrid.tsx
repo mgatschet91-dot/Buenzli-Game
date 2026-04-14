@@ -9,6 +9,7 @@ import { TOOL_INFO, Tile, Building, BuildingType, AdjacentCity, Tool } from '@/t
 import { getBuildingSize, requiresWaterAdjacency, getWaterAdjacency } from '@/lib/simulation';
 import { FireIcon, SafetyIcon, AlertIcon, PopulationIcon } from '@/components/ui/Icons';
 import { getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HORIZONTAL_OFFSETS, getActiveSpritePack } from '@/lib/renderConfig';
+import { spawnCarFromParkingRef } from '@/lib/parkingSpawnBridge';
 import { selectSpriteSource, calculateSpriteCoords, calculateSpriteScale, calculateSpriteOffsets, getSpriteRenderInfo } from '@/components/game/buildingSprite';
 import { getAuthToken } from '@/lib/api/coreApi';
 
@@ -55,6 +56,8 @@ import {
 import {
   gridToScreen,
   screenToGrid,
+  isRoadTile,
+  getDirectionOptions,
 } from '@/components/game/utils';
 import {
   drawGreenBaseTile,
@@ -2397,55 +2400,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
   }, [applyAvatarMetadataToPedestrian, applyAvatarMoveToPedestrian, createAvatarPedestrian, findPedestrianByAvatarId]);
 
-  useEffect(() => {
-    const spawnLocalAvatarAtDefaultTile = (preferFirstTile: boolean) => {
-      forceAvatarSpawnRef.current = true;
-      const currentGrid = latestStateRef.current.grid;
-      const currentGridSize = latestStateRef.current.gridSize;
-      let spawnX = preferFirstTile ? 0 : Math.floor(currentGridSize / 2);
-      let spawnY = preferFirstTile ? 0 : Math.floor(currentGridSize / 2);
-
-      if (preferFirstTile) {
-        let foundFirst = false;
-        for (let y = 0; y < currentGridSize && !foundFirst; y++) {
-          for (let x = 0; x < currentGridSize && !foundFirst; x++) {
-            if (!isAvatarWalkableTile(currentGrid[y]?.[x])) continue;
-            spawnX = x;
-            spawnY = y;
-            foundFirst = true;
-          }
-        }
-      }
-
-      if (!isAvatarWalkableTile(currentGrid[spawnY]?.[spawnX])) {
-        for (let r = 1; r < Math.min(40, currentGridSize); r++) {
-          let found = false;
-          for (let dy = -r; dy <= r && !found; dy++) {
-            for (let dx = -r; dx <= r && !found; dx++) {
-              const tx = spawnX + dx;
-              const ty = spawnY + dy;
-              if (tx < 0 || ty < 0 || tx >= currentGridSize || ty >= currentGridSize) continue;
-              if (!isAvatarWalkableTile(currentGrid[ty]?.[tx])) continue;
-              spawnX = tx;
-              spawnY = ty;
-              found = true;
-            }
-          }
-          if (found) break;
-        }
-      }
-      spawnNpcCallbackRef.current?.(spawnX, spawnY);
-    };
-
-    const onSpawnRequest = () => {
-      spawnLocalAvatarAtDefaultTile(false);
-    };
-
-    window.addEventListener('avatar-test-spawn-request', onSpawnRequest);
-    return () => {
-      window.removeEventListener('avatar-test-spawn-request', onSpawnRequest);
-    };
-  }, [latestStateRef]);
 
   useEffect(() => {
     if (!showPublicRoomWalls) {
@@ -2806,6 +2760,37 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     debugSpawnBus,
     debugBusInfo,
   } = useVehicleSystems(vehicleSystemRefs, vehicleSystemState);
+
+  // Parking-Spawn-Bridge registrieren: useMultiplayerSync kann Autos spawnen wenn sie wegfahren
+  useEffect(() => {
+    spawnCarFromParkingRef.current = (tileX: number, tileY: number, color: string) => {
+      const { grid: g, gridSize: gs } = worldStateRef.current;
+      if (!g || gs <= 0) { spawnRandomCar(); return; }
+      const neighbors = [
+        { x: tileX - 1, y: tileY }, { x: tileX + 1, y: tileY },
+        { x: tileX, y: tileY - 1 }, { x: tileX, y: tileY + 1 },
+      ].filter((t) => t.x >= 0 && t.y >= 0 && t.x < gs && t.y < gs && isRoadTile(g, gs, t.x, t.y));
+      const spawnTile = neighbors.length > 0
+        ? neighbors[Math.floor(Math.random() * neighbors.length)]
+        : null;
+      if (!spawnTile) { spawnRandomCar(); return; }
+      const opts = getDirectionOptions(g, gs, spawnTile.x, spawnTile.y);
+      if (opts.length === 0) { spawnRandomCar(); return; }
+      const dir = opts[Math.floor(Math.random() * opts.length)] as Car['direction'];
+      const laneSign = (dir === 'north' || dir === 'east') ? 1 : -1;
+      carsRef.current.push({
+        id: carIdRef.current++,
+        tileX: spawnTile.x, tileY: spawnTile.y,
+        direction: dir, progress: 0,
+        speed: (0.35 + Math.random() * 0.35) * 0.7,
+        age: 0,
+        maxAge: isMobile ? 25 + Math.random() * 15 : 45 + Math.random() * 30,
+        color,
+        laneOffset: laneSign * (4 + Math.random() * 2),
+      });
+    };
+    return () => { spawnCarFromParkingRef.current = null; };
+  }, [spawnRandomCar, worldStateRef, carsRef, carIdRef, isMobile]);
 
   // Room-Join: sofort geparkte Autos für laufende Parties vorspawnen
   useEffect(() => {

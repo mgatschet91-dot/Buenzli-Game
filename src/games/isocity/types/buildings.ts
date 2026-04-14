@@ -45,6 +45,7 @@ export type BuildingType =
   | 'fcbasel_stadium'
   | 'st_ursen_kathedrale'
   | 'primetower'
+  | 'disco_solothurn'
   // Habbo-style furniture (loaded from CDN)
   | 'furni';
 
@@ -211,6 +212,7 @@ export const BUILDING_STATS: Record<BuildingType, { maxPop: number; maxJobs: num
   fcbasel_stadium: { maxPop: 500, maxJobs: 300, pollution: 5, landValue: 200 },
   st_ursen_kathedrale: { maxPop: 0, maxJobs: 20, pollution: 0, landValue: 180 },
   primetower: { maxPop: 0, maxJobs: 1200, pollution: 2, landValue: 250 },
+  disco_solothurn: { maxPop: 0, maxJobs: 80, pollution: 3, landValue: 120 },
   // Habbo-style furniture
   furni: { maxPop: 0, maxJobs: 0, pollution: 0, landValue: 0 },
 };

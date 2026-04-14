@@ -785,6 +785,9 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     primetower: {
       normal: '/assets/buildings/primetower.png',
     },
+    disco_solothurn: {
+      normal: '/assets/buildings/druckereisoly.png',
+    },
   },
   standaloneVerticalOffsets: {},
   standaloneHorizontalOffsets: {},

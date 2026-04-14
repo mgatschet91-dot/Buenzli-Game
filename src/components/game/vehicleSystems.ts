@@ -1965,10 +1965,7 @@ export function useVehicleSystems(
             ...parkedVehiclesRef.current,
             { tileX: nb.x, tileY: nb.y, slot: freeSlot, color: car.color },
           ];
-          const stayMs = (60 + Math.random() * 240) * 1000; // 1-5 min
-          setTimeout(() => {
-            emitLeaveParkingRef.current(nb.x, nb.y, freeSlot);
-          }, stayMs);
+          // Server-seitig abläuft (leave_after_seconds) — kein Client-Timeout nötig
           parked = true;
         }
         if (parked) {

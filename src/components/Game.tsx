@@ -463,7 +463,9 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
     reason: '',
   });
   const [debugAccessFromAuth, setDebugAccessFromAuth] = useState(false);
-  const effectiveCanUseDebug = canUseDebug || debugAccessFromAuth;
+  const isDev = process.env.NODE_ENV !== 'production';
+  const effectiveCanUseAdmin = canUseDebug || debugAccessFromAuth;
+  const effectiveCanUseDebug = isDev && effectiveCanUseAdmin;
   const [debugWeatherOverride, setDebugWeatherOverride] = useState<PixiWeatherType | null>(null);
 
   const handleSessionInvalid = useCallback((reason: string) => {
@@ -1576,9 +1578,9 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'advisors' && <AdvisorsPanel />}
           {state.activePanel === 'settings' && <SettingsPanel onViewProfile={() => setProfileUserId('me')} />}
           {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'trade' && <TradePanel onVisitMunicipality={onVisitMunicipality} />}
-          {state.activePanel === 'growth_debug' && <GrowthDebugPanel />}
+          {isDev && state.activePanel === 'growth_debug' && <GrowthDebugPanel />}
           {effectiveCanUseDebug && state.activePanel === 'debug' && <ApiDebugPanel debugWeatherOverride={debugWeatherOverride} onDebugWeatherChange={setDebugWeatherOverride} serverWeather={serverWeather} chunkManager={chunkManagerRef.current ?? undefined} />}
-          {effectiveCanUseDebug && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
+          {effectiveCanUseAdmin && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
           {!isFullyViewOnly && state.activePanel === 'chat' && <ChatPanel />}
           {!isFullyViewOnly && state.activePanel === 'firma' && <FirmaPanel />}
           <BusLineCreationOverlay />
@@ -1625,7 +1627,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
         {firestormOverlay}
         {meteorOverlay}
         {showDesktopSidebar && (
-          <Sidebar onExit={handleLogout} isFullyViewOnly={isFullyViewOnly} hideTradeAction={disablePartnerships} isOwner={isOwner} canUseDebug={effectiveCanUseDebug} chatUnreadCount={chatUnreadCount} onToggleMessenger={toggleMessenger} messengerUnreadCount={messengerUnreadCount} showMessenger={showMessenger} onVisitMunicipality={onVisitMunicipality} />
+          <Sidebar onExit={handleLogout} isFullyViewOnly={isFullyViewOnly} hideTradeAction={disablePartnerships} isOwner={isOwner} canUseDebug={effectiveCanUseAdmin} chatUnreadCount={chatUnreadCount} onToggleMessenger={toggleMessenger} messengerUnreadCount={messengerUnreadCount} showMessenger={showMessenger} onVisitMunicipality={onVisitMunicipality} />
         )}
         
         <div className={`flex-1 flex flex-col ${showDesktopSidebar ? 'ml-56' : ''}`}>
@@ -1712,7 +1714,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
         {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'trade' && <TradePanel onVisitMunicipality={onVisitMunicipality} />}
         {state.activePanel === 'growth_debug' && <GrowthDebugPanel />}
         {effectiveCanUseDebug && state.activePanel === 'debug' && <ApiDebugPanel debugWeatherOverride={debugWeatherOverride} onDebugWeatherChange={setDebugWeatherOverride} serverWeather={serverWeather} chunkManager={chunkManagerRef.current ?? undefined} />}
-        {effectiveCanUseDebug && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
+        {effectiveCanUseAdmin && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
         {!isFullyViewOnly && state.activePanel === 'chat' && <ChatPanel />}
         {!isFullyViewOnly && state.activePanel === 'firma' && <FirmaPanel />}
         <BusLineCreationOverlay />

@@ -43,7 +43,7 @@ function makeCtx(ctx: BuilderContext) {
 }
 
 function finalize(g: THREE.Group, ctx: BuilderContext) {
-  g.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = true; m.receiveShadow = true } })
+  g.traverse((m: THREE.Object3D) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true } })
   ctx.scene.add(g)
   return g
 }
@@ -311,7 +311,7 @@ export function buildFrame(wx: number, wz: number, facY: number, frameColor: num
   else if (dirKey === 'W') { fx = -WALL_PROJ; fz = Math.max(-8.5, Math.min(8.5, wz)) }
   else { fx = wx; fz = wz }
   g.position.set(fx, EYE_Y, fz)
-  g.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = true; m.receiveShadow = true } })
+  g.traverse((m: THREE.Object3D) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true } })
   ctx.scene.add(g)
   return g
 }

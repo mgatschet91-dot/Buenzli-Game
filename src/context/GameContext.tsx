@@ -502,7 +502,7 @@ function loadGameState(): GameState | null {
         // Damit bestehende Gebäude visuell gleich aussehen, wird das alte mirrorSeed-Ergebnis
         // als explizites flipped-Flag gesetzt (nur wenn flipped noch nicht explizit gesetzt wurde).
         const STANDALONE_BUILDING_TYPES = new Set([
-          'bank_house', 'bus_stop', 'bus_station', 'solar_panel', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower',
+          'bank_house', 'bus_stop', 'bus_station', 'solar_panel', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower', 'disco_solothurn',
         ]);
         if (parsed.grid) {
           for (let gy = 0; gy < parsed.grid.length; gy++) {
@@ -1710,6 +1710,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
         fcbasel_stadium: 'basel',
         st_ursen_kathedrale: 'solothurn',
         primetower: 'zurich',
+        disco_solothurn: 'solothurn',
       };
       if (building && LANDMARK_CITY[building]) {
         // Falsche Stadt → blockieren

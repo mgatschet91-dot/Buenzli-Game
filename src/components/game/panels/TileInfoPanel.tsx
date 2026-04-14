@@ -93,11 +93,12 @@ export function TileInfoPanel({
   // Residence state
   const isResidential = RESIDENTIAL_TYPES.has(tile.building.type as string);
   const isMansion = tile.building.type === 'mansion';
-  const isStandaloneBuilding = new Set(['bank_house', 'bus_stop', 'bus_station', 'solar_panel', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower', 'parking_spot', 'parking_lot', 'parking_lot_large']).has(tile.building.type as string);
+  const isStandaloneBuilding = new Set(['bank_house', 'bus_stop', 'bus_station', 'solar_panel', 'fcbasel_stadium', 'st_ursen_kathedrale', 'primetower', 'disco_solothurn', 'parking_spot', 'parking_lot', 'parking_lot_large']).has(tile.building.type as string);
   const LANDMARK_META: Record<string, { city: string; icon: string }> = {
     fcbasel_stadium:    { city: 'Basel',     icon: '⚽' },
     st_ursen_kathedrale:{ city: 'Solothurn', icon: '⛪' },
     primetower:         { city: 'Zürich',    icon: '🏙️' },
+    disco_solothurn:    { city: 'Solothurn', icon: '🖨️' },
   };
   const landmarkMeta = LANDMARK_META[tile.building.type as string] ?? null;
   const isLandmark = landmarkMeta !== null;

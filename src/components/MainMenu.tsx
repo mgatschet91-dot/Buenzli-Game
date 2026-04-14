@@ -174,7 +174,7 @@ function ServerStatus({ mounted, t }: { mounted: boolean; t: (key: string) => st
   const [syncStatus, setSyncStatus] = useState<ServerState>('checking');
 
   const checkServers = useCallback(async () => {
-    try { const res = await fetch(`${API_BASE_URL}/building-types`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) }); setApiStatus(res.ok ? 'online' : 'offline'); } catch { setApiStatus('offline'); }
+    try { const res = await fetch(`${AUTH_API_BASE_URL}/health`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) }); setApiStatus(res.ok ? 'online' : 'offline'); } catch { setApiStatus('offline'); }
     try { const res = await fetch(`${WS_URL}/health`, { signal: AbortSignal.timeout(4000) }); setSyncStatus(res.ok ? 'online' : 'offline'); } catch { setSyncStatus('offline'); }
   }, []);
 

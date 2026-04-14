@@ -71,6 +71,7 @@ export default async function RootLayout({ children }: {children: React.ReactNod
   return (
   <html className={`dark ${playfair.variable} ${volter.variable}`} lang={await getLocale()}>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: `document.addEventListener('contextmenu', function(e){ e.preventDefault(); }, true);` }} />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/apple-icon.png" />
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />

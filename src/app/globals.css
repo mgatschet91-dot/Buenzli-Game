@@ -61,6 +61,18 @@
   }
 }
 
+/* Disable text selection and drag globally */
+* {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+/* Allow selection in input fields */
+input, textarea, [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Custom Art Deco scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

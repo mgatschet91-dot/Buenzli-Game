@@ -87,7 +87,7 @@ export function createTeleport(
 
     g.position.set(wx, lvl > 0 ? 0 : 0, wz)  // floor-Y handled by engine via _lvlBase
     g.rotation.y = facingY
-    g.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = true; m.receiveShadow = true } })
+    g.traverse((m: THREE.Object3D) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true } })
     scene.add(g)
 
     const fwd = new THREE.Vector3(0, 0, 0.95).applyEuler(new THREE.Euler(0, facingY, 0))
