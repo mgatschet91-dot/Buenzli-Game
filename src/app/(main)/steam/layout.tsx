@@ -1,42 +1,42 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://iso-coaster.com'),
+  metadataBase: new URL('https://buenzlifight.ch'),
   title: {
-    default: 'ISOCOASTER — Theme Park Builder',
-    template: 'ISOCOASTER — %s',
-    absolute: 'ISOCOASTER — Theme Park Builder',
+    default: 'Steam — Theme Park Builder',
+    template: 'Steam — %s',
+    absolute: 'Steam — Theme Park Builder',
   },
   description: 'Build the ultimate theme park with thrilling roller coasters, exciting rides, and happy guests!',
   openGraph: {
-    title: 'ISOCOASTER — Theme Park Builder',
+    title: 'Steam — Theme Park Builder',
     description: 'Build the ultimate theme park with thrilling roller coasters, exciting rides, and happy guests!',
     type: 'website',
-    siteName: 'IsoCoaster',
+    siteName: 'BünzliFight',
     images: [
       {
         url: '/coaster/opengraph-image.png',
         width: 1200,
         height: 630,
         type: 'image/png',
-        alt: 'IsoCoaster - Theme park builder game screenshot'
+        alt: 'Steam - Theme park builder game screenshot'
       }
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ISOCOASTER — Theme Park Builder',
+    title: 'Steam — Theme Park Builder',
     description: 'Build the ultimate theme park with thrilling roller coasters, exciting rides, and happy guests!',
     images: ['/coaster/opengraph-image.png'],
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'IsoCoaster',
+    title: 'Steam',
   },
 };
 
-export default function CoasterLayout({
+export default function SteamLayout({
   children,
 }: {
   children: React.ReactNode;

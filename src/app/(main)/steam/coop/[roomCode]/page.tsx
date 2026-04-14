@@ -36,7 +36,7 @@ export default function CoasterCoopPage() {
   }, []);
 
   const handleExitGame = () => {
-    router.push('/coaster');
+    router.push('/steam');
   };
 
   const handleCoopStart = (_isHost: boolean, initialState?: CoasterGameState, code?: string) => {
@@ -62,7 +62,7 @@ export default function CoasterCoopPage() {
 
   const handleModalClose = (open: boolean) => {
     if (!open && !showGame && !isStartingGameRef.current) {
-      router.push('/coaster');
+      router.push('/steam');
     }
     setShowCoopModal(open);
   };
