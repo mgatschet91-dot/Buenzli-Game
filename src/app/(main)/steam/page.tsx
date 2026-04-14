@@ -203,7 +203,6 @@ function GameMenu({ hasSaved, savedParks, onContinue, onNewPark, onCoop, onLoadE
         {hasSaved ? 'Weiterspielen' : 'Neuer Park'}
       </MCButton>
       {hasSaved && <MCButton variant="stone" onClick={onNewPark}>Neuer Park</MCButton>}
-      <MCButton variant="stone" onClick={onCoop}>Co-op</MCButton>
       <MCButton variant="dark" onClick={onLoadExample}>Beispiel laden</MCButton>
       <div className="pt-2 border-t border-[#444]">
         <MCButton variant="red" onClick={onLogout}>Abmelden</MCButton>
@@ -255,6 +254,7 @@ function SteamPageContent() {
     if (!token) { setAuthState('guest'); return; }
     fetch(`${AUTH_API_BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
     })
       .then(r => r.json())
       .then(data => {
@@ -268,7 +268,7 @@ function SteamPageContent() {
           setAuthState('guest');
         }
       })
-      .catch(() => setAuthState('guest'));
+      .catch(() => { localStorage.removeItem(TOKEN_KEY); setAuthState('guest'); });
   }, [refreshSavedParks]);
 
   // URL-Param: ?room=XXXXX
@@ -359,7 +359,7 @@ function SteamPageContent() {
                 setShowGame(true);
               }}
               onNewPark={() => { setStartFresh(true); setLoadParkId(null); setShowGame(true); }}
-              onCoop={() => setShowCoopModal(true)}
+              onCoop={() => {}}
               onLoadExample={handleLoadExample}
               onLogout={handleLogout}
             />
