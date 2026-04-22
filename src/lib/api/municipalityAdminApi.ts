@@ -287,3 +287,101 @@ export async function repayLoan(amount: number | 'all'): Promise<BankResult> {
   if (!json.ok) throw new Error(json.error || 'Fehler bei der Kredit-Rueckzahlung');
   return json.data;
 }
+
+// ── Election API ────────────────────────────────────────
+
+export interface ElectionCandidate {
+  user_id: number;
+  nickname: string;
+  registered_at: string;
+  withdrawn_at: string | null;
+  votes: number;
+}
+
+export interface Election {
+  id: number;
+  municipality_id: number;
+  status: 'candidates' | 'voting' | 'closed' | 'cancelled';
+  triggered_by: 'inactivity' | 'council_vote' | 'admin';
+  candidates_until: string;
+  voting_until: string;
+  winner_user_id: number | null;
+  started_at: string;
+  closed_at: string | null;
+  candidate_count: number;
+  vote_count: number;
+}
+
+export interface ElectionDetails {
+  election: Election;
+  candidates: ElectionCandidate[];
+  my_vote: number | null;
+  my_candidacy: { id: number; withdrawn_at: string | null } | null;
+}
+
+export async function getElection(slug: string): Promise<ElectionDetails | null> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/election`, {
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Laden der Wahl');
+  return json.data;
+}
+
+export async function openElection(slug: string): Promise<{ election_id: number }> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/election`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Ausrufen der Wahl');
+  return json.data;
+}
+
+export async function registerCandidate(slug: string): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/election/candidates`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler bei der Kandidatur');
+}
+
+export async function withdrawCandidate(slug: string): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/election/candidates`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Zurückziehen');
+}
+
+export async function castVote(slug: string, candidateId: number): Promise<void> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/election/vote`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ candidate_id: candidateId }),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Abstimmen');
+}
+
+export async function openNoConfidence(slug: string): Promise<{ no_confidence_id: number }> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/no-confidence`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Misstrauensvotum');
+  return json.data;
+}
+
+export async function voteNoConfidence(slug: string, noConfidenceId: number): Promise<{ outcome: string }> {
+  const res = await fetch(`${getApiBaseUrl()}/api/game/municipality/${slug}/no-confidence/${noConfidenceId}/vote`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Abstimmen');
+  return json.data;
+}

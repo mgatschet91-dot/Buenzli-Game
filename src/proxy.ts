@@ -7,26 +7,37 @@ const gtProxy = createNextMiddleware({
   localeRouting: false,
 });
 
+const IS_ELECTRON = process.env.NEXT_PUBLIC_PLATFORM === 'electron';
+
+const ELECTRON_BLOCKED = [
+  '/basel-gemeinde-simulator',
+  '/bern-gemeinde-simulator',
+  '/gemeinde-simulator-schweiz',
+  '/schweizer-gemeinde-spiele',
+  '/solothurn-gemeinde-simulator',
+  '/zuerich-gemeinde-simulator',
+  '/datenschutz',
+  '/impressum',
+  '/kontakt',
+  '/thumbnail',
+  '/faq',
+];
+
 export async function proxy(request: NextRequest) {
   const hostname = request.headers.get('host') || '';
   const { pathname } = request.nextUrl;
-  
-  // Check if the request is coming from iso-coaster.com
-  const isCoasterDomain = hostname.includes('iso-coaster.com');
-  
-  if (isCoasterDomain) {
-    // For the root path on iso-coaster.com, rewrite to /coaster
-    if (pathname === '/') {
-      return NextResponse.rewrite(new URL('/coaster', request.url));
-    }
-    
-    // For other paths on iso-coaster.com, you could either:
-    // 1. Rewrite to /coaster/... if you have nested routes
-    // 2. Keep them as-is for assets and API routes
-    // Currently we just let them pass through
+
+  // Electron: Web-only Routen blockieren
+  if (IS_ELECTRON) {
+    const blocked = ELECTRON_BLOCKED.some(r => pathname === r || pathname.startsWith(r + '/'));
+    if (blocked) return NextResponse.redirect(new URL('/steam', request.url));
   }
 
-  // Locale-/Sprache-Handling (gt-next)
+  // iso-coaster.com Domain
+  if (hostname.includes('iso-coaster.com')) {
+    if (pathname === '/') return NextResponse.rewrite(new URL('/coaster', request.url));
+  }
+
   return await gtProxy(request);
 }
 

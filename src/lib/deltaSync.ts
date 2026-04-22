@@ -42,77 +42,26 @@ const debugLog = {
   info: (msg: string, ...args: unknown[]) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('info', msg, args[0]);
-    
-    if (!isDebugEnabled()) return;
-    console.log(
-      `%c[DeltaSync] %c${msg}`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #64748b',
-      ...args
-    );
   },
   action: (type: string, details: Record<string, unknown>) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('action', `⚡ ${type}`, details);
-    
-    if (!isDebugEnabled()) return;
-    console.log(
-      `%c[DeltaSync] %c⚡ ${type}`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #22c55e; font-weight: bold',
-      details
-    );
   },
   send: (count: number, batch: unknown) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('send', `📤 Sende ${count} Delta(s)`, batch);
-    
-    if (!isDebugEnabled()) return;
-    console.group(
-      `%c[DeltaSync] %c📤 Sende ${count} Delta(s)`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #f59e0b; font-weight: bold'
-    );
-    console.log('Batch:', batch);
-    console.groupEnd();
   },
   receive: (count: number, deltas: unknown) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('receive', `📥 Empfange ${count} Delta(s) von anderen`, deltas);
-    
-    if (!isDebugEnabled()) return;
-    console.group(
-      `%c[DeltaSync] %c📥 Empfange ${count} Delta(s) von anderen Spielern`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #8b5cf6; font-weight: bold'
-    );
-    console.log('Deltas:', deltas);
-    console.groupEnd();
   },
   success: (msg: string, data?: unknown) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('info', `✅ ${msg}`, data);
-    
-    if (!isDebugEnabled()) return;
-    console.log(
-      `%c[DeltaSync] %c✅ ${msg}`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #22c55e',
-      data ?? ''
-    );
   },
   conflict: (conflicts: unknown[]) => {
     // Immer Event emittieren (für Debug Panel)
     emitLogEvent('error', `⚠️ ${conflicts.length} Konflikt(e)`, conflicts);
-    
-    if (!isDebugEnabled()) return;
-    console.group(
-      `%c[DeltaSync] %c⚠️ ${conflicts.length} Konflikt(e)`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #ef4444; font-weight: bold'
-    );
-    conflicts.forEach((c, i) => console.log(`Konflikt ${i + 1}:`, c));
-    console.groupEnd();
   },
   error: (msg: string, err?: unknown) => {
     // Immer Event emittieren (für Debug Panel)
@@ -126,13 +75,7 @@ const debugLog = {
     );
   },
   status: () => {
-    if (!isDebugEnabled()) return;
-    const queue = deltaQueue;
-    console.log(
-      `%c[DeltaSync] %c📊 Status: ${queue.pendingCount} ausstehend, Client: ${queue.id}`,
-      'color: #3b82f6; font-weight: bold',
-      'color: #64748b'
-    );
+    // no-op (debug output removed)
   },
 };
 
@@ -169,12 +112,9 @@ function emitLogEvent(type: DeltaSyncLogEvent['type'], message: string, data?: u
 if (typeof window !== 'undefined') {
   (window as unknown as { enableDeltaSyncDebug: () => void }).enableDeltaSyncDebug = () => {
     localStorage.setItem('DELTA_SYNC_DEBUG', 'true');
-    console.log('%c[DeltaSync] Debug-Modus AKTIVIERT', 'color: #22c55e; font-weight: bold');
-    console.log('Deaktivieren mit: disableDeltaSyncDebug()');
   };
   (window as unknown as { disableDeltaSyncDebug: () => void }).disableDeltaSyncDebug = () => {
     localStorage.removeItem('DELTA_SYNC_DEBUG');
-    console.log('%c[DeltaSync] Debug-Modus DEAKTIVIERT', 'color: #ef4444; font-weight: bold');
   };
   (window as unknown as { deltaSyncStatus: () => void }).deltaSyncStatus = () => {
     debugLog.status();
@@ -565,15 +505,6 @@ class DeltaQueue {
     this.isViewOnly = isViewOnly || false;
     this.canSendStatsUpdatesFlag = !this.isViewOnly;
     
-    console.log('[DeltaQueue] 🚀 INIT:', {
-      roomCode,
-      municipalitySlug,
-      clientId: this.clientId,
-      playerName: this.playerName,
-      hasFlushCallback: !!flushCallback,
-      hasRemoteDeltasCallback: !!onRemoteDeltas,
-    });
-    
     debugLog.info(`Initialisiert für Raum ${roomCode}`, {
       municipalitySlug,
       clientId: this.clientId,
@@ -595,8 +526,6 @@ class DeltaQueue {
       emitLogEvent('error', '❌ Kein WebSocket aktiv (HTTP-Fallback deaktiviert)');
     }
     
-    const mode = this.useWebSocket ? 'WebSocket' : this.useSSE ? 'SSE' : 'Polling';
-    console.log('[DeltaQueue] ✅ Initialisiert, Modus:', mode);
   }
   
   /**
@@ -604,11 +533,9 @@ class DeltaQueue {
    */
   private connectWebSocket(): void {
     if (this.wsSocket?.connected) {
-      console.log('[DeltaQueue] WebSocket bereits verbunden');
       return;
     }
 
-    console.log('[DeltaQueue] 🔌 WebSocket verbinden:', WS_SERVER_URL);
     emitLogEvent('info', `🔌 WebSocket verbinden zu ${WS_SERVER_URL}`);
 
     try {
@@ -623,14 +550,12 @@ class DeltaQueue {
 
       // Verbindung hergestellt
       this.wsSocket.on('connect', () => {
-        console.log('[DeltaQueue] ✅ WebSocket verbunden:', this.wsSocket?.id);
         emitLogEvent('info', '✅ WebSocket verbunden');
 
         // WICHTIG: Polling stoppen wenn WebSocket verbunden!
         if (this.pollInterval) {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
-          console.log('[DeltaQueue] 🛑 Polling gestoppt (WebSocket aktiv)');
         }
 
         // Raum beitreten mit Spielername und Besucher-Status
@@ -649,7 +574,6 @@ class DeltaQueue {
 
       // Raum beigetreten
       this.wsSocket.on('room-joined', (data) => {
-        console.log('[DeltaQueue] 🏠 Raum beigetreten:', data);
         emitLogEvent('info', `🏠 Raum beigetreten (${data.playerCount} Spieler)`);
         this.canSendStatsUpdatesFlag = typeof data?.canSendStatsUpdates === 'boolean'
           ? data.canSendStatsUpdates
@@ -660,7 +584,6 @@ class DeltaQueue {
 
       // Delta empfangen (einzeln)
       this.wsSocket.on('delta', (delta: DeltaAction) => {
-        console.log('[DeltaQueue] 📥 WS Delta:', delta.type);
         debugLog.receive(1, [{ type: delta.type, playerId: delta.playerId }]);
         
         if (this.onRemoteDeltas) {
@@ -670,7 +593,6 @@ class DeltaQueue {
 
       // Deltas empfangen (batch)
       this.wsSocket.on('deltas', (deltas: DeltaAction[]) => {
-        console.log('[DeltaQueue] 📥 WS Deltas:', deltas.length);
         debugLog.receive(deltas.length, deltas.map(d => ({ type: d.type, playerId: d.playerId })));
         
         if (this.onRemoteDeltas) {
@@ -680,20 +602,16 @@ class DeltaQueue {
 
       // Spieler beigetreten
       this.wsSocket.on('player-joined', (data) => {
-        console.log('[DeltaQueue] 👋 Spieler beigetreten:', data.playerName);
         emitLogEvent('info', `👋 ${data.playerName} ist beigetreten (${data.playerCount} Spieler)`);
       });
 
       // Spieler verlassen
       this.wsSocket.on('player-left', (data) => {
-        console.log('[DeltaQueue] 👋 Spieler verlassen:', data.playerName);
         emitLogEvent('info', `👋 ${data.playerName} hat verlassen (${data.playerCount} Spieler)`);
       });
 
       // Spielerliste vom Server empfangen
       this.wsSocket.on('players-list', (data: { players: Array<{id: string; name: string}>; count: number }) => {
-        console.log('[DeltaQueue] 👥 Spielerliste aktualisiert:', data.count, 'Spieler');
-        
         // Spieler mit isLocal-Flag versehen
         const playerArr = Array.isArray(data.players) ? data.players : [];
         const playersWithLocal = playerArr.map(p => ({
@@ -780,7 +698,7 @@ class DeltaQueue {
         (payload: { changes?: BuildingStateUpdate[]; serverTimestamp?: number }) => {
           const changes = Array.isArray(payload?.changes) ? payload.changes : [];
           if (changes.length === 0) return;
-          console.log('[DeltaQueue] 🏗️ Building-Upgrades empfangen:', changes.length);
+
           emitLogEvent('receive', `🏗️ ${changes.length} Gebäude-Updates vom Server`);
           if (this.onBuildingUpdate) {
             this.onBuildingUpdate(changes);
@@ -808,9 +726,6 @@ class DeltaQueue {
           const criminals = Array.isArray(payload?.criminals) ? payload.criminals : [];
           const crimeEvents = Array.isArray(payload?.crimeEvents) ? payload.crimeEvents : [];
           if (criminals.length === 0 && crimeEvents.length === 0) return;
-          if (crimeEvents.length > 0) {
-            console.log('[DeltaQueue] 🔫 Crime-Events empfangen:', crimeEvents.length, 'Gangster aktiv:', criminals.length);
-          }
           if (this.onCrimeUpdate) {
             this.onCrimeUpdate(payload);
           }
@@ -888,7 +803,6 @@ class DeltaQueue {
 
       // Partnership-Discovered von anderem Spieler empfangen
       this.wsSocket.on('partnership-discovered', (data: { partnerSlug: string; partnerName: string; direction: string; playerId?: string }) => {
-        console.log('[DeltaQueue] 🏘️ Partnership-Discovered empfangen:', data.partnerName);
         emitLogEvent('receive', `🏘️ ${data.partnerName} wurde entdeckt (von anderem Spieler)`);
         
         if (this.onPartnershipDiscovered) {
@@ -898,7 +812,6 @@ class DeltaQueue {
 
       // Partnership-Connected von anderem Spieler empfangen
       this.wsSocket.on('partnership-connected', (data: { partnerSlug: string; partnerName: string; bonusPaid: number; monthlyIncome: number; playerId?: string }) => {
-        console.log('[DeltaQueue] 🤝 Partnership-Connected empfangen:', data.partnerName);
         emitLogEvent('receive', `🤝 Handelsroute mit ${data.partnerName} etabliert (von anderem Spieler)`);
         
         if (this.onPartnershipConnected) {
@@ -1068,7 +981,6 @@ class DeltaQueue {
 
       // Verbindung getrennt
       this.wsSocket.on('disconnect', (reason) => {
-        console.log('[DeltaQueue] ❌ WebSocket getrennt:', reason);
         emitLogEvent('error', `❌ WebSocket getrennt: ${reason}`);
         if (this.onConnectionStatusChange) {
           this.onConnectionStatusChange(false, String(reason || 'disconnect'));
@@ -1089,7 +1001,6 @@ class DeltaQueue {
 
       // Reconnect erfolgreich
       this.wsSocket.on('reconnect', () => {
-        console.log('[DeltaQueue] ✅ WebSocket reconnected');
         emitLogEvent('info', '✅ WebSocket wiederverbunden');
         
         // Raum erneut beitreten mit Spielername und Besucher-Status
@@ -1124,7 +1035,6 @@ class DeltaQueue {
       this.wsSocket = null;
     }
     
-    console.log('[DeltaQueue] 📡 Wechsle zu SSE-Modus');
     emitLogEvent('info', '📡 Wechsle zu SSE-Modus');
     
     if (typeof EventSource !== 'undefined') {
@@ -1144,15 +1054,12 @@ class DeltaQueue {
     }
     
     const url = `${API_BASE_URL}/municipality/${this.municipalitySlug}/deltas/${this.roomCode}/stream?client_id=${this.clientId}&since=${this.clientVersion}`;
-    
-    console.log('[DeltaQueue] 🔌 SSE verbinden:', url);
-    
+
     try {
       this.sseEventSource = new EventSource(url);
       
       // Verbindung hergestellt
-      this.sseEventSource.addEventListener('connected', (event) => {
-        console.log('[DeltaQueue] ✅ SSE verbunden');
+      this.sseEventSource.addEventListener('connected', (_event) => {
         this.sseReconnectAttempts = 0;
         emitLogEvent('info', '🔌 SSE-Verbindung hergestellt');
       });
@@ -1163,7 +1070,6 @@ class DeltaQueue {
           const data = JSON.parse((event as MessageEvent).data);
           
           if (data.deltas && data.deltas.length > 0) {
-            console.log('[DeltaQueue] 📥 SSE Deltas:', data.deltas.length);
             this.clientVersion = data.serverVersion;
             
             debugLog.receive(data.deltas.length, data.deltas.map((d: DeltaAction) => ({
@@ -1183,7 +1089,6 @@ class DeltaQueue {
       
       // Server fordert Reconnect
       this.sseEventSource.addEventListener('reconnect', () => {
-        console.log('[DeltaQueue] 🔄 SSE Reconnect angefordert');
         this.reconnectSSE();
       });
       
@@ -1207,15 +1112,12 @@ class DeltaQueue {
    */
   private scheduleSSEReconnect(): void {
     if (this.sseReconnectAttempts >= 5) {
-      console.log('[DeltaQueue] ⚠️ SSE fehlgeschlagen, wechsle zu Polling');
       this.fallbackToPolling();
       return;
     }
-    
+
     this.sseReconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.sseReconnectAttempts - 1), 10000);
-    
-    console.log(`[DeltaQueue] 🔄 SSE Reconnect in ${delay}ms (Versuch ${this.sseReconnectAttempts}/5)`);
     
     if (this.sseReconnectTimeout) {
       clearTimeout(this.sseReconnectTimeout);
@@ -1246,7 +1148,6 @@ class DeltaQueue {
       this.sseEventSource.close();
       this.sseEventSource = null;
     }
-    console.log('[DeltaQueue] 📡 Wechsle zu Polling-Modus');
     emitLogEvent('info', '📡 Wechsle zu Polling-Modus');
     this.startPolling(800);
   }
@@ -1281,7 +1182,6 @@ class DeltaQueue {
     }
     // Letzte Deltas noch senden
     this.flush();
-    console.log('[DeltaQueue] 🛑 Gestoppt');
   }
   
   /**
@@ -1328,7 +1228,6 @@ class DeltaQueue {
         
         // Callback für remote Deltas
         if (result.deltas.length > 0) {
-          console.log('[DeltaQueue] 📥 Polling: Neue Deltas empfangen:', result.deltas.length);
           debugLog.receive(result.deltas.length, result.deltas.map(d => ({
             type: d.type,
             playerId: d.playerId,
@@ -1418,7 +1317,6 @@ class DeltaQueue {
   sendStats(stats: Record<string, unknown>): void {
     if (this.wsSocket?.connected) {
       this.wsSocket.emit('stats-update', stats);
-      console.log('[DeltaQueue] 📊 Stats via WebSocket gesendet');
     }
   }
 
@@ -1429,7 +1327,6 @@ class DeltaQueue {
   sendBudgetUpdate(budget: Record<string, { funding: number }>): void {
     if (this.wsSocket?.connected) {
       this.wsSocket.emit('budget-update', { budget });
-      console.log('[DeltaQueue] 💰 Budget via WebSocket gesendet');
     }
   }
 
@@ -1505,7 +1402,6 @@ class DeltaQueue {
   sendPartnershipDiscovered(data: { partnerSlug: string; partnerName: string; direction: string }): void {
     if (this.wsSocket?.connected) {
       this.wsSocket.emit('partnership-discovered', data);
-      console.log('[DeltaQueue] 🏘️ Partnership-Discovered via WebSocket gesendet:', data.partnerName);
       emitLogEvent('send', `🏘️ Stadt entdeckt: ${data.partnerName}`);
     }
   }
@@ -1516,7 +1412,6 @@ class DeltaQueue {
   sendPartnershipConnected(data: { partnerSlug: string; partnerName: string; bonusPaid: number; monthlyIncome: number }): void {
     if (this.wsSocket?.connected) {
       this.wsSocket.emit('partnership-connected', data);
-      console.log('[DeltaQueue] 🤝 Partnership-Connected via WebSocket gesendet:', data.partnerName);
       emitLogEvent('send', `🤝 Handelsroute etabliert: ${data.partnerName}`);
     }
   }
@@ -1761,8 +1656,6 @@ class DeltaQueue {
       return;
     }
     
-    console.log('[DeltaQueue] 📤 Flush gestartet, Deltas:', this.queue.length);
-
     this.isFlushing = true;
     
     // Kopiere Queue und leere sie

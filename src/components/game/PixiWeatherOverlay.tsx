@@ -149,6 +149,10 @@ function getScreenDims() {
   return { dpr, w, h, pw: Math.round(w * dpr), ph: Math.round(h * dpr) };
 }
 
+function forceDestroyPixiApp(app: Application) {
+  try { app.destroy(true); } catch { /* noop */ }
+}
+
 interface PixiWeatherOverlayProps {
   debugOverride?: WeatherType | null;
   serverWeather?: { type: string; intensity: number } | null;
@@ -469,7 +473,7 @@ export function PixiWeatherOverlay({ debugOverride, serverWeather, waitForServer
         autoDensity: false,
       });
 
-      if (destroyed) { app.destroy(true); return; }
+      if (destroyed) { forceDestroyPixiApp(app); return; }
 
       const canvas = app.canvas as HTMLCanvasElement;
       canvas.style.width = `${w}px`;
@@ -516,7 +520,8 @@ export function PixiWeatherOverlay({ debugOverride, serverWeather, waitForServer
       app.ticker.add(tick);
     };
 
-    setup();
+    // 50ms debounce verhindert doppelten Init durch React Strict Mode / HMR
+    const setupTimer = setTimeout(setup, 50);
 
     const handleResize = () => {
       if (!appRef.current) return;
@@ -531,17 +536,21 @@ export function PixiWeatherOverlay({ debugOverride, serverWeather, waitForServer
     window.addEventListener('resize', handleResize);
 
     return () => {
+      clearTimeout(setupTimer);
       destroyed = true;
       window.removeEventListener('resize', handleResize);
       initedRef.current = false;
-      if (app) {
-        try { app.destroy(true); } catch { /* noop */ }
-      }
+      // Use appRef.current (set only after full init) to avoid double-destroying
+      // an app whose init() is still in flight (causes zombie WebGL contexts).
+      const fullyInitedApp = appRef.current;
       appRef.current = null;
       overlayGfxRef.current = null;
       particlesGfxRef.current = null;
       lightningGfxRef.current = null;
       fogGfxRefs.current = [];
+      if (fullyInitedApp) {
+        forceDestroyPixiApp(fullyInitedApp);
+      }
     };
   }, [rebuildParticles, tick]);
 

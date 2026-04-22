@@ -61,6 +61,7 @@ interface CoreMunicipality {
 }
 
 const MAX_MEMBERS_PER_MUNICIPALITY = 25;
+const IS_ELECTRON = process.env.NEXT_PUBLIC_PLATFORM === 'electron';
 
 // ==========================================
 // TOKEN STORAGE HELPERS
@@ -340,7 +341,6 @@ function AutoJoinMultiplayerGame({
         if (!disablePartnerships) {
           try {
             await loadPartnershipsFromApi();
-            console.log('[MainMenu] ✅ Partnerschaften aus API geladen');
           } catch (err) {
             console.error('[MainMenu] Konnte Partnerschaften nicht laden:', err);
           }
@@ -713,6 +713,7 @@ export default function MainMenu() {
         if (!response.ok) {
           // Token ungültig -- entfernen und Menü zeigen
           clearAuthToken();
+          if (IS_ELECTRON) { window.location.href = '/steam'; return; }
           setView('menu');
           return;
         }
@@ -722,6 +723,7 @@ export default function MainMenu() {
         const authOk = (data?.ok === true) || (data?.success === true && data?.authenticated === true);
         if (!authOk || !data.user) {
           clearAuthToken();
+          if (IS_ELECTRON) { window.location.href = '/steam'; return; }
           setView('menu');
           return;
         }
@@ -735,6 +737,7 @@ export default function MainMenu() {
         if (!municipality) {
           console.warn('[AutoLogin] Keine Gemeinde zugeordnet, zeige Menü');
           clearAuthToken();
+          if (IS_ELECTRON) { window.location.href = '/steam'; return; }
           setView('menu');
           return;
         }
@@ -757,6 +760,7 @@ export default function MainMenu() {
       } catch {
         // Netzwerkfehler -> Menü anzeigen, Token behalten
         console.warn('[AutoLogin] Konnte Token nicht prüfen, zeige Menü');
+        if (IS_ELECTRON) { window.location.href = '/steam'; return; }
         setView('menu');
       }
     }
@@ -1073,6 +1077,7 @@ export default function MainMenu() {
   // SPIEL VERLASSEN -> Zurück zum Hauptmenü
   // ==========================================
   function handleExitGame() {
+    if (IS_ELECTRON) { clearAuthToken(); window.location.href = '/steam'; return; }
     clearAuthToken();
     setAuthToken('');
     setGameUser(null);
@@ -1093,6 +1098,7 @@ export default function MainMenu() {
       localStorage.removeItem('isocity_user_id');
       localStorage.removeItem('meinort_referral_code');
     }
+    if (IS_ELECTRON) { window.location.href = '/steam'; return; }
     setView('menu');
   }
 
@@ -1112,6 +1118,7 @@ export default function MainMenu() {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('isocity_municipality');
     }
+    if (IS_ELECTRON) { window.location.href = '/steam'; return; }
     setError(`${t('error.session_ended')} (${reason})`);
     setView('login');
   }
@@ -1309,7 +1316,7 @@ export default function MainMenu() {
         </section>
 
         {/* Demo-Hinweis + FAQ CTA */}
-        <div className="relative z-10 mx-auto max-w-4xl px-4 md:px-8 py-2">
+        {!IS_ELECTRON && <div className="relative z-10 mx-auto max-w-4xl px-4 md:px-8 py-2">
           <div className="rounded-sm border border-amber-400/30 bg-amber-500/10 backdrop-blur-sm px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="text-center sm:text-left">
               <p className="text-amber-200 text-sm font-medium">
@@ -1340,7 +1347,7 @@ export default function MainMenu() {
               </Link>
             </div>
           </div>
-        </div>
+        </div>}
 
         <div className="relative z-10 pointer-events-none">
           <div className="h-px w-full bg-gradient-to-r from-transparent via-amber-300/70 to-transparent" />
@@ -1348,20 +1355,22 @@ export default function MainMenu() {
         <div className="relative z-10 flex items-center justify-center py-2">
           <ServerStatus mounted={mounted} t={t} />
         </div>
-        <div className={`relative z-10 text-center pb-4 transition-all duration-1000 delay-2200 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/40 mb-1">
-            <Link href="/impressum" className="hover:text-amber-200/70 transition-colors">{t('footer.impressum')}</Link>
-            <span className="text-white/10">|</span>
-            <Link href="/datenschutz" className="hover:text-amber-200/70 transition-colors">{t('footer.datenschutz')}</Link>
-            <span className="text-white/10">|</span>
-            <Link href="/faq" className="hover:text-amber-200/70 transition-colors">FAQ</Link>
-            <span className="text-white/10">|</span>
-            <Link href="/quick-guide" className="hover:text-amber-200/70 transition-colors">Handbuch</Link>
-            <span className="text-white/10">|</span>
-            <Link href="/kontakt" className="hover:text-amber-200/70 transition-colors">Kontakt</Link>
+        {!IS_ELECTRON && (
+          <div className={`relative z-10 text-center pb-4 transition-all duration-1000 delay-2200 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+            <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/40 mb-1">
+              <Link href="/impressum" className="hover:text-amber-200/70 transition-colors">{t('footer.impressum')}</Link>
+              <span className="text-white/10">|</span>
+              <Link href="/datenschutz" className="hover:text-amber-200/70 transition-colors">{t('footer.datenschutz')}</Link>
+              <span className="text-white/10">|</span>
+              <Link href="/faq" className="hover:text-amber-200/70 transition-colors">FAQ</Link>
+              <span className="text-white/10">|</span>
+              <Link href="/quick-guide" className="hover:text-amber-200/70 transition-colors">Handbuch</Link>
+              <span className="text-white/10">|</span>
+              <Link href="/kontakt" className="hover:text-amber-200/70 transition-colors">Kontakt</Link>
+            </div>
+            <p className="text-muted-foreground/25 text-[10px]">BünzliFight &copy; 2026</p>
           </div>
-          <p className="text-muted-foreground/25 text-[10px]">BünzliFight &copy; 2026</p>
-        </div>
+        )}
       </main>
     );
   }

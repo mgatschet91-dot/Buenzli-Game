@@ -120,7 +120,7 @@ async function convertSvgToPngDataUrl(svg: string): Promise<string> {
 export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnly = false, isFullyViewOnly = false, disablePartnerships = false, isOwner = true, canUseDebug = false, ownerName, municipalityName, memberCount, administrators, coatOfArms, onVisitMunicipality, cityNameOverride }: GameProps) {
   const gt = useGT();
   const m = useMessages();
-  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, municipalitySlug, loadPartnershipsFromApi, applyGridPatch } = useGame();
+  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, municipalitySlug, loadPartnershipsFromApi, applyGridPatch, isStateReady } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<{ x: number; y: number } | null>(null);
@@ -448,6 +448,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
   const wsOfflineTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsOfflineIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsOfflineFlowRunningRef = useRef(false);
+  const wsOfflineGraceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clockBaselineOffsetRef = useRef<number | null>(null);
   const wallClockRef = useRef<number>(Date.now());
   const monotonicRef = useRef<number>(typeof performance !== 'undefined' ? performance.now() : 0);
@@ -635,6 +636,11 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
 
     if (connectionState === 'connected' || connectionState === 'connecting') {
       clearOfflineTimers();
+      // Grace-Timer abbrechen falls kurzer Reconnect innerhalb von 3s
+      if (wsOfflineGraceTimerRef.current) {
+        clearTimeout(wsOfflineGraceTimerRef.current);
+        wsOfflineGraceTimerRef.current = null;
+      }
       wsOfflineSinceRef.current = null;
       wsOfflineFlowRunningRef.current = false;
       setWsOfflineUi((prev) => (prev.visible ? { ...prev, visible: false } : prev));
@@ -646,27 +652,30 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
       return;
     }
 
-    const now = Date.now();
-    if (!wsOfflineSinceRef.current) {
-      wsOfflineSinceRef.current = now;
-      const alreadyReloaded =
-        typeof window !== 'undefined' &&
-        typeof sessionStorage !== 'undefined' &&
-        sessionStorage.getItem(RELOAD_FLAG_KEY) === '1';
-      const seconds = alreadyReloaded ? 5 : 8;
-      setWsOfflineUi({
-        visible: true,
-        secondsRemaining: seconds,
-        reloadAttempted: alreadyReloaded,
-        reason: connectionState === 'error' ? 'Verbindungsfehler' : 'WebSocket getrennt',
-      });
-      addNotification(
-        'Server offline',
-        alreadyReloaded
-          ? 'Server weiterhin nicht erreichbar. Rückkehr ins Hauptmenü wird vorbereitet.'
-          : 'Verbindung unterbrochen. Seite wird automatisch neu geladen.',
-        'default'
-      );
+    // Grace-Period: Overlay erst nach 3s zeigen, damit kurze Reconnects nicht aufblinken
+    if (!wsOfflineSinceRef.current && !wsOfflineGraceTimerRef.current) {
+      wsOfflineSinceRef.current = Date.now();
+      wsOfflineGraceTimerRef.current = setTimeout(() => {
+        wsOfflineGraceTimerRef.current = null;
+        const alreadyReloaded =
+          typeof window !== 'undefined' &&
+          typeof sessionStorage !== 'undefined' &&
+          sessionStorage.getItem(RELOAD_FLAG_KEY) === '1';
+        const seconds = alreadyReloaded ? 5 : 8;
+        setWsOfflineUi({
+          visible: true,
+          secondsRemaining: seconds,
+          reloadAttempted: alreadyReloaded,
+          reason: connectionState === 'error' ? 'Verbindungsfehler' : 'WebSocket getrennt',
+        });
+        addNotification(
+          'Server offline',
+          alreadyReloaded
+            ? 'Server weiterhin nicht erreichbar. Rückkehr ins Hauptmenü wird vorbereitet.'
+            : 'Verbindung unterbrochen. Seite wird automatisch neu geladen.',
+          'default'
+        );
+      }, 3000);
     }
 
     if (wsOfflineFlowRunningRef.current) return;
@@ -790,18 +799,6 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
     const isSender = !!roomCode && shouldSendStats;
     setIsStatsSender(isSender);
     
-    if (roomCode && localPlayer) {
-      console.log('[Game] Stats-Sender Status:', {
-        isViewOnly,
-        localPlayerId: localPlayer.id,
-        playerCount: playersWithLocal.length,
-        isFirstPlayerById,
-        shouldSendStats,
-        isSender,
-        allPlayerIds: sortedPlayersById.map(p => p.id),
-      });
-    }
-    
     // Cleanup: Wenn unmounted, nicht mehr Sender
     return () => {
       setIsStatsSender(false);
@@ -813,9 +810,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
   useEffect(() => {
     if (disablePartnerships) return;
     if (!municipalitySlug) return;
-    console.log('[Game] 🔄 Lade Partnerschaften sofort (Game gemountet)...');
     loadPartnershipsFromApi()
-      .then(() => console.log('[Game] ✅ Partnerschaften geladen'))
       .catch((err: unknown) => console.error('[Game] ❌ Partnerschaften laden fehlgeschlagen:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disablePartnerships, municipalitySlug, loadPartnershipsFromApi]);
@@ -901,12 +896,14 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
   const currentSelectedToolRef = useRef<Tool>(state.selectedTool);
 
   // In fremden Gemeinden immer mit Inspector starten.
+  // Läuft auch nach isStateReady (nach localStorage-Load) und nach jedem Tool-Wechsel
+  // (z.B. nach softLoadState der den gespeicherten selectedTool überschreibt).
   useEffect(() => {
-    if (!isFullyViewOnly) return;
+    if (!isFullyViewOnly || !isStateReady) return;
     if (state.selectedTool !== 'inspect') {
       setTool('inspect');
     }
-  }, [isFullyViewOnly, state.selectedTool, setTool]);
+  }, [isFullyViewOnly, isStateReady, state.selectedTool, setTool]);
   
   // Keep currentSelectedToolRef in sync with state
   useEffect(() => {
@@ -1010,11 +1007,6 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
       } else if (e.key === 'b' || e.key === 'B') {
         e.preventDefault();
         setTool('bulldoze');
-      } else if (e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        // Toggle pause/unpause: if paused (speed 0), resume to normal (speed 1)
-        // If running, pause (speed 0)
-        setSpeed(state.speed === 0 ? 1 : 0);
       } else if (e.key === '+' && e.shiftKey) {
         // Shift++: Open Debug Panel (nur Rank 7 / Global Admin)
         if (!effectiveCanUseDebug) return;

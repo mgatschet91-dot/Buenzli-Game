@@ -9,14 +9,6 @@ import { Slider } from '@/components/ui/slider';
 // SPEED ICONS
 // =============================================================================
 
-function PauseIcon() {
-  return (
-    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-      <rect x="6" y="4" width="4" height="16" rx="1" />
-      <rect x="14" y="4" width="4" height="16" rx="1" />
-    </svg>
-  );
-}
 
 function PlayIcon() {
   return (
@@ -76,15 +68,6 @@ export function TopBar() {
       
       {/* Speed controls */}
       <div className="flex items-center gap-1">
-        <Button
-          variant={speed === 0 ? 'default' : 'ghost'}
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setSpeed(0)}
-          title="Pause"
-        >
-          <PauseIcon />
-        </Button>
         <Button
           variant={speed === 1 ? 'default' : 'ghost'}
           size="icon"

@@ -30,12 +30,9 @@ function PlayIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-function PauseIcon({ size = 12 }: { size?: number }) {
+function _unused({ size = 12 }: { size?: number }) {
   return (
-    <svg className={`w-[${size}px] h-[${size}px]`} style={{ width: size, height: size }} fill="currentColor" viewBox="0 0 24 24">
-      <rect x="6" y="4" width="4" height="16" rx="1" />
-      <rect x="14" y="4" width="4" height="16" rx="1" />
-    </svg>
+    <svg style={{ width: size, height: size }} viewBox="0 0 24 24" />
   );
 }
 
@@ -177,15 +174,6 @@ export function CoasterMobileTopBar({
           {/* Speed controls and exit button */}
           <div className="flex items-center gap-1">
             <div className="flex items-center gap-0 bg-secondary rounded-sm h-6 overflow-hidden p-0 m-0">
-              <button
-                onClick={() => setSpeed(0)}
-                className={`h-6 w-6 min-w-6 p-0 m-0 flex items-center justify-center rounded-none ${
-                  speed === 0 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent/20'
-                }`}
-                title="Pause"
-              >
-                <PauseIcon size={12} />
-              </button>
               <button
                 onClick={() => setSpeed(1)}
                 className={`h-6 w-6 min-w-6 p-0 m-0 flex items-center justify-center rounded-none ${

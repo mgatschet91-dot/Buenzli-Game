@@ -5,6 +5,7 @@ import '../globals.css';
 import { getLocale } from "gt-next/server";
 import { GTProvider } from "gt-next";
 import { CookieBanner } from '@/components/ui/CookieBanner';
+import { ElectronStorageProvider } from '@/components/ElectronStorageProvider';
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -89,7 +90,7 @@ export default async function RootLayout({ children }: {children: React.ReactNod
         type="image/webp" />
 
       </head>
-      <body className="bg-background text-foreground antialiased font-sans overflow-hidden"><GTProvider>{children}</GTProvider><CookieBanner /></body>
+      <body className="bg-background text-foreground antialiased font-sans overflow-hidden"><GTProvider>{children}</GTProvider>{process.env.NEXT_PUBLIC_PLATFORM !== 'electron' && <CookieBanner />}<ElectronStorageProvider /></body>
     </html>
   );
 }

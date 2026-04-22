@@ -789,7 +789,7 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
     { panel: 'chat' as const, icon: <MessageCircle size={18} />, labelKey: 'chat' as const },
   ].filter((entry) => {
     if (hideTradeAction && entry.panel === 'trade') return false;
-    if (entry.panel === 'gemeinde' && !['owner', 'council'].includes(municipalityRole)) return false;
+    if (entry.panel === 'gemeinde' && !['owner', 'council', 'citizen'].includes(municipalityRole)) return false;
     return true;
   }), [hideTradeAction, municipalityRole]);
 

@@ -130,12 +130,6 @@ export async function loadImage(src: string, skipWebP: boolean = false): Promise
 export function filterBackgroundColor(img: HTMLImageElement, threshold: number = COLOR_THRESHOLD): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('Starting background color filtering...', { 
-        imageSize: `${img.naturalWidth || img.width}x${img.naturalHeight || img.height}`,
-        threshold,
-        backgroundColor: BACKGROUND_COLOR
-      });
-      
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width;
       canvas.height = img.naturalHeight || img.height;
@@ -153,7 +147,6 @@ export function filterBackgroundColor(img: HTMLImageElement, threshold: number =
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       
-      console.log(`Processing ${data.length / 4} pixels...`);
       
       // Process each pixel
       let filteredCount = 0;
@@ -176,18 +169,11 @@ export function filterBackgroundColor(img: HTMLImageElement, threshold: number =
         }
       }
       
-      // Debug: log filtering results
-      const totalPixels = data.length / 4;
-      const percentage = filteredCount > 0 ? ((filteredCount / totalPixels) * 100).toFixed(2) : '0.00';
-      console.log(`Filtered ${filteredCount} pixels (${percentage}%) from sprite sheet`);
-      
-      // Put the modified image data back
       ctx.putImageData(imageData, 0, 0);
       
       // Create a new image from the processed canvas
       const filteredImg = new Image();
       filteredImg.onload = () => {
-        console.log('Filtered image created successfully');
         resolve(filteredImg);
       };
       filteredImg.onerror = (error) => {

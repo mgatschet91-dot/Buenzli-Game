@@ -154,7 +154,7 @@ export function RoomViewerOverlay({
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: '#16120e' }}>
+    <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: '#16120e', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
 
       {/* ── Topbar ── */}
       <div

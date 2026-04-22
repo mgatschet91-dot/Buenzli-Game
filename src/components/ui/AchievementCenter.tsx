@@ -201,6 +201,11 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
 
       if (money > 0) addMoney(money);
 
+      // Steam Achievement unlock (nur im Electron-Build)
+      if (typeof window !== 'undefined' && window.steam) {
+        window.steam.unlockAchievement(code).catch(() => {});
+      }
+
       playAchievementClaimSound();
       const parts: string[] = [];
       if (money > 0) parts.push(`+${money.toLocaleString()} CHF`);

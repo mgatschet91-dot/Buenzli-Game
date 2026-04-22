@@ -2713,6 +2713,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     },
     isMobile,
     visualHour,
+    isFullyViewOnly,
     parkedVehiclesRef,
     emitParkVehicleRef,
     emitLeaveParkingRef,
@@ -7913,7 +7914,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           Math.abs(p.tileX - gridX) <= 1 &&
           Math.abs(p.tileY - gridY) <= 1
         );
-        if (clickedBuenzli) {
+        if (clickedBuenzli && !isFullyViewOnly) {
           panCandidateRef.current = null;
           setBuenzliQuizData({
             eventType: (clickedBuenzli as any).npcBuenzliEventType,
@@ -8029,7 +8030,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         }
       }
     }
-  }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid, waterBodies, findAvatarByClick, openAvatarProfile, cancelResidencePlacement, addNotification, currentRoomCode, municipalitySlug]);
+  }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid, waterBodies, findAvatarByClick, openAvatarProfile, cancelResidencePlacement, addNotification, currentRoomCode, municipalitySlug, isFullyViewOnly]);
 
   // Calculate camera bounds based on grid size
   const getMapBounds = useCallback((currentZoom: number, canvasW: number, canvasH: number) => {

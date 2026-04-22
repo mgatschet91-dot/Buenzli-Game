@@ -21,8 +21,10 @@ import {
   getMunicipalityMembers, changeMemberRole, kickMember, inviteMember,
   getZoneSettings, updateZoneSettings,
   getBankStatus, getLedger, takeLoan, repayLoan,
+  getElection, openElection, registerCandidate, withdrawCandidate, castVote, openNoConfidence,
   type MunicipalityMember, type MunicipalityMembersResponse, type MunicipalityRole,
   type BauzoneMode, type BankStatus, type LedgerEntry, type LedgerResponse,
+  type ElectionDetails, type ElectionCandidate,
 } from '@/lib/api/municipalityAdminApi';
 import {
   fetchVerwaltungMeldungen, beauftragen, selbstBeheben, notfallreparatur, kaufeSchutzschild,
@@ -289,7 +291,7 @@ function MemberRow({
   );
 }
 
-type GemeindeTab = 'members' | 'meldungen' | 'finanzen' | 'settings';
+type GemeindeTab = 'members' | 'meldungen' | 'finanzen' | 'settings' | 'election';
 
 const LEDGER_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   company_contract: { label: 'Firmenauftrag', color: 'text-orange-400' },
@@ -2003,6 +2005,346 @@ function BauzoneSettings({ slug, canManage, onModeChange }: { slug: string; canM
   );
 }
 
+// ── Election Tab ─────────────────────────────────────────────────────────────
+
+const ELECTION_LABELS: Record<string, Record<string, string>> = {
+  de: {
+    tab_election: 'Wahl',
+    tab_loading: 'Laden...',
+    no_municipality: 'Keine Gemeinde zugeordnet',
+    election: 'Wahl',
+    no_election: 'Keine laufende Wahl',
+    start_election: 'Wahl ausrufen',
+    candidates_phase: 'Kandidaturphase',
+    voting_phase: 'Abstimmungsphase',
+    closed: 'Wahl abgeschlossen',
+    cancelled: 'Wahl abgebrochen',
+    until: 'bis',
+    candidates: 'Kandidaten',
+    no_candidates: 'Noch keine Kandidaten',
+    register: 'Kandidieren',
+    withdraw: 'Zurückziehen',
+    vote: 'Abstimmen',
+    voted: 'Abgestimmt',
+    winner: 'Gewählt',
+    triggered_inactivity: 'Ausgelöst durch Inaktivität des Bürgermeisters',
+    triggered_council: 'Ausgelöst durch Gemeinderatsbeschluss',
+    triggered_admin: 'Ausgelöst durch Admin',
+    no_confidence: 'Misstrauensvotum',
+    no_confidence_hint: 'Misstrauensvotum gegen Bürgermeister einleiten (Gemeinderat)',
+    votes: 'Stimmen',
+    loading: 'Laden...',
+    error_load: 'Fehler beim Laden',
+    days_left: 'Tage verbleibend',
+    hours_left: 'Stunden verbleibend',
+  },
+  en: {
+    tab_election: 'Election',
+    tab_loading: 'Loading...',
+    no_municipality: 'No municipality assigned',
+    election: 'Election',
+    no_election: 'No active election',
+    start_election: 'Call election',
+    candidates_phase: 'Candidacy phase',
+    voting_phase: 'Voting phase',
+    closed: 'Election closed',
+    cancelled: 'Election cancelled',
+    until: 'until',
+    candidates: 'Candidates',
+    no_candidates: 'No candidates yet',
+    register: 'Run for office',
+    withdraw: 'Withdraw',
+    vote: 'Vote',
+    voted: 'Voted',
+    winner: 'Elected',
+    triggered_inactivity: 'Triggered by mayor inactivity',
+    triggered_council: 'Triggered by council vote',
+    triggered_admin: 'Triggered by admin',
+    no_confidence: 'No-confidence vote',
+    no_confidence_hint: 'Initiate no-confidence vote against mayor (council only)',
+    votes: 'votes',
+    loading: 'Loading...',
+    error_load: 'Error loading',
+    days_left: 'days remaining',
+    hours_left: 'hours remaining',
+  },
+  fr: {
+    tab_election: 'Élection',
+    tab_loading: 'Chargement...',
+    no_municipality: 'Aucune commune assignée',
+    election: 'Élection',
+    no_election: 'Aucune élection en cours',
+    start_election: 'Lancer une élection',
+    candidates_phase: 'Phase de candidature',
+    voting_phase: 'Phase de vote',
+    closed: 'Élection terminée',
+    cancelled: 'Élection annulée',
+    until: "jusqu'au",
+    candidates: 'Candidats',
+    no_candidates: 'Aucun candidat',
+    register: 'Se présenter',
+    withdraw: 'Retirer',
+    vote: 'Voter',
+    voted: 'Voté',
+    winner: 'Élu',
+    triggered_inactivity: "Déclenché par l'inactivité du maire",
+    triggered_council: 'Déclenché par le conseil',
+    triggered_admin: 'Déclenché par admin',
+    no_confidence: 'Motion de censure',
+    no_confidence_hint: 'Initier une motion de censure contre le maire (conseil)',
+    votes: 'voix',
+    loading: 'Chargement...',
+    error_load: 'Erreur de chargement',
+    days_left: 'jours restants',
+    hours_left: 'heures restantes',
+  },
+  it: {
+    tab_election: 'Elezione',
+    tab_loading: 'Caricamento...',
+    no_municipality: 'Nessun comune assegnato',
+    election: 'Elezione',
+    no_election: 'Nessuna elezione in corso',
+    start_election: "Avviare un'elezione",
+    candidates_phase: 'Fase di candidatura',
+    voting_phase: 'Fase di voto',
+    closed: 'Elezione chiusa',
+    cancelled: 'Elezione annullata',
+    until: 'fino al',
+    candidates: 'Candidati',
+    no_candidates: 'Nessun candidato',
+    register: 'Candidarsi',
+    withdraw: 'Ritira',
+    vote: 'Vota',
+    voted: 'Votato',
+    winner: 'Eletto',
+    triggered_inactivity: 'Attivato da inattività del sindaco',
+    triggered_council: 'Attivato dal consiglio',
+    triggered_admin: 'Attivato da admin',
+    no_confidence: 'Mozione di sfiducia',
+    no_confidence_hint: 'Avviare mozione di sfiducia contro il sindaco (consiglio)',
+    votes: 'voti',
+    loading: 'Caricamento...',
+    error_load: 'Errore di caricamento',
+    days_left: 'giorni rimanenti',
+    hours_left: 'ore rimanenti',
+  },
+};
+
+function useElectionLabels() {
+  const [locale, setLocale] = React.useState('de');
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem('gt-locale') || navigator.language?.slice(0, 2) || 'de';
+      setLocale(stored);
+    } catch {}
+  }, []);
+  return ELECTION_LABELS[locale] || ELECTION_LABELS['de'];
+}
+
+function electionTimeRemaining(until: string, t: Record<string, string>): string {
+  const ms = new Date(until).getTime() - Date.now();
+  if (ms <= 0) return '—';
+  const hours = Math.floor(ms / 3600000);
+  const days = Math.floor(hours / 24);
+  if (days > 0) return `${days} ${t.days_left}`;
+  return `${hours} ${t.hours_left}`;
+}
+
+function ElectionContent({ slug, myRole, currentUserId }: { slug: string; myRole: MunicipalityRole; currentUserId: number }) {
+  const t = useElectionLabels();
+  const [details, setDetails] = React.useState<ElectionDetails | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const canManage = myRole === 'owner' || myRole === 'council';
+
+  const load = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setDetails(await getElection(slug));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t.error_load);
+    } finally {
+      setLoading(false);
+    }
+  }, [slug, t.error_load]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    try {
+      setBusy(true);
+      setError(null);
+      await fn();
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Fehler');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <div className="py-12 text-center text-slate-500 text-sm">{t.loading}</div>;
+
+  const election = details?.election;
+  const candidates = details?.candidates || [];
+  const myVote = details?.my_vote;
+  const myCandidacy = details?.my_candidacy;
+  const isCandidatePhase = election?.status === 'candidates';
+  const isVotingPhase = election?.status === 'voting';
+  const amCandidate = !!myCandidacy && !myCandidacy.withdrawn_at;
+  const hasVoted = myVote !== null && myVote !== undefined;
+
+  const triggeredLabel: Record<string, string> = {
+    inactivity: t.triggered_inactivity,
+    council_vote: t.triggered_council,
+    admin: t.triggered_admin,
+  };
+
+  return (
+    <div className="px-3 sm:px-6 py-4 space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {!election ? (
+        <div className="space-y-4">
+          <div className="text-center py-8 text-slate-500 text-sm">{t.no_election}</div>
+          {myRole === 'council' && (
+            <div className="space-y-2">
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => act(() => openElection(slug))}
+                className="w-full bg-amber-600/80 hover:bg-amber-600 text-white text-xs"
+              >
+                <Gavel className="w-3.5 h-3.5 mr-1.5" />
+                {t.start_election}
+              </Button>
+              {myRole === 'council' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => act(() => openNoConfidence(slug))}
+                  className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                  {t.no_confidence}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Status Header */}
+          <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
+                isCandidatePhase ? 'bg-blue-500/20 text-blue-300' :
+                isVotingPhase ? 'bg-amber-500/20 text-amber-300' :
+                election.status === 'closed' ? 'bg-emerald-500/20 text-emerald-300' :
+                'bg-slate-600/30 text-slate-400'
+              }`}>
+                {isCandidatePhase ? t.candidates_phase :
+                 isVotingPhase ? t.voting_phase :
+                 election.status === 'closed' ? t.closed : t.cancelled}
+              </span>
+              <span className="text-xs text-slate-500">
+                {isCandidatePhase && electionTimeRemaining(election.candidates_until, t)}
+                {isVotingPhase && electionTimeRemaining(election.voting_until, t)}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">{triggeredLabel[election.triggered_by]}</p>
+          </div>
+
+          {/* Candidates */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t.candidates}</h4>
+            {candidates.length === 0 ? (
+              <div className="text-sm text-slate-500 py-4 text-center">{t.no_candidates}</div>
+            ) : (
+              <div className="space-y-1.5">
+                {candidates.filter(c => !c.withdrawn_at).map((c: ElectionCandidate) => {
+                  const isWinner = election.winner_user_id === c.user_id;
+                  const isMyVote = myVote === c.user_id;
+                  return (
+                    <div key={c.user_id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${
+                      isWinner ? 'bg-emerald-500/10 border-emerald-500/30' :
+                      isMyVote ? 'bg-amber-500/10 border-amber-500/25' :
+                      'bg-slate-800/40 border-slate-700/40'
+                    }`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {isWinner && <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                          <span className="text-sm font-medium text-slate-200 truncate">{c.nickname}</span>
+                          {isMyVote && !election.winner_user_id && (
+                            <span className="text-[10px] text-amber-400 shrink-0">✓ {t.voted}</span>
+                          )}
+                          {isWinner && (
+                            <span className="text-[10px] text-emerald-400 shrink-0">{t.winner}</span>
+                          )}
+                        </div>
+                        {(isVotingPhase || election.status === 'closed') && (
+                          <span className="text-[11px] text-slate-500">{c.votes} {t.votes}</span>
+                        )}
+                      </div>
+                      {isVotingPhase && !hasVoted && c.user_id !== currentUserId && (
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => act(() => castVote(slug, c.user_id))}
+                          className="shrink-0 h-7 px-3 text-xs bg-amber-600/80 hover:bg-amber-600 text-white"
+                        >
+                          {t.vote}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* My actions */}
+          {isCandidatePhase && (
+            <div className="pt-1">
+              {!amCandidate ? (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => act(() => registerCandidate(slug))}
+                  className="w-full text-xs bg-blue-600/80 hover:bg-blue-600 text-white"
+                >
+                  <User className="w-3.5 h-3.5 mr-1.5" />
+                  {t.register}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => act(() => withdrawCandidate(slug))}
+                  className="w-full text-xs border-slate-600 text-slate-400 hover:bg-slate-700/50"
+                >
+                  <X className="w-3.5 h-3.5 mr-1.5" />
+                  {t.withdraw}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GemeindePanel() {
   const { setActivePanel, municipalitySlug, setBauzoneMode } = useGame();
   const slug = municipalitySlug || '';
@@ -2018,6 +2360,7 @@ export function GemeindePanel() {
   const [showRoleSelector, setShowRoleSelector] = useState<number | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [activeTab, setActiveTab] = useState<GemeindeTab>('members');
+  const tPanel = useElectionLabels();
 
   const clearMessages = () => { setError(null); setSuccess(null); };
 
@@ -2110,9 +2453,9 @@ export function GemeindePanel() {
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-xl bg-slate-900/95 border-slate-700/70 text-white p-0 gap-0 overflow-hidden backdrop-blur-sm">
-        {/* Header */}
-        <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-4 sm:pb-5 border-b border-slate-700/60">
+      <DialogContent className="flex flex-col w-[min(95vw,680px)] max-w-none max-h-[92dvh] bg-slate-900/95 border-slate-700/70 text-white p-0 gap-0 overflow-hidden backdrop-blur-sm">
+        {/* Header — fixed, never scrolls */}
+        <div className="shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-4 sm:pb-5 border-b border-slate-700/60">
           <DialogHeader className="space-y-0">
             <DialogTitle className="flex items-center gap-3 text-lg sm:text-xl font-semibold">
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-500/25 to-amber-600/10 border border-amber-500/30 flex items-center justify-center shrink-0">
@@ -2195,53 +2538,61 @@ export function GemeindePanel() {
                 <span className="sm:hidden">Setup</span>
               </button>
             )}
+            <button
+              onClick={() => setActiveTab('election')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-all shrink-0 justify-center ${
+                activeTab === 'election'
+                  ? 'bg-amber-700/80 text-white'
+                  : 'text-slate-500 hover:text-amber-300'
+              }`}
+            >
+              <Gavel className="w-3.5 h-3.5" />
+              <span>{tPanel.tab_election}</span>
+            </button>
           </div>
         </div>
 
-        {/* Messages */}
-        {error && (
-          <div className="mx-3 sm:mx-6 mt-3 sm:mt-4">
-            <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs sm:text-sm flex items-center gap-2">
-              <X className="w-4 h-4 shrink-0 cursor-pointer hover:text-red-300" onClick={() => setError(null)} />
-              {error}
-            </div>
-          </div>
-        )}
-        {success && (
-          <div className="mx-3 sm:mx-6 mt-3 sm:mt-4">
-            <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs sm:text-sm flex items-center gap-2">
-              <Check className="w-4 h-4 shrink-0" />
-              {success}
-            </div>
+        {/* Messages — shrink-0 so they sit between header and content */}
+        {(error || success) && (
+          <div className="shrink-0 mx-3 sm:mx-6 mt-3 sm:mt-4 space-y-2">
+            {error && (
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs sm:text-sm flex items-center gap-2">
+                <X className="w-4 h-4 shrink-0 cursor-pointer hover:text-red-300" onClick={() => setError(null)} />
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs sm:text-sm flex items-center gap-2">
+                <Check className="w-4 h-4 shrink-0" />
+                {success}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Content */}
+        {/* Content — fills remaining space, scrolls internally */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="w-6 h-6 border-2 border-slate-600 border-t-emerald-400 rounded-full animate-spin" />
-            <span className="text-slate-500 text-sm">Laden...</span>
+            <span className="text-slate-500 text-sm">{tPanel.tab_loading}</span>
           </div>
         ) : !data ? (
           <div className="text-center py-12 text-slate-500 text-sm">
-            Keine Gemeinde zugeordnet
+            {tPanel.no_municipality}
           </div>
+        ) : activeTab === 'election' ? (
+          <ElectionContent slug={slug} myRole={myRole} currentUserId={currentUserId} />
         ) : activeTab === 'meldungen' && canManage ? (
-          <ScrollArea className="max-h-[65vh]">
-            <MeldungenContent />
-          </ScrollArea>
+          <MeldungenContent />
         ) : activeTab === 'settings' && canManage ? (
-          <ScrollArea className="max-h-[65vh]">
-            <div className="px-3 sm:px-6 py-3 sm:py-5">
-              <BauzoneSettings slug={slug} canManage={canManage} onModeChange={setBauzoneMode} />
-            </div>
-          </ScrollArea>
+          <div className="px-3 sm:px-6 py-3 sm:py-5">
+            <BauzoneSettings slug={slug} canManage={canManage} onModeChange={setBauzoneMode} />
+          </div>
         ) : activeTab === 'finanzen' && canManage ? (
-          <ScrollArea className="max-h-[65vh]">
-            <FinanzenContent canManage={canManage} />
-          </ScrollArea>
+          <FinanzenContent canManage={canManage} />
         ) : (
-          <ScrollArea className="max-h-[65vh]">
+          <div>
             <div className="px-3 sm:px-6 py-3 sm:py-5 space-y-4 sm:space-y-5">
 
               {/* Owner (always at top) */}
@@ -2304,12 +2655,13 @@ export function GemeindePanel() {
                 );
               })}
             </div>
-          </ScrollArea>
+          </div>
         )}
+        </div>
 
-        {/* Footer: Invite (only on members tab) */}
+        {/* Footer: Invite (only on members tab) — shrink-0 so it never disappears */}
         {canInvite && data && activeTab === 'members' && (
-          <div className="border-t border-slate-700/60 px-3 sm:px-6 py-3 sm:py-5">
+          <div className="shrink-0 border-t border-slate-700/60 px-3 sm:px-6 py-3 sm:py-5">
             {!showInvite ? (
               <Button
                 variant="outline"

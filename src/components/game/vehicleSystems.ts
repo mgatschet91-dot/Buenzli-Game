@@ -74,6 +74,7 @@ export interface VehicleSystemState {
   };
   isMobile: boolean;
   visualHour: number;
+  isFullyViewOnly?: boolean; // Besuchermodus: Zoom-Gate für Passanten deaktivieren
   // Parking system
   parkedVehiclesRef: React.MutableRefObject<ParkedVehicle[]>;
   emitParkVehicleRef: React.MutableRefObject<(tileX: number, tileY: number, slot: number, color: string) => void>;
@@ -108,7 +109,7 @@ export function useVehicleSystems(
     serverBusLinesRef,
   } = refs;
 
-  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, cachedIntersectionMapRef, state, isMobile, visualHour, parkedVehiclesRef, emitParkVehicleRef, emitLeaveParkingRef } = systemState;
+  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, cachedIntersectionMapRef, state, isMobile, visualHour, isFullyViewOnly, parkedVehiclesRef, emitParkVehicleRef, emitLeaveParkingRef } = systemState;
 
   const spawnRandomCar = useCallback(() => {
     const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -562,9 +563,21 @@ export function useVehicleSystems(
       return false;
     }
 
-    const destinations = findPedestrianDestinationsCallback();
+    let destinations = findPedestrianDestinationsCallback();
     if (destinations.length === 0) {
-      return false;
+      // Fallback: keine Shops/Parks/Schulen → zufällige Strassen-Tiles als Ziele
+      const roadFallbacks: { x: number; y: number; type: PedestrianDestType }[] = [];
+      const step = Math.max(1, Math.floor(currentGridSize / 8));
+      for (let y = 0; y < currentGridSize && roadFallbacks.length < 20; y += step) {
+        for (let x = 0; x < currentGridSize && roadFallbacks.length < 20; x += step) {
+          const t = currentGrid[y]?.[x]?.building.type;
+          if (t === 'road' || t === 'bridge') {
+            roadFallbacks.push({ x, y, type: 'commercial' });
+          }
+        }
+      }
+      if (roadFallbacks.length === 0) return false;
+      destinations = roadFallbacks;
     }
 
     // Choose spawn type - more variety in pedestrian spawning
@@ -2262,7 +2275,8 @@ export function useVehicleSystems(
     // Also use far zoom threshold for desktop when very zoomed out (for large maps)
     // NPC-Arbeiter werden IMMER geupdated (auch bei Zoom-Out)
     const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
-    const effectiveMinZoom = Math.max(pedestrianMinZoom, VEHICLE_FAR_ZOOM_THRESHOLD);
+    // Im Besuchermodus Zoom-Gate deaktivieren damit Passanten immer sichtbar sind
+    const effectiveMinZoom = isFullyViewOnly ? VEHICLE_FAR_ZOOM_THRESHOLD : Math.max(pedestrianMinZoom, VEHICLE_FAR_ZOOM_THRESHOLD);
     if (currentZoom < effectiveMinZoom) {
       // NPC-Arbeiter updaten, normale Pedestrians einfrieren (nicht entfernen!)
       // Normale Pedestrians bleiben im Array damit NPCs sie als Ziele finden können
@@ -2571,7 +2585,7 @@ export function useVehicleSystems(
   // Returns true if Pixi is handling the rendering (so the caller can skip carsCanvas drawing).
   const drawPedestrians = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
+    const pedestrianMinZoom = isFullyViewOnly ? VEHICLE_FAR_ZOOM_THRESHOLD : (isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM);
     if (!currentGrid || currentGridSize <= 0 || pedestriansRef.current.length === 0 || currentZoom < pedestrianMinZoom) {
       return;
     }
@@ -2604,7 +2618,7 @@ export function useVehicleSystems(
       return;
     }
 
-    const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
+    const pedestrianMinZoom = isFullyViewOnly ? VEHICLE_FAR_ZOOM_THRESHOLD : (isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM);
     const hasNpcWorkers = pedestriansRef.current.some(p => p.isNpcWorker);
     if (currentZoom < pedestrianMinZoom && !hasNpcWorkers) return;
 

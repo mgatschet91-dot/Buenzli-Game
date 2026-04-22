@@ -1,13 +1,15 @@
 const { withGTConfig } = require("gt-next/config");
 
+const isElectronBuild = process.env.ELECTRON_BUILD === 'true';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
-  // Setze das Root-Verzeichnis für Turbopack, um die Warnung zu vermeiden
   turbopack: {
     root: __dirname,
   },
+  ...(isElectronBuild ? { output: 'standalone' } : {}),
 };
 
 module.exports = withGTConfig(nextConfig);

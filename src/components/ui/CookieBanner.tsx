@@ -10,6 +10,7 @@ export function CookieBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (window.location.pathname.startsWith('/steam') || window.location.pathname.startsWith('/isometric')) return;
     const stored = localStorage.getItem(CONSENT_KEY);
     if (!stored || Date.now() - Number(stored) > THIRTY_DAYS_MS) {
       setVisible(true);

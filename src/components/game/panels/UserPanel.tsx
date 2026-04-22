@@ -408,14 +408,65 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
       .finally(() => setLoadingReferral(false));
   }, []);
 
+  const IS_ELECTRON = process.env.NEXT_PUBLIC_PLATFORM === 'electron';
+
+  // Steam Rich Presence automatisch setzen wenn Gemeinde bekannt ist
+  useEffect(() => {
+    if (!IS_ELECTRON || !window.steam || !municipalitySlug) return;
+    const slug = municipalitySlug;
+    // Gemeinde-Name kapitalisieren für Anzeige (z.B. "solothurn" → "Solothurn")
+    const displayName = slug.charAt(0).toUpperCase() + slug.slice(1);
+    window.steam.setPresence('status', `Spielt in ${displayName}`).catch?.(() => {});
+    window.steam.setPresence('steam_display', `#Status_InGame`).catch?.(() => {});
+  }, [IS_ELECTRON, municipalitySlug]);
+
+  // In Electron immer die echte Web-URL nutzen (nicht 127.0.0.1:3001)
+  const referralOrigin = IS_ELECTRON
+    ? 'https://buenzlifight.ch'
+    : (typeof window !== 'undefined' ? window.location.origin : 'https://buenzlifight.ch');
+
   const referralUrl = referralCode
-    ? `${typeof window !== 'undefined' ? window.location.origin : 'https://buenzlifight.ch'}/#ref/${referralCode}${municipalitySlug ? `/${municipalitySlug}` : ''}`
+    ? `${referralOrigin}/#ref/${referralCode}${municipalitySlug ? `/${municipalitySlug}` : ''}`
     : '';
+
+  const steamConnectStr = referralCode
+    ? `+ref/${referralCode}${municipalitySlug ? `/${municipalitySlug}` : ''}`
+    : '';
+
+  async function setSteamPresence() {
+    if (!window.steam || !referralCode) return;
+    try {
+      await window.steam.setPresence('status', `Spielt in ${municipalitySlug || 'Schweiz'} — Tritt bei!`);
+      await window.steam.setPresence('connect', steamConnectStr);
+    } catch {}
+  }
+
+  const [steamOverlayOpened, setSteamOverlayOpened] = useState(false);
+
+  async function openSteamInviteDialog() {
+    if (!window.steam || !referralUrl) return;
+    try {
+      await setSteamPresence();
+      const opened = await window.steam.openInviteDialog(steamConnectStr);
+      if (!opened) {
+        // Overlay nicht verfügbar → als Fallback Link kopieren
+        navigator.clipboard.writeText(referralUrl).catch(() => {});
+        setSteamOverlayOpened(true);
+        setTimeout(() => setSteamOverlayOpened(false), 4000);
+      }
+      // Overlay erfolgreich geöffnet → kein Link kopieren nötig
+    } catch {
+      navigator.clipboard.writeText(referralUrl).catch(() => {});
+      setSteamOverlayOpened(true);
+      setTimeout(() => setSteamOverlayOpened(false), 4000);
+    }
+  }
 
   function copyReferralLink() {
     if (!referralUrl) return;
     navigator.clipboard.writeText(referralUrl).then(() => {
       setReferralCopied(true);
+      if (IS_ELECTRON) void setSteamPresence();
       setTimeout(() => setReferralCopied(false), 2000);
     });
   }
@@ -447,7 +498,7 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-[800px] w-full bg-slate-900/95 border-slate-700 text-white p-0 max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-[800px] w-full bg-[#0f172a] border-slate-700/80 text-white p-0 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
         <DialogHeader className="px-5 pt-5 pb-0 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <User className="w-5 h-5" />
@@ -491,6 +542,14 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                   {rank > 0 && <div className="text-sm text-slate-400">Rang <span className="text-blue-300 font-semibold">#{rank}</span></div>}
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  {IS_ELECTRON && (
+                    <div className="flex items-center gap-1.5 text-xs text-[#c6d4df]">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-[#66c0f4]">
+                        <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                      </svg>
+                      Mit Steam angemeldet
+                    </div>
+                  )}
                   {hasGoogle && (
                     <div className="flex items-center gap-1.5 text-xs text-slate-400">
                       <svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
@@ -527,19 +586,48 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                 </div>
                 <p className="text-xs text-slate-400">
                   Dein Freund erhält <span className="text-amber-300 font-medium">800 Fr</span> Startguthaben, du bekommst <span className="text-emerald-400 font-medium">200 Fr + 100 XP</span>.
+                  {municipalitySlug && <span className="text-slate-500"> Sie treten direkt <span className="text-white/60">{municipalitySlug}</span> bei.</span>}
                 </p>
                 {loadingReferral ? (
                   <div className="text-xs text-slate-500 italic">Lade Einladungslink...</div>
                 ) : referralUrl ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 font-mono text-xs text-slate-300 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 truncate">{referralUrl}</div>
-                      <Button size="sm" variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-3" onClick={copyReferralLink}>
-                        {referralCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  IS_ELECTRON ? (
+                    /* Steam-Variante: Overlay-Dialog + Kopieren als Fallback */
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        className="w-full bg-[#1b2838] hover:bg-[#2a475e] border border-[#4c6b8a]/60 hover:border-[#66c0f4]/60 text-[#c6d4df] hover:text-white text-xs flex items-center gap-2 justify-center"
+                        onClick={openSteamInviteDialog}
+                      >
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                        </svg>
+                        Freunde über Steam einladen
+                      </Button>
+                      {steamOverlayOpened && (
+                        <p className="text-[11px] text-[#66c0f4] text-center">Link kopiert — im Steam-Chat einfügen (Ctrl+V)</p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="w-full text-slate-400 hover:text-slate-200 text-xs flex items-center gap-2 justify-center"
+                        onClick={copyReferralLink}
+                      >
+                        {referralCopied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> Link kopiert!</> : <><Copy className="w-3.5 h-3.5" /> Link kopieren</>}
                       </Button>
                     </div>
-                    {referralCopied && <p className="text-xs text-emerald-400">Link kopiert!</p>}
-                  </>
+                  ) : (
+                    /* Web-Variante: URL anzeigen + kopieren */
+                    <>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 font-mono text-xs text-slate-300 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 truncate">{referralUrl}</div>
+                        <Button size="sm" variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-3" onClick={copyReferralLink}>
+                          {referralCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                      {referralCopied && <p className="text-xs text-emerald-400">Link kopiert!</p>}
+                    </>
+                  )
                 ) : (
                   <div className="text-xs text-slate-500">Link wird nach dem nächsten Login verfügbar.</div>
                 )}

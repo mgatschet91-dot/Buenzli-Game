@@ -10,7 +10,7 @@ import { gridToScreen } from './utils';
 
 // PERF: Building type Sets for O(1) lookup instead of O(n) array.includes()
 const RESIDENTIAL_BUILDING_TYPES = new Set<BuildingType>([
-  'house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high'
+  'house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high', 'cabin_house'
 ]);
 
 const SCHOOL_TYPES = new Set<BuildingType>(['school', 'university']);

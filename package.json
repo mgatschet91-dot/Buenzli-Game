@@ -8,7 +8,11 @@
   "homepage": "https://buenzlifight.ch",
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:local": "cross-env NEXT_PUBLIC_CORE_API_URL=http://127.0.0.1:4100 NEXT_PUBLIC_AUTH_API_URL=http://127.0.0.1:4100 NEXT_PUBLIC_WEBSOCKET_URL=http://127.0.0.1:4100 next dev -p 3000",
+    "dev:electron": "cross-env NEXT_PUBLIC_PLATFORM=electron NEXT_PUBLIC_CORE_API_URL=https://core.buenzlifight.ch NEXT_PUBLIC_AUTH_API_URL=https://core.buenzlifight.ch NEXT_PUBLIC_WEBSOCKET_URL=https://core.buenzlifight.ch next dev -p 3001",
+    "dev:electron:local": "cross-env NEXT_PUBLIC_PLATFORM=electron NEXT_PUBLIC_CORE_API_URL=http://127.0.0.1:4100 NEXT_PUBLIC_AUTH_API_URL=http://127.0.0.1:4100 NEXT_PUBLIC_WEBSOCKET_URL=http://127.0.0.1:4100 next dev -p 3001",
     "build": "next build",
+    "build:electron": "cross-env ELECTRON_BUILD=true NEXT_PUBLIC_PLATFORM=electron NEXT_PUBLIC_CORE_API_URL=https://core.buenzlifight.ch NEXT_PUBLIC_AUTH_API_URL=https://core.buenzlifight.ch NEXT_PUBLIC_WEBSOCKET_URL=https://core.buenzlifight.ch next build",
     "start": "next start",
     "lint": "eslint .",
     "crop-screenshots": "bash scripts/crop-screenshots.sh"
@@ -45,6 +49,7 @@
     "three": "^0.160.0"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "@eslint/eslintrc": "^3.3.1",
     "@types/lz-string": "^1.3.34",
     "@types/node": "^22",

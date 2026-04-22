@@ -221,11 +221,16 @@ export function useMultiplayerSync() {
   // Flugzeuge etc.) NICHT gelöscht werden. Sonst sieht der Spieler bei jedem Sync ein
   // "Neuaufbauen" der Map, weil gameVersion erhöht wird und alle Entities verschwinden.
   const lastInitialStateRef = useRef<string | null>(null);
+  // Merkt sich die zuletzt geladene Gemeinde – bei Wechsel erzwingen wir einen vollen Load
+  // damit Passanten/Fahrzeuge der alten Gemeinde korrekt geleert werden.
+  const lastLoadedSlugRef = useRef<string>('');
 
   // Bei Raumwechsel muss der Initial-State immer neu geladen werden.
   useEffect(() => {
     lastInitialStateRef.current = null;
     initialStateLoadedRef.current = false;
+    // lastLoadedSlugRef NICHT zurücksetzen — wir brauchen den alten Wert um
+    // Gemeinde-Wechsel zu erkennen (auch nach roomCode-Reset).
   }, [multiplayer?.roomCode, multiplayer?.municipalitySlug]);
 
   useEffect(() => {
@@ -270,26 +275,31 @@ export function useMultiplayerSync() {
     // SOFT LOAD: Server-State laden OHNE gameVersion zu erhöhen.
     // Dadurch bleiben bestehende Entities (Autos, Fussgänger, Flugzeuge etc.) erhalten
     // und die Map "baut sich nicht neu auf" bei jedem Sync.
-    // Nur bei komplett anderem Grid (andere Grösse) wird ein voller Load gemacht.
+    // Ausnahme: Bei Gemeinde-Wechsel immer voller Load, damit Entities der alten Gemeinde
+    // korrekt geleert werden (Passanten, Fahrzeuge etc.).
     const stateString = JSON.stringify(stateToLoad);
     const g = gameRef.current;
     const currentGridSize = g.state?.gridSize || 0;
     const serverGridSize = stateToLoad.gridSize || 0;
-    
+    const currentSlug = multiplayer.municipalitySlug || '';
+    // Slug-Wechsel: Erster Load ('') oder andere Gemeinde → voller Load nötig.
+    const slugChanged = lastLoadedSlugRef.current !== currentSlug;
+
     let success: boolean;
-    if (currentGridSize > 0 && currentGridSize === serverGridSize) {
-      // Gleiche Grid-Grösse → Soft Load (Entities bleiben erhalten)
+    if (currentGridSize > 0 && currentGridSize === serverGridSize && !slugChanged) {
+      // Gleiche Grid-Grösse, gleiche Gemeinde → Soft Load (Entities bleiben erhalten)
       success = g.softLoadState(stateString);
-      console.log('[useMultiplayerSync] 🔄 Soft-Load verwendet (gleiche Grid-Grösse)');
+      console.log('[useMultiplayerSync] 🔄 Soft-Load verwendet (gleiche Grid-Grösse, gleiche Gemeinde)');
     } else {
-      // Andere Grid-Grösse oder erster Load → Voller Load (Entities werden zurückgesetzt)
+      // Andere Grid-Grösse ODER Gemeinde-Wechsel → Voller Load (Entities werden zurückgesetzt)
       success = g.loadState(stateString);
-      console.log('[useMultiplayerSync] 🔃 Voller Load verwendet (Grid-Grösse anders oder erster Load)');
+      console.log('[useMultiplayerSync] 🔃 Voller Load verwendet (Grid-Grösse anders oder Gemeinde-Wechsel)');
     }
-    
+
     if (success) {
       initialStateLoadedRef.current = true;
       lastInitialStateRef.current = stateKey;
+      lastLoadedSlugRef.current = currentSlug;
       console.log('[useMultiplayerSync] ✅ Server state loaded successfully');
     } else {
       console.error('[useMultiplayerSync] ❌ Failed to load server state');

@@ -31,7 +31,6 @@ const backendName = useCoreDelta
     ? 'Supabase (Realtime)' 
     : 'Core (MySQL)';
 
-console.log('[Provider] Backend:', backendName);
 
 export interface MultiplayerProviderOptions {
   roomCode: string;
@@ -91,19 +90,16 @@ export async function createMultiplayerProvider(
   options: MultiplayerProviderOptions
 ): Promise<IMultiplayerProvider> {
   if (useCoreDelta) {
-    console.log('[Provider] Verwende Core Delta Provider (Server-basiert)');
     const { CoreDeltaProvider } = await import('./coreDeltaProvider');
     const provider = new CoreDeltaProvider(options);
     await provider.connect();
     return provider;
   } else if (useSupabase) {
-    console.log('[Provider] Verwende Supabase Provider (Realtime)');
     const { MultiplayerProvider } = await import('./supabaseProvider');
     const provider = new MultiplayerProvider(options);
     await provider.connect();
     return provider;
   } else {
-    console.log('[Provider] Verwende Core Provider (Single-Player)');
     const { CoreProvider } = await import('./coreProvider');
     const provider = new CoreProvider(options);
     await provider.connect();

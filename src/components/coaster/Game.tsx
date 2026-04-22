@@ -63,11 +63,6 @@ export default function CoasterGame({ onExit }: GameProps) {
         e.preventDefault();
         setTool('select');
         setSelectedTile(null);
-      } else if (e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        // Toggle pause/unpause: if paused (speed 0), resume to normal (speed 1)
-        // If running, pause (speed 0)
-        setSpeed(state.speed === 0 ? 1 : 0);
       }
     };
     

@@ -499,8 +499,6 @@ function applySavedWaterBodyNames(
 export function buildStateFromItems(data: ItemsApiResponse): GameState {
   const gridSize = data.grid_size || 50;
   
-  console.log('[buildStateFromItems] Rekonstruiere Map aus', data.item_count, 'Items, Grid:', gridSize, 'x', gridSize);
-  
   // 1. Leeres Grid erstellen
   const grid = createEmptyGrid(gridSize);
   
@@ -614,16 +612,6 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
     buildWaterBodies(waterTiles, gridSize),
     savedWaterBodies
   );
-  
-  console.log('[buildStateFromItems] Ergebnis:', {
-    placedBuildings,
-    placedZones,
-    terrainTiles,
-    waterTiles: waterTiles.length,
-    waterBodies: waterBodies.length,
-    skipped,
-    cityName: data.city_name,
-  });
   
   // 3. Default City erstellen
   const defaultCity = {

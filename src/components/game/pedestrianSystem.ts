@@ -1998,7 +1998,7 @@ export function handleArrivalAtDestination(
       ped.npcWorkProgress = 0;
       ped.activityOffsetX = 0;
       ped.activityOffsetY = 0;
-      console.log(`[NPC #${ped.id}] 🔍 An Strasse bei Gebäude (${ped.destX},${ped.destY}) angekommen, beginne Inspektion`);
+
     } else {
       // Gebäude nicht mehr vorhanden, suche nächstes
       ped.state = 'idle';

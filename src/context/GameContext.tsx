@@ -2106,7 +2106,6 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       ...prev,
       adjacentCities: cities,
     }));
-    console.log('[GameContext] 🏘️ Nachbar-Gemeinden aktualisiert:', cities.map(c => c.name));
   }, []);
 
   // Gewässer umbenennen (See/Ozean)
@@ -2199,17 +2198,9 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     }
 
     try {
-      console.log('[GameContext] 📡 Lade Partnerschaften von API...');
       const response = await partnershipApi.getPartnerships(municipalitySlug);
       
       if (response.success && response.data.partnerships) {
-        console.log('[GameContext] 📡 API Partnerships:', response.data.partnerships.map(p => ({
-          name: p.partner.name,
-          slug: p.partner.slug,
-          direction: p.direction,
-          status: p.status,
-        })));
-
         setState((prev) => {
           // NEUE Arrays mit neuen Objekten erstellen (React Immutability!)
           const usedPartnerSlugs = new Set<string>();
@@ -2250,16 +2241,9 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
                 discovered: p.status === 'discovered' || p.status === 'connected',
                 connected: p.status === 'connected',
               });
-              console.log(`[GameContext] ➕ Trade Partner NEU: ${p.partner.name} (${p.direction}, status=${p.status})`);
+
             }
           }
-
-          console.log('[GameContext] 🗺️ adjacentCities nach Update:', updatedCities.map(c => ({
-            name: c.name,
-            direction: c.direction,
-            connected: c.connected,
-            discovered: c.discovered,
-          })));
 
           // In localStorage cachen für nächsten Seitenlade (sofort verfügbar)
           if (municipalitySlug) {
@@ -2277,7 +2261,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           };
         });
 
-        console.log('[GameContext] ✅ Partnerschaften geladen:', response.data.partnerships.length);
+
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('404')) {
@@ -2590,7 +2574,6 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           }
         }
         // WICHTIG: gameVersion wird NICHT erhöht → Entities bleiben erhalten!
-        console.log('[GameContext] 🔄 Soft-Load: State ersetzt OHNE Entity-Reset');
         setState((prev) => ({
           ...(parsed as GameState),
           gameVersion: prev.gameVersion ?? 0, // gameVersion beibehalten!
