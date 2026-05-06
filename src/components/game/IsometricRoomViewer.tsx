@@ -36,6 +36,12 @@ export interface IsometricRoomViewerProps {
   ownerNickname?: string;
   onAvatarChange?: (avatarCode: string) => void;
   onReady?: () => void;
+  /** Teleportation in einen anderen Raum (cross-room) */
+  onTeleportToRoom?: (userId: number) => void;
+  /** Spieler läuft durch die Tür hinaus */
+  onExit?: () => void;
+  /** Besucher-Liste geändert (für Moderations-Panel) */
+  onVisitorsChange?: (visitors: { playerId: string; userId: number | null; name: string }[]) => void;
 }
 
 export function IsometricRoomViewer({
@@ -50,6 +56,9 @@ export function IsometricRoomViewer({
   ownerNickname,
   onAvatarChange,
   onReady,
+  onTeleportToRoom,
+  onExit,
+  onVisitorsChange,
 }: IsometricRoomViewerProps) {
   const iframeRef      = useRef<HTMLIFrameElement>(null);
   const readyRef       = useRef(false);
@@ -79,6 +88,12 @@ export function IsometricRoomViewer({
   const pendingProfileRef = useRef<object | null>(null);
   // Immer aktueller Spielername (kein Stale-Closure in async Callbacks)
   const playerNameRef    = useRef<string>(playerName || '');
+  // pair_id des aktuell platzierten Teleporters (gesetzt via __TELEPORTER_PAIR_SET)
+  const pendingTeleporterPairIdRef = useRef<number | null>(null);
+  // Besucher-Map: playerId → { userId, name } für Moderations-Panel
+  const visitorsRef = useRef<Map<string, { userId: number | null; name: string }>>(new Map());
+  const onVisitorsChangeRef = useRef(onVisitorsChange);
+  onVisitorsChangeRef.current = onVisitorsChange;
 
   // Avatar-Prop → liveRef aktualisieren + evtl. Spawn nachholen
   useEffect(() => {
@@ -266,6 +281,7 @@ export function IsometricRoomViewer({
             motto: json.data.motto || null,
             municipalityName: json.data.municipality_name || null,
             userLevel: json.data.level ?? 1,
+            userId: json.data.id ?? null,
           };
           if (readyRef.current && iframeRef.current?.contentWindow) {
             iframeRef.current.contentWindow.postMessage(msg, '*');
@@ -295,11 +311,20 @@ export function IsometricRoomViewer({
     });
 
     sock.on('avatar-spawned', (data: unknown) => {
-      const msg = { type: 'AVATAR_SPAWNED', ...(data as object), localPlayerId: localPlayerIdRef.current };
+      const d = data as Record<string, unknown>;
+      const msg = { type: 'AVATAR_SPAWNED', ...d, localPlayerId: localPlayerIdRef.current };
       if (readyRef.current) {
         iframeRef.current?.contentWindow?.postMessage(msg, '*');
       } else {
         pendingSpawnsRef.current.push(msg);
+      }
+      // Besucher-Map aktualisieren (für Moderations-Panel)
+      if (typeof d.playerId === 'string' && d.playerId !== localPlayerIdRef.current) {
+        visitorsRef.current.set(d.playerId, {
+          userId: typeof d.userId === 'number' ? d.userId : null,
+          name: typeof d.name === 'string' ? d.name : '?',
+        });
+        onVisitorsChangeRef.current?.([...visitorsRef.current.entries()].map(([pid, v]) => ({ playerId: pid, ...v })));
       }
     });
 
@@ -323,7 +348,16 @@ export function IsometricRoomViewer({
         { type: 'AVATAR_REMOVED', avatarId: d.playerId, playerId: d.playerId },
         '*'
       );
+      // Aus Besucher-Map entfernen
+      if (typeof d.playerId === 'string') {
+        visitorsRef.current.delete(d.playerId);
+        onVisitorsChangeRef.current?.([...visitorsRef.current.entries()].map(([pid, v]) => ({ playerId: pid, ...v })));
+      }
     });
+
+    // Gekickt / gebannt → Raum verlassen
+    sock.on('room-kicked', () => { onExit?.(); });
+    sock.on('room-banned', () => { onExit?.(); });
 
     sock.on('avatar-state', (data: unknown) => {
       iframeRef.current?.contentWindow?.postMessage(
@@ -367,6 +401,7 @@ export function IsometricRoomViewer({
       roomJoinedRef.current = false;
       localPlayerIdRef.current = null;
       pendingSpawnsRef.current = [];
+      visitorsRef.current.clear();
       sock.disconnect();
       socketRef.current = null;
     };
@@ -544,9 +579,48 @@ export function IsometricRoomViewer({
         return;
       }
 
+      // Spieler läuft durch die Tür hinaus → Overlay schließen
+      if (type === 'ROOM_EXIT') {
+        onExit?.();
+        return;
+      }
+
+      // Teleporter-Paar-ID vom Parent empfangen (vor PLACE_ITEM gesendet)
+      if (type === '__TELEPORTER_PAIR_SET') {
+        pendingTeleporterPairIdRef.current = typeof msg.pair_id === 'number' ? msg.pair_id : null;
+        return;
+      }
+
+      // Teleporter betreten → verknüpftes Stück suchen + teleportieren
+      if (type === 'TELEPORTER_ACTIVATED' && msg.furniture_id != null) {
+        const token = getAuthToken() || '';
+        fetch(`${API_BASE}/api/game/user/room/furniture/teleport?furniture_id=${msg.furniture_id}`, {
+          headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
+        })
+          .then(r => r.json())
+          .then(d => {
+            if (!d.ok || !d.data) return;
+            const { target_user_id, x, z, floor_level } = d.data;
+            if (target_user_id === ownerId) {
+              // Gleicher Raum: Avatar direkt teleportieren
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: 'TELEPORT_TO_POS', x, z, floor_level: floor_level ?? 0 },
+                '*'
+              );
+            } else {
+              // Anderer Raum: Parent informieren
+              onTeleportToRoom?.(Number(target_user_id));
+            }
+          })
+          .catch(() => { /* ignore */ });
+        return;
+      }
+
       // Möbel platziert → in SQL speichern (room_furniture Tabelle)
       if (type === 'ROOM_FURNITURE_PLACED') {
         const token = getAuthToken() || '';
+        const pairId = msg.item_code === 'teleporter' ? pendingTeleporterPairIdRef.current : null;
+        if (msg.item_code === 'teleporter') pendingTeleporterPairIdRef.current = null;
         fetch(`${API_BASE}/api/game/user/room/furniture`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
@@ -557,6 +631,7 @@ export function IsometricRoomViewer({
             floor_level: msg.floor_level ?? 0,
             facing_idx:  msg.facing_idx,
             wy:          msg.wy ?? null,
+            ...(pairId != null ? { pair_id: pairId } : {}),
           }),
         })
           .then(r => r.json())
@@ -722,11 +797,17 @@ export function IsometricRoomViewer({
             .catch(() => { /* ignore */ });
         }
 
-        // Inventar +1 zurückgeben
+        // Inventar +1 zurückgeben (Teleporter: pair_id aus Placements lookup)
+        const pairId = msg.item_code === 'teleporter' && msg.server_id != null
+          ? ((placementsRef.current as any[]).find((p: any) => p.id === msg.server_id)?.pair_id ?? null)
+          : null;
         fetch(`${API_BASE}/api/game/user/inventory/return`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
-          body:    JSON.stringify({ item_code: msg.item_code }),
+          body:    JSON.stringify({
+            item_code: msg.item_code,
+            ...(pairId != null ? { pair_id: pairId } : {}),
+          }),
         }).catch(() => { /* ignore */ });
         return;
       }
@@ -734,7 +815,7 @@ export function IsometricRoomViewer({
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [onAvatarChange, onReady, sendInit]);
+  }, [onAvatarChange, onReady, onTeleportToRoom, onExit, sendInit, ownerId]);
 
   // Avatar-Prop geändert → Iframe live aktualisieren
   useEffect(() => {

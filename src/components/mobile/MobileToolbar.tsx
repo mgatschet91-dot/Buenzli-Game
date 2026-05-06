@@ -245,7 +245,7 @@ const UI_LABELS = {
 };
 
 const toolCategories = {
-  'TOOLS': ['select', 'bulldoze', 'road', 'autobahn', 'rail', 'subway', 'bus_stop', 'parking_spot', 'parking_lot', 'parking_lot_large'] as Tool[],
+  'TOOLS': ['select', 'bulldoze', 'road', 'autobahn', 'rail', 'subway', 'bus_stop', 'parking_spot'] as Tool[],
   'ZONES': ['zone_residential', 'zone_commercial', 'zone_industrial'] as Tool[],
   'ZONING': ['zone_dezone'] as Tool[],
   'TERRAIN': ['terrain_raise', 'terrain_lower', 'terrain_lower2', 'terrain_hill', 'terrain_mountain', 'terrain_flatten', 'zone_water', 'zone_land'] as Tool[],

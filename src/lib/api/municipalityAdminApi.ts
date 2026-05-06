@@ -215,6 +215,7 @@ export interface BankStatus {
   dailyExpenses: number;
   population: number;
   nextInterestEstimate: number;
+  lastIncomeAt: string | null;
 }
 
 export interface LedgerEntry {
@@ -253,11 +254,12 @@ export async function getBankStatus(): Promise<BankStatus> {
 }
 
 export async function getLedger(
-  limit = 15,
+  limit = 50,
   offset = 0,
-  filter: 'all' | 'income' | 'expense' = 'all'
+  filter: 'all' | 'income' | 'expense' = 'all',
+  hours = 24
 ): Promise<LedgerResponse> {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset), filter });
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset), filter, hours: String(hours) });
   const res = await fetch(`${getApiBaseUrl()}/api/game/bank/ledger?${params}`, {
     headers: getAuthHeaders(),
   });

@@ -73,6 +73,8 @@ export default async function RootLayout({ children }: {children: React.ReactNod
   <html className={`dark ${playfair.variable} ${volter.variable}`} lang={await getLocale()}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: `document.addEventListener('contextmenu', function(e){ e.preventDefault(); }, true);` }} />
+        {/* Filter GT translation warnings (Turbopack + gt-next compiler-transform incompatibility) */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){var ow=console.warn,oe=console.error;function isGT(a){if(!a||!a.length)return false;var s=a[0];return typeof s==='string'&&s.indexOf('@generaltranslation')>=0&&s.indexOf('could not locate translation')>=0;}console.warn=function(){if(isGT(arguments))return;return ow.apply(console,arguments);};console.error=function(){if(isGT(arguments))return;return oe.apply(console,arguments);};})();` }} />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/apple-icon.png" />
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />

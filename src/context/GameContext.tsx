@@ -30,6 +30,7 @@ import {
   createBridgesOnPath,
   upgradeServiceBuilding,
   repairBuilding,
+  getBuildingSize,
 } from '@/lib/simulation';
 import { playPlacementSound } from '@/lib/placementSounds';
 import { applyItemsToGrid, type GameItemFromApi } from '@/lib/buildStateFromItems';
@@ -72,6 +73,7 @@ type RemoteBuildingStateUpdate = {
   buildingType?: string;
   constructionProgress?: number;
   constructed?: boolean;
+  zoneCleared?: boolean;
 };
 
 type RemoteCriminalNpc = {
@@ -112,6 +114,7 @@ type GameContextValue = {
   // Canvas should use this instead of state.grid for smooth updates
   latestStateRef: React.RefObject<GameState>;
   setTool: (tool: Tool) => void;
+  moveBuilding: (fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean) => Promise<{ success: boolean; error?: string }>;
   setSpeed: (speed: 0 | 1 | 2 | 3) => void;
   setTaxRate: (rate: number) => void;
   setActivePanel: (panel: GameState['activePanel']) => void;
@@ -360,6 +363,7 @@ function mergeBudgetFromServer(base: Budget, incoming: unknown): Budget {
 
 const toolBuildingMap: Partial<Record<Tool, BuildingType>> = {
   road: 'road',
+  autobahn: 'autobahn',
   rail: 'rail',
   rail_station: 'rail_station',
   tree: 'tree',
@@ -419,8 +423,6 @@ const toolBuildingMap: Partial<Record<Tool, BuildingType>> = {
   primetower: 'primetower',
   // Parking
   parking_spot: 'parking_spot',
-  parking_lot: 'parking_lot',
-  parking_lot_large: 'parking_lot_large',
   // Trees & vegetation from trees.webp
   tree_oak: 'tree_oak',
   tree_maple: 'tree_maple',
@@ -1082,6 +1084,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     administration_base_expenses?: number;
     civic_overhead_expenses?: number;
     utility_overhead_expenses?: number;
+    winterHeatingSurcharge?: number;
     jobs?: number;
     happiness?: number;
     employed?: number;
@@ -1381,7 +1384,12 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           ...newState,
           stats: {
             ...newState.stats,
-            ...(remoteStats.money !== undefined ? { money: remoteStats.money } : {}),
+            // Guard: Simulationstick darf den optimistischen Geld-Abzug nicht rückgängig machen.
+            // Nur aktiv wenn lokal bereits Geld > 0 vorhanden (verhindert False-Positive beim Gemeindebesuch,
+            // wo state.stats.money=0 und der Server einen echten positiven Wert sendet).
+            ...(remoteStats.money !== undefined
+              ? { money: (deltaQueue.hasPendingWork && newState.stats.money > 0 && remoteStats.money > newState.stats.money) ? newState.stats.money : remoteStats.money }
+              : {}),
             ...(remoteStats.population !== undefined ? { population: remoteStats.population } : {}),
             ...(remoteStats.income !== undefined ? { income: remoteStats.income } : {}),
             ...(remoteStats.expenses !== undefined ? { expenses: remoteStats.expenses } : {}),
@@ -1404,6 +1412,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
             ...((remoteStats as any).administration_base_expenses !== undefined ? { administration_base_expenses: (remoteStats as any).administration_base_expenses } : {}),
             ...((remoteStats as any).civic_overhead_expenses !== undefined ? { civic_overhead_expenses: (remoteStats as any).civic_overhead_expenses } : {}),
             ...((remoteStats as any).utility_overhead_expenses !== undefined ? { utility_overhead_expenses: (remoteStats as any).utility_overhead_expenses } : {}),
+            ...((remoteStats as any).winterHeatingSurcharge !== undefined ? { winterHeatingSurcharge: (remoteStats as any).winterHeatingSurcharge } : {}),
             ...(remoteStats.jobs !== undefined ? { jobs: remoteStats.jobs } : {}),
             ...(remoteStats.happiness !== undefined ? { happiness: remoteStats.happiness } : {}),
             // Power-Felder vom Server beibehalten (werden von simulateTick auf 0 gesetzt)
@@ -1499,6 +1508,48 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
 
   const setTool = useCallback((tool: Tool) => {
     setState((prev) => ({ ...prev, selectedTool: tool, activePanel: 'none' }));
+  }, []);
+
+  const moveBuilding = useCallback(async (fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean): Promise<{ success: boolean; error?: string }> => {
+    const result = await deltaQueue.sendMoveBuilding(fromX, fromY, toX, toY, flipped);
+    if (result.success) {
+      setState((prev) => {
+        const fromTile = prev.grid[fromY]?.[fromX];
+        if (!fromTile || fromTile.building.type === 'grass' || fromTile.building.type === 'empty') return prev;
+
+        const size = getBuildingSize(fromTile.building.type as import('@/types/game').BuildingType);
+        const newGrid = prev.grid.map((row) => row.map((t) => ({ ...t, building: { ...t.building } })));
+
+        // Clear old footprint
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            const tx = fromX + dx, ty = fromY + dy;
+            if (newGrid[ty]?.[tx]) {
+              newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'grass', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false } };
+            }
+          }
+        }
+
+        // Place at new position
+        const movedBuilding = { ...fromTile.building, flipped: flipped ?? fromTile.building.flipped };
+        if (newGrid[toY]?.[toX]) {
+          newGrid[toY][toX] = { ...newGrid[toY][toX], building: movedBuilding };
+        }
+        // Mark remaining footprint tiles as empty placeholders
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const tx = toX + dx, ty = toY + dy;
+            if (newGrid[ty]?.[tx]) {
+              newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'empty', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false, metadata: { originX: toX, originY: toY } } };
+            }
+          }
+        }
+
+        return { ...prev, grid: newGrid, gameVersion: (prev.gameVersion || 0) + 1 };
+      });
+    }
+    return result;
   }, []);
 
   const setSpeed = useCallback((speed: 0 | 1 | 2 | 3) => {
@@ -1988,7 +2039,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       const serverData = response.data;
       if (!serverData) return;
 
-      // Server hat OK gegeben → lokalen State updaten
+      // Server hat OK gegeben → lokalen State updaten (inkl. sofortigem Geld-Abzug)
       setState((prev) => {
         const tile = prev.grid[y]?.[x];
         if (!tile) return prev;
@@ -2004,7 +2055,10 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           // Sofort-Upgrade (z.B. woodcutter_house)
           b.level = serverData.newLevel;
         }
-        return { ...prev, grid: newGrid };
+        const newStats = serverData.newTreasury != null
+          ? { ...prev.stats, money: serverData.newTreasury }
+          : prev.stats;
+        return { ...prev, grid: newGrid, stats: newStats };
       });
     });
     return true;
@@ -2020,11 +2074,14 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       const serverData = response.data;
       if (!serverData) return;
 
-      // Server hat OK gegeben → lokalen State updaten
+      // Server hat OK gegeben → lokalen State updaten (inkl. sofortigem Geld-Abzug)
       setState((prev) => {
         const tile = prev.grid[y]?.[x];
         if (!tile) return prev;
         const next = repairBuilding(prev, x, y);
+        if (serverData.newTreasury != null) {
+          return { ...next, stats: { ...next.stats, money: serverData.newTreasury } };
+        }
         return next;
       });
     });
@@ -2644,7 +2701,8 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
         return;
       }
 
-      // Server hat OK gegeben → lokalen State updaten
+      // Server hat OK gegeben → lokalen State updaten (inkl. sofortigem Geld-Abzug)
+      const expandNewTreasury = response.data?.newTreasury ?? null;
       setState((prev) => {
         const { grid: newGrid, newSize } = expandGrid(prev.grid, prev.gridSize, 15);
 
@@ -2695,6 +2753,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
             maxX: newSize - 1,
             maxY: newSize - 1,
           },
+          stats: expandNewTreasury != null ? { ...prev.stats, money: expandNewTreasury } : prev.stats,
           gameVersion: (prev.gameVersion ?? 0) + 1,
         };
       });
@@ -3096,6 +3155,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     state,
     latestStateRef,
     setTool,
+    moveBuilding,
     setSpeed,
     setTaxRate,
     setActivePanel,
@@ -3370,6 +3430,14 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
             nextBuilding.jobs = pj.jobs;
           }
 
+          // Zone-Rahmen entfernen wenn Server zone row gelöscht hat
+          const zoneCleared = change.zoneCleared === true;
+          if (zoneCleared && currentTile.zone !== 'none') {
+            const row = ensureMutableRow(y);
+            row[x] = { ...currentTile, building: nextBuilding, zone: 'none' as const };
+            continue;
+          }
+
           if (!changed) continue;
           const row = ensureMutableRow(y);
           row[x] = { ...currentTile, building: nextBuilding };
@@ -3515,6 +3583,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       administration_base_expenses?: number;
       civic_overhead_expenses?: number;
       utility_overhead_expenses?: number;
+      winterHeatingSurcharge?: number;
       jobs?: number;
       happiness?: number;
       employed?: number;
@@ -3588,95 +3657,113 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       
       // WICHTIG: Speichere die Stats in der Override-Ref
       // Damit werden sie nach jedem Simulationstick erneut angewendet
+      // Nur Felder die tatsächlich im eingehenden Payload vorhanden sind überschreiben —
+      // undefined-Felder behalten den bisherigen Override-Wert (verhindert Jobs/Pop-Flackern
+      // wenn z.B. nur { money } vom Flush-Response kommt).
       // Population + Jobs: kleiner Zufallsoffset damit die Zahl nach jedem Tick lebt
       // Skaliert mit Stadtgrösse: kleine Stadt ±1%, grosse Stadt ±3%
-      const _popBase = stats.population ?? 0;
-      const _jobsBase = stats.jobs ?? 0;
+      const _prev = remoteStatsOverrideRef.current;
+      const _popBase = stats.population !== undefined ? stats.population : (_prev?.population ?? 0);
+      const _jobsBase = stats.jobs !== undefined ? stats.jobs : (_prev?.jobs ?? 0);
       const _popRange = _popBase < 200 ? 0.01 : _popBase < 2000 ? 0.02 : 0.03;
       const _jobsRange = _jobsBase < 200 ? 0.01 : _jobsBase < 2000 ? 0.02 : 0.03;
-      const _popFluctuation = Math.round(_popBase * (Math.random() - 0.5) * _popRange * 2);
-      const _jobsFluctuation = Math.round(_jobsBase * (Math.random() - 0.5) * _jobsRange * 2);
+      const _popFluctuation = stats.population !== undefined ? Math.round(_popBase * (Math.random() - 0.5) * _popRange * 2) : 0;
+      const _jobsFluctuation = stats.jobs !== undefined ? Math.round(_jobsBase * (Math.random() - 0.5) * _jobsRange * 2) : 0;
       remoteStatsOverrideRef.current = {
-        money: stats.money,
-        population: _popBase > 0 ? Math.max(0, _popBase + _popFluctuation) : 0,
-        income: stats.income,
-        expenses: stats.expenses,
-        tax_income: stats.tax_income,
-        tax_income_population: stats.tax_income_population,
-        tax_income_business: stats.tax_income_business,
-        tax_income_property: stats.tax_income_property,
-        building_income: stats.building_income,
-        company_tax_income: stats.company_tax_income,
-        budget_expenses: stats.budget_expenses,
-        budget_cost_police: stats.budget_cost_police,
-        budget_cost_fire: stats.budget_cost_fire,
-        budget_cost_health: stats.budget_cost_health,
-        budget_cost_education: stats.budget_cost_education,
-        budget_cost_transportation: stats.budget_cost_transportation,
-        budget_cost_parks: stats.budget_cost_parks,
-        budget_cost_power: stats.budget_cost_power,
-        budget_cost_water: stats.budget_cost_water,
-        maintenance_expenses: stats.maintenance_expenses,
-        administration_base_expenses: stats.administration_base_expenses,
-        civic_overhead_expenses: stats.civic_overhead_expenses,
-        utility_overhead_expenses: stats.utility_overhead_expenses,
-        jobs: _jobsBase > 0 ? Math.max(0, _jobsBase + _jobsFluctuation) : 0,
-        happiness: stats.happiness,
-        employed: stats.employed,
-        unemployed: stats.unemployed,
-        unemploymentRate: stats.unemploymentRate,
-        workforce: stats.workforce,
-        workforceRate: stats.workforceRate,
-        children: stats.children,
-        seniors: stats.seniors,
-        students: stats.students,
-        socialFund: stats.socialFund,
-        socialContributionRate: stats.socialContributionRate,
-        welfarePerUnemployed: stats.welfarePerUnemployed,
-        socialFundIncome: stats.socialFundIncome,
-        socialFundExpenses: stats.socialFundExpenses,
-        socialExpenses: stats.socialExpenses,
-        welfareCoverage: stats.welfareCoverage,
-        schoolCapacity: stats.schoolCapacity,
-        uniCapacity: stats.uniCapacity,
-        educationOvercrowding: stats.educationOvercrowding,
-        healthCapacity: stats.healthCapacity,
-        healthDemand: stats.healthDemand,
-        healthAdequacy: stats.healthAdequacy,
-        year: stats.year,
-        month: stats.month,
-        taxRate: stats.taxRate,
-        tick: stats.tick,
-        gameSpeed: stats.gameSpeed,
-        effectiveTaxRate,
-        disastersEnabled,
-        budget: hasBudgetUpdate ? budgetFromServer : undefined,
-        power_production: stats.power_production,
-        power_consumption: stats.power_consumption,
-        power_season_multiplier: stats.power_season_multiplier,
-        power_import_units: stats.power_import_units,
-        power_import_cost: stats.power_import_cost,
-        power_import_price_per_unit: stats.power_import_price_per_unit,
-        power_sold_mw: stats.power_sold_mw,
-        power_bought_mw: stats.power_bought_mw,
-        power_production_effective: stats.power_production_effective,
-        power_balance_effective: stats.power_balance_effective,
-        power_surplus_pct: stats.power_surplus_pct,
-        power_available_to_sell: stats.power_available_to_sell,
-        power_buffer_mw: stats.power_buffer_mw,
-        power_buffer_pct: stats.power_buffer_pct,
-        water_production: stats.water_production,
-        water_consumption: stats.water_consumption,
-        water_net_deficit: stats.water_net_deficit,
-        water_storage_level: stats.water_storage_level,
-        water_storage_capacity: stats.water_storage_capacity,
+        // Bestehende Werte als Basis — nur explizit gelieferte Felder überschreiben
+        ...(_prev || {}),
+        // Geld: Guard verhindert dass altes (höheres) Geld vom 3s-Tick den optimistischen
+        // Abzug in die Ref überschreibt — sonst würde der Simulationstick nach hasPendingWork=false
+        // den alten Wert anwenden. (_prev?.money ?? 0) > 0: kein Guard beim Gemeindebesuch (Initialwert=0).
+        ...(stats.money !== undefined
+          ? { money: (deltaQueue.hasPendingWork && (_prev?.money ?? 0) > 0 && stats.money > (_prev?.money ?? stats.money))
+                ? (_prev?.money ?? stats.money)
+                : stats.money }
+          : {}),
+        ...(stats.population !== undefined ? { population: _popBase > 0 ? Math.max(0, _popBase + _popFluctuation) : 0 } : {}),
+        ...(stats.income !== undefined ? { income: stats.income } : {}),
+        ...(stats.expenses !== undefined ? { expenses: stats.expenses } : {}),
+        ...(stats.tax_income !== undefined ? { tax_income: stats.tax_income } : {}),
+        ...(stats.tax_income_population !== undefined ? { tax_income_population: stats.tax_income_population } : {}),
+        ...(stats.tax_income_business !== undefined ? { tax_income_business: stats.tax_income_business } : {}),
+        ...(stats.tax_income_property !== undefined ? { tax_income_property: stats.tax_income_property } : {}),
+        ...(stats.building_income !== undefined ? { building_income: stats.building_income } : {}),
+        ...(stats.company_tax_income !== undefined ? { company_tax_income: stats.company_tax_income } : {}),
+        ...(stats.budget_expenses !== undefined ? { budget_expenses: stats.budget_expenses } : {}),
+        ...(stats.budget_cost_police !== undefined ? { budget_cost_police: stats.budget_cost_police } : {}),
+        ...(stats.budget_cost_fire !== undefined ? { budget_cost_fire: stats.budget_cost_fire } : {}),
+        ...(stats.budget_cost_health !== undefined ? { budget_cost_health: stats.budget_cost_health } : {}),
+        ...(stats.budget_cost_education !== undefined ? { budget_cost_education: stats.budget_cost_education } : {}),
+        ...(stats.budget_cost_transportation !== undefined ? { budget_cost_transportation: stats.budget_cost_transportation } : {}),
+        ...(stats.budget_cost_parks !== undefined ? { budget_cost_parks: stats.budget_cost_parks } : {}),
+        ...(stats.budget_cost_power !== undefined ? { budget_cost_power: stats.budget_cost_power } : {}),
+        ...(stats.budget_cost_water !== undefined ? { budget_cost_water: stats.budget_cost_water } : {}),
+        ...(stats.maintenance_expenses !== undefined ? { maintenance_expenses: stats.maintenance_expenses } : {}),
+        ...(stats.administration_base_expenses !== undefined ? { administration_base_expenses: stats.administration_base_expenses } : {}),
+        ...(stats.civic_overhead_expenses !== undefined ? { civic_overhead_expenses: stats.civic_overhead_expenses } : {}),
+        ...(stats.utility_overhead_expenses !== undefined ? { utility_overhead_expenses: stats.utility_overhead_expenses } : {}),
+        ...(stats.winterHeatingSurcharge !== undefined ? { winterHeatingSurcharge: stats.winterHeatingSurcharge } : {}),
+        ...(stats.jobs !== undefined ? { jobs: _jobsBase > 0 ? Math.max(0, _jobsBase + _jobsFluctuation) : 0 } : {}),
+        ...(stats.happiness !== undefined ? { happiness: stats.happiness } : {}),
+        ...(stats.employed !== undefined ? { employed: stats.employed } : {}),
+        ...(stats.unemployed !== undefined ? { unemployed: stats.unemployed } : {}),
+        ...(stats.unemploymentRate !== undefined ? { unemploymentRate: stats.unemploymentRate } : {}),
+        ...(stats.workforce !== undefined ? { workforce: stats.workforce } : {}),
+        ...(stats.workforceRate !== undefined ? { workforceRate: stats.workforceRate } : {}),
+        ...(stats.children !== undefined ? { children: stats.children } : {}),
+        ...(stats.seniors !== undefined ? { seniors: stats.seniors } : {}),
+        ...(stats.students !== undefined ? { students: stats.students } : {}),
+        ...(stats.socialFund !== undefined ? { socialFund: stats.socialFund } : {}),
+        ...(stats.socialContributionRate !== undefined ? { socialContributionRate: stats.socialContributionRate } : {}),
+        ...(stats.welfarePerUnemployed !== undefined ? { welfarePerUnemployed: stats.welfarePerUnemployed } : {}),
+        ...(stats.socialFundIncome !== undefined ? { socialFundIncome: stats.socialFundIncome } : {}),
+        ...(stats.socialFundExpenses !== undefined ? { socialFundExpenses: stats.socialFundExpenses } : {}),
+        ...(stats.socialExpenses !== undefined ? { socialExpenses: stats.socialExpenses } : {}),
+        ...(stats.welfareCoverage !== undefined ? { welfareCoverage: stats.welfareCoverage } : {}),
+        ...(stats.schoolCapacity !== undefined ? { schoolCapacity: stats.schoolCapacity } : {}),
+        ...(stats.uniCapacity !== undefined ? { uniCapacity: stats.uniCapacity } : {}),
+        ...(stats.educationOvercrowding !== undefined ? { educationOvercrowding: stats.educationOvercrowding } : {}),
+        ...(stats.healthCapacity !== undefined ? { healthCapacity: stats.healthCapacity } : {}),
+        ...(stats.healthDemand !== undefined ? { healthDemand: stats.healthDemand } : {}),
+        ...(stats.healthAdequacy !== undefined ? { healthAdequacy: stats.healthAdequacy } : {}),
+        ...(stats.year !== undefined ? { year: stats.year } : {}),
+        ...(stats.month !== undefined ? { month: stats.month } : {}),
+        ...(stats.taxRate !== undefined ? { taxRate: stats.taxRate } : {}),
+        ...(stats.tick !== undefined ? { tick: stats.tick } : {}),
+        ...(stats.gameSpeed !== undefined ? { gameSpeed: stats.gameSpeed } : {}),
+        ...(effectiveTaxRate !== undefined ? { effectiveTaxRate } : {}),
+        ...(disastersEnabled !== undefined ? { disastersEnabled } : {}),
+        ...(hasBudgetUpdate ? { budget: budgetFromServer } : {}),
+        ...(stats.power_production !== undefined ? { power_production: stats.power_production } : {}),
+        ...(stats.power_consumption !== undefined ? { power_consumption: stats.power_consumption } : {}),
+        ...(stats.power_season_multiplier !== undefined ? { power_season_multiplier: stats.power_season_multiplier } : {}),
+        ...(stats.power_import_units !== undefined ? { power_import_units: stats.power_import_units } : {}),
+        ...(stats.power_import_cost !== undefined ? { power_import_cost: stats.power_import_cost } : {}),
+        ...(stats.power_import_price_per_unit !== undefined ? { power_import_price_per_unit: stats.power_import_price_per_unit } : {}),
+        ...(stats.power_sold_mw !== undefined ? { power_sold_mw: stats.power_sold_mw } : {}),
+        ...(stats.power_bought_mw !== undefined ? { power_bought_mw: stats.power_bought_mw } : {}),
+        ...(stats.power_production_effective !== undefined ? { power_production_effective: stats.power_production_effective } : {}),
+        ...(stats.power_balance_effective !== undefined ? { power_balance_effective: stats.power_balance_effective } : {}),
+        ...(stats.power_surplus_pct !== undefined ? { power_surplus_pct: stats.power_surplus_pct } : {}),
+        ...(stats.power_available_to_sell !== undefined ? { power_available_to_sell: stats.power_available_to_sell } : {}),
+        ...(stats.power_buffer_mw !== undefined ? { power_buffer_mw: stats.power_buffer_mw } : {}),
+        ...(stats.power_buffer_pct !== undefined ? { power_buffer_pct: stats.power_buffer_pct } : {}),
+        ...(stats.water_production !== undefined ? { water_production: stats.water_production } : {}),
+        ...(stats.water_consumption !== undefined ? { water_consumption: stats.water_consumption } : {}),
+        ...(stats.water_net_deficit !== undefined ? { water_net_deficit: stats.water_net_deficit } : {}),
+        ...(stats.water_storage_level !== undefined ? { water_storage_level: stats.water_storage_level } : {}),
+        ...(stats.water_storage_capacity !== undefined ? { water_storage_capacity: stats.water_storage_capacity } : {}),
       };
 
       setState((prev) => ({
         ...prev,
         stats: {
           ...prev.stats,
-          ...(stats.money !== undefined ? { money: stats.money } : {}),
+          // Tick darf Money nicht hochsetzen wenn Client noch Deltas pending hat (würde optimistischen Abzug rückgängig machen).
+          // prev.stats.money > 0: verhindert False-Positive beim Gemeindebesuch (Initialwert=0, Server sendet echten Wert).
+          ...(stats.money !== undefined
+            ? { money: (deltaQueue.hasPendingWork && prev.stats.money > 0 && stats.money > prev.stats.money) ? prev.stats.money : stats.money }
+            : {}),
           ...(stats.population !== undefined ? { population: stats.population } : {}),
           ...(stats.income !== undefined ? { income: stats.income } : {}),
           ...(stats.expenses !== undefined ? { expenses: stats.expenses } : {}),
@@ -3699,6 +3786,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           ...(stats.administration_base_expenses !== undefined ? { administration_base_expenses: stats.administration_base_expenses } : {}),
           ...(stats.civic_overhead_expenses !== undefined ? { civic_overhead_expenses: stats.civic_overhead_expenses } : {}),
           ...(stats.utility_overhead_expenses !== undefined ? { utility_overhead_expenses: stats.utility_overhead_expenses } : {}),
+          ...(stats.winterHeatingSurcharge !== undefined ? { winterHeatingSurcharge: stats.winterHeatingSurcharge } : {}),
           ...(stats.jobs !== undefined ? { jobs: stats.jobs } : {}),
           ...(stats.happiness !== undefined ? { happiness: stats.happiness } : {}),
           ...(stats.power_production !== undefined ? { power_production: stats.power_production } : {}),
@@ -3767,6 +3855,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
           ...(stats.administration_base_expenses !== undefined ? { administration_base_expenses: stats.administration_base_expenses } : {}),
           ...(stats.civic_overhead_expenses !== undefined ? { civic_overhead_expenses: stats.civic_overhead_expenses } : {}),
           ...(stats.utility_overhead_expenses !== undefined ? { utility_overhead_expenses: stats.utility_overhead_expenses } : {}),
+          ...(stats.winterHeatingSurcharge !== undefined ? { winterHeatingSurcharge: stats.winterHeatingSurcharge } : {}),
           ...(stats.jobs !== undefined ? { jobs: stats.jobs } : {}),
           ...(stats.happiness !== undefined ? { happiness: stats.happiness } : {}),
           ...(stats.power_production !== undefined ? { power_production: stats.power_production } : {}),

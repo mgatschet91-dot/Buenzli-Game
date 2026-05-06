@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Tool, TOOL_INFO } from '@/types/game';
+import { getBuildCost } from '@/lib/itemPrices';
 import { BuildingPreview } from '@/components/game/BuildingPreview';
 
 // Translatable category labels
@@ -308,19 +309,20 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
               const info = TOOL_INFO[tool];
               if (!info) return null;
               const isSelected = selectedTool === tool;
-              const canAfford = money >= info.cost;
+              const effectiveCost = getBuildCost(tool) > 0 ? getBuildCost(tool) : info.cost;
+              const canAfford = money >= effectiveCost;
 
               return (
                 <Button
                   key={tool}
                   onClick={() => onSelectTool(tool)}
-                  disabled={!canAfford && info.cost > 0}
+                  disabled={!canAfford && effectiveCost > 0}
                   variant={isSelected ? 'default' : 'ghost'}
                   className={`w-full justify-start gap-2 px-3 ${showPreviews ? 'py-1.5' : 'py-2.5'} h-auto text-sm transition-all duration-150 rounded-lg ${isSelected
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-700/30'
                       : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
                     }`}
-                  title={`${safeTranslate(m, info.description)} - Kosten: Fr. ${info.cost.toLocaleString('de-CH')}`}
+                  title={`${safeTranslate(m, info.description)} - Kosten: Fr. ${effectiveCost.toLocaleString('de-CH')}`}
                 >
                   {showPreviews && (
                     <BuildingPreview
@@ -330,7 +332,7 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
                     />
                   )}
                   <span className="flex-1 text-left truncate">{safeTranslate(m, info.name)}</span>
-                  <span className={`text-xs tabular-nums ${isSelected ? 'text-emerald-100' : 'text-slate-400 dark:text-slate-500'}`}>${info.cost.toLocaleString()}</span>
+                  <span className={`text-xs tabular-nums ${isSelected ? 'text-emerald-100' : 'text-slate-400 dark:text-slate-500'}`}>${effectiveCost.toLocaleString()}</span>
                 </Button>
               );
             })}
@@ -638,8 +640,6 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
     'road': <Route className="w-4 h-4" />,
     'autobahn': <Route className="w-4 h-4 text-slate-600 dark:text-slate-300" />,
     'parking_spot': <span className="text-[10px] font-bold leading-none">P</span>,
-    'parking_lot': <span className="text-[10px] font-bold leading-none">PP</span>,
-    'parking_lot_large': <span className="text-[10px] font-bold leading-none">PPP</span>,
     'rail': <Train className="w-4 h-4" />,
     'subway': <CircleDot className="w-4 h-4" />,
     'bus_stop': <Bus className="w-4 h-4" />,
@@ -693,7 +693,7 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
   const roadsSubmenu = useMemo(() => ({
     key: 'roads',
     label: CATEGORY_LABELS.roads,
-    tools: ['road', 'autobahn', 'parking_spot', 'parking_lot', 'parking_lot_large'] as Tool[]
+    tools: ['road', 'autobahn', 'parking_spot'] as Tool[]
   }), []);
 
   // Zoning submenu (shown under ZONES section, before BUILDINGS)
@@ -780,7 +780,6 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
 
   const bottomPanelActions = useMemo(() => [
     { panel: 'statistics' as const, icon: <ChartIcon size={18} />, labelKey: 'statistics' as const },
-    ...(isDev ? [{ panel: 'growth_debug' as const, icon: <TrendingUp size={18} />, labelKey: 'growth_debug' as const }] : []),
     { panel: 'trade' as const, icon: <Handshake size={18} />, labelKey: 'trade' as const },
     { panel: 'firma' as const, icon: <Building2 size={18} />, labelKey: 'firma' as const },
     { panel: 'gemeinde' as const, icon: <Users size={18} />, labelKey: 'gemeinde' as const },
@@ -998,28 +997,29 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
                   const info = TOOL_INFO[tool];
                   if (!info) return null;
                   const isSelected = selectedTool === tool;
-                  const canAfford = stats.money >= info.cost;
+                  const effectiveCost = getBuildCost(tool) > 0 ? getBuildCost(tool) : info.cost;
+                  const canAfford = stats.money >= effectiveCost;
 
                   return (
                     <Button
                       key={tool}
                       data-tool={tool}
                       onClick={() => handleSetTool(tool)}
-                      disabled={!canAfford && info.cost > 0}
+                      disabled={!canAfford && effectiveCost > 0}
                       variant={isSelected ? 'default' : 'ghost'}
                       className={`w-full justify-start gap-3 px-3 py-2.5 h-auto text-sm font-medium transition-all duration-150 rounded-lg ${isSelected
                           ? 'bg-emerald-600 text-white shadow-md shadow-emerald-700/30'
                           : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 hover:translate-x-0.5'
                         }`}
-                      title={`${safeTranslate(m, info.description)}${info.cost > 0 ? ` - Kosten: Fr. ${info.cost.toLocaleString('de-CH')}` : ''}`}
+                      title={`${safeTranslate(m, info.description)}${effectiveCost > 0 ? ` - Kosten: Fr. ${effectiveCost.toLocaleString('de-CH')}` : ''}`}
                     >
                       <span className={`flex-shrink-0 ${isSelected ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                         {toolIcons[tool] || <MapPin className="w-4 h-4" />}
                       </span>
                       <span className="flex-1 text-left truncate">{safeTranslate(m, info.name)}</span>
-                      {info.cost > 0 && (
+                      {effectiveCost > 0 && (
                         <span className={`text-xs tabular-nums ${isSelected ? 'text-emerald-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                          ${info.cost.toLocaleString()}
+                          ${effectiveCost.toLocaleString()}
                         </span>
                       )}
                     </Button>

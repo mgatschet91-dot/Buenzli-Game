@@ -259,6 +259,14 @@ export class CoreDeltaProvider implements IMultiplayerProvider {
         (stats) => this.handleStatsUpdate(stats),
         this.isViewOnly
       );
+      deltaQueue.setOnRejectedDeltas((rejected) => {
+        if (this.destroyed) return;
+        const hasTileOccupied = rejected.some(r => r.reason === 'tile_occupied');
+        if (hasTileOccupied) {
+          // Sofortigen Server-Sync auslösen damit der korrekte Tile-Zustand wiederhergestellt wird
+          deltaQueue.triggerStateSync();
+        }
+      });
       deltaQueue.setOnConnectionStatusChange((connected, reason) => {
         if (this.destroyed) return;
         if (this.connected !== connected) {

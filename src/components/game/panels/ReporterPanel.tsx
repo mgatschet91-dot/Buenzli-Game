@@ -10,9 +10,38 @@ import {
   TrendingUp, XCircle,
 } from 'lucide-react';
 import { fetchMyReports, type MyReport, type ReportSummary, type EventStatus } from '@/lib/api/verwaltungsApi';
+import { msg, useMessages } from 'gt-next';
+
+const UI_LABELS = {
+  title:         msg('Meine Reports'),
+  statsTotal:    msg('Gesamt'),
+  statsCorrect:  msg('Korrekt'),
+  statsPending:  msg('Ausstehend'),
+  statsXp:       msg('XP'),
+  empty:         msg('Du hast noch keine Events gemeldet.'),
+  emptyHint:     msg('Starte eine Inspektion, um Vergehen zu finden!'),
+  statusDetected:     msg('Entdeckt'),
+  statusReported:     msg('Gemeldet'),
+  statusInvestigating: msg('Untersuchung'),
+  statusAssigned:     msg('In Arbeit'),
+  statusResolved:     msg('Behoben'),
+  statusExpired:      msg('Abgelaufen'),
+  statusFailed:       msg('Fehlgeschlagen'),
+  statusFalseAlarm:   msg('Fehlalarm'),
+  severityLabel:  msg('Schwere'),
+  typeLabel:      msg('Typ:'),
+  typeConfirm:    msg('Meldung'),
+  typeInvestigate: msg('Investigation'),
+  correctReport:  msg('Korrekt'),
+  falseAlarmReport: msg('Fehlalarm'),
+  pendingReport:  msg('Ausstehend'),
+  resolvedAt:     msg('Behoben:'),
+};
 
 export function ReporterPanel() {
   const { setActivePanel } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [reports, setReports] = useState<MyReport[]>([]);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,14 +65,14 @@ export function ReporterPanel() {
 
   const statusLabel = (s: EventStatus): string => {
     switch (s) {
-      case 'detected': return 'Entdeckt';
-      case 'reported': return 'Gemeldet';
-      case 'investigating': return 'Untersuchung';
-      case 'assigned': return 'In Arbeit';
-      case 'resolved': return 'Behoben';
-      case 'expired': return 'Abgelaufen';
-      case 'failed': return 'Fehlgeschlagen';
-      case 'false_alarm': return 'Fehlalarm';
+      case 'detected': return mm(UI_LABELS.statusDetected);
+      case 'reported': return mm(UI_LABELS.statusReported);
+      case 'investigating': return mm(UI_LABELS.statusInvestigating);
+      case 'assigned': return mm(UI_LABELS.statusAssigned);
+      case 'resolved': return mm(UI_LABELS.statusResolved);
+      case 'expired': return mm(UI_LABELS.statusExpired);
+      case 'failed': return mm(UI_LABELS.statusFailed);
+      case 'false_alarm': return mm(UI_LABELS.statusFalseAlarm);
       default: return s;
     }
   };
@@ -80,7 +109,7 @@ export function ReporterPanel() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <span className="text-2xl">📋</span>
-            <span>Meine Reports</span>
+            <span>{mm(UI_LABELS.title)}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -94,20 +123,20 @@ export function ReporterPanel() {
         {summary && (
           <div className="grid grid-cols-4 gap-2">
             <div className="text-center px-2 py-2.5 rounded-lg bg-slate-800/50 border border-slate-700">
-              <div className="text-[10px] text-slate-400">Gesamt</div>
+              <div className="text-[10px] text-slate-400">{mm(UI_LABELS.statsTotal)}</div>
               <div className="font-mono font-bold text-lg text-white">{summary.total_reports}</div>
             </div>
             <div className="text-center px-2 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-              <div className="text-[10px] text-emerald-400">Korrekt</div>
+              <div className="text-[10px] text-emerald-400">{mm(UI_LABELS.statsCorrect)}</div>
               <div className="font-mono font-bold text-lg text-emerald-400">{summary.correct_reports}</div>
             </div>
             <div className="text-center px-2 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
-              <div className="text-[10px] text-amber-400">Ausstehend</div>
+              <div className="text-[10px] text-amber-400">{mm(UI_LABELS.statsPending)}</div>
               <div className="font-mono font-bold text-lg text-amber-400">{summary.pending_reports}</div>
             </div>
             <div className="text-center px-2 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30">
               <div className="text-[10px] text-blue-400 flex items-center justify-center gap-0.5">
-                <Star className="w-2.5 h-2.5" /> XP
+                <Star className="w-2.5 h-2.5" /> {mm(UI_LABELS.statsXp)}
               </div>
               <div className="font-mono font-bold text-lg text-blue-400">{summary.total_xp_earned}</div>
             </div>
@@ -123,9 +152,9 @@ export function ReporterPanel() {
           ) : reports.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <FileCheck className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-sm">Du hast noch keine Events gemeldet.</p>
+              <p className="text-sm">{mm(UI_LABELS.empty)}</p>
               <p className="text-xs text-slate-500 mt-1">
-                Starte eine Inspektion, um Vergehen zu finden!
+                {mm(UI_LABELS.emptyHint)}
               </p>
             </div>
           ) : (
@@ -159,8 +188,8 @@ export function ReporterPanel() {
 
                   <div className="flex items-center gap-3 text-[10px] text-slate-400">
                     <span>{new Date(report.reported_at).toLocaleDateString('de-CH')}</span>
-                    <span>Schwere {report.severity}/5</span>
-                    <span>Typ: {report.report_type === 'confirm' ? 'Meldung' : report.report_type === 'investigate' ? 'Investigation' : report.report_type}</span>
+                    <span>{mm(UI_LABELS.severityLabel)} {report.severity}/5</span>
+                    <span>{mm(UI_LABELS.typeLabel)} {report.report_type === 'confirm' ? mm(UI_LABELS.typeConfirm) : report.report_type === 'investigate' ? mm(UI_LABELS.typeInvestigate) : report.report_type}</span>
                   </div>
 
                   {/* XP/Status info */}
@@ -177,22 +206,22 @@ export function ReporterPanel() {
                     )}
                     {report.is_correct === 1 && (
                       <span className="flex items-center gap-0.5 text-xs text-emerald-400">
-                        <CheckCircle2 className="w-3 h-3" /> Korrekt
+                        <CheckCircle2 className="w-3 h-3" /> {mm(UI_LABELS.correctReport)}
                       </span>
                     )}
                     {report.is_correct === 0 && (
                       <span className="flex items-center gap-0.5 text-xs text-red-400">
-                        <XCircle className="w-3 h-3" /> Fehlalarm
+                        <XCircle className="w-3 h-3" /> {mm(UI_LABELS.falseAlarmReport)}
                       </span>
                     )}
                     {report.is_correct === null && report.event_status !== 'resolved' && (
                       <span className="flex items-center gap-0.5 text-xs text-slate-500">
-                        <Clock className="w-3 h-3" /> Ausstehend
+                        <Clock className="w-3 h-3" /> {mm(UI_LABELS.pendingReport)}
                       </span>
                     )}
                     {report.event_status === 'resolved' && report.resolved_at && (
                       <span className="text-xs text-emerald-400/70">
-                        Behoben: {new Date(report.resolved_at).toLocaleDateString('de-CH')}
+                        {mm(UI_LABELS.resolvedAt)} {new Date(report.resolved_at).toLocaleDateString('de-CH')}
                       </span>
                     )}
                   </div>

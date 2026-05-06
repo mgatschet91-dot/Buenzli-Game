@@ -328,7 +328,12 @@ export function drawGreenBaseTile(
   }
 
   // Draw zone border with dashed line when zoomed in enough
-  if (tile.zone !== 'none' && currentZoom >= 0.95) {
+  // Nicht zeichnen wenn ein Level-5-Gebäude fertig gebaut ist (Zone gilt als entwickelt)
+  const hasMaxLevelBuilding = tile.building
+    && tile.building.type !== 'grass' && tile.building.type !== 'empty'
+    && tile.building.level >= 5
+    && (tile.building.constructionProgress ?? 0) >= 100;
+  if (tile.zone !== 'none' && currentZoom >= 0.95 && !hasMaxLevelBuilding) {
     const borderColor = ZONE_BORDER_COLORS[tile.zone];
     const corners = getDiamondCorners(x, y);
 

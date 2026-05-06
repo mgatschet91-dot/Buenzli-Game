@@ -211,7 +211,7 @@ export type Helicopter = {
 };
 
 // Emergency vehicle types
-export type EmergencyVehicleType = 'fire_truck' | 'police_car' | 'ambulance' | 'werkhof_truck' | 'garbage_truck';
+export type EmergencyVehicleType = 'fire_truck' | 'police_car' | 'ambulance' | 'werkhof_truck' | 'garbage_truck' | 'trade_truck';
 export type EmergencyVehicleState = 'dispatching' | 'responding' | 'returning';
 
 export type EmergencyVehicle = {
@@ -233,6 +233,12 @@ export type EmergencyVehicle = {
   laneOffset: number;
   flashTimer: number; // For emergency light animation
   spawnedPoliceNpcId?: number; // ID des gespawnten Polizei-NPCs (wartet auf Verhaftung)
+  // Trade truck specific
+  tradePartnerSlug?: string;  // Slug der Partnerstadt
+  tradePartnerName?: string;  // Name der Partnerstadt
+  tradeTier?: number;         // Tier der Partnerschaft (1-4)
+  tradeIncome?: number;       // CHF/Tag Einkommen
+  tradeDirection?: 'north' | 'south' | 'east' | 'west'; // Richtung der Partnerstadt
 };
 
 // Pedestrian types, destinations, and behaviors

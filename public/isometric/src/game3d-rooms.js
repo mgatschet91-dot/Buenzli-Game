@@ -60,7 +60,7 @@ function _buildGroundWalls(geo) {
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.18), makeMat(0xd4a020))
     handle.position.set(-DW/2 + 0.28, DH * 0.44, -0.09)
     pivot.add(handle)
-    ROOM_DOORS.push({ pivot, wx: off, wz: halfG, angle: 0, target: 0, openAngle: -Math.PI / 2 })
+    ROOM_DOORS.push({ pivot, wx: off, wz: halfG, angle: 0, target: 0, openAngle: -Math.PI / 2, halfWidth: DW / 2 })
   }
   return objs
 }
@@ -438,7 +438,7 @@ function _edBuildWall(floor, edge, hasDoor, allStairs, floorY) {
     const doorCz = horiz ? fixedC : mid
     // Öffnungswinkel: Tür schwingt nach innen
     const openAngle = (edge === 'S' || edge === 'E') ? Math.PI / 2 : -Math.PI / 2
-    ROOM_DOORS.push({ pivot, wx: doorCx, wz: doorCz, angle: 0, target: 0, openAngle })
+    ROOM_DOORS.push({ pivot, wx: doorCx, wz: doorCz, angle: 0, target: 0, openAngle, halfWidth: DOOR_W / 2 })
   }
   return objs
 }

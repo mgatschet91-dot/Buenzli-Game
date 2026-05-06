@@ -63,6 +63,8 @@ export interface ChatMessagesResponse {
       id: number;
       name: string;
       slug: string;
+      canton_code?: string | null;
+      canton_name?: string | null;
     };
   };
 }

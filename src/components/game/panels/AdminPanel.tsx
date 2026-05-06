@@ -12,7 +12,7 @@ import {
   Ban, CheckCircle, Trash2, ArrowRightLeft, Map, Pencil, X,
   AlertTriangle, Eye, ChevronDown, ExternalLink, Zap, Plus, FileText, Save, Award,
   Wifi, CreditCard, Trophy, Server, RefreshCw, Radio, LogOut, TrendingUp, TrendingDown,
-  Cpu, MemoryStick, Activity, Shield,
+  Cpu, MemoryStick, Activity, Shield, Download, Database,
 } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
 
@@ -707,20 +707,54 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
           <ScrollArea className="max-h-[70vh]">
             {/* ─── STATS TAB ─── */}
             {tab === 'stats' && stats && (
-              <div className="grid grid-cols-3 gap-3 pr-2">
-                {[
-                  ['Spieler', stats.users, 'text-blue-400', 'border-blue-500/20 bg-blue-500/5'],
-                  ['Gemeinden', stats.municipalities, 'text-emerald-400', 'border-emerald-500/20 bg-emerald-500/5'],
-                  ['Aktive Events', stats.active_events, 'text-amber-400', 'border-amber-500/20 bg-amber-500/5'],
-                  ['Firmen', stats.companies, 'text-purple-400', 'border-purple-500/20 bg-purple-500/5'],
-                  ['Online', stats.online_users, 'text-green-400', 'border-green-500/20 bg-green-500/5'],
-                  ['Uptime', formatUptime(stats.uptime), 'text-slate-300', 'border-slate-600/40 bg-slate-800/50'],
-                ].map(([label, value, color, card]) => (
-                  <div key={String(label)} className={`p-3 rounded-lg border ${card}`}>
-                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">{label}</div>
-                    <div className={`text-2xl font-bold font-mono ${color}`}>{value}</div>
+              <div className="space-y-3 pr-2">
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    ['Spieler', stats.users, 'text-blue-400', 'border-blue-500/20 bg-blue-500/5'],
+                    ['Gemeinden', stats.municipalities, 'text-emerald-400', 'border-emerald-500/20 bg-emerald-500/5'],
+                    ['Aktive Events', stats.active_events, 'text-amber-400', 'border-amber-500/20 bg-amber-500/5'],
+                    ['Firmen', stats.companies, 'text-purple-400', 'border-purple-500/20 bg-purple-500/5'],
+                    ['Online', stats.online_users, 'text-green-400', 'border-green-500/20 bg-green-500/5'],
+                    ['Uptime', formatUptime(stats.uptime), 'text-slate-300', 'border-slate-600/40 bg-slate-800/50'],
+                  ].map(([label, value, color, card]) => (
+                    <div key={String(label)} className={`p-3 rounded-lg border ${card}`}>
+                      <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">{label}</div>
+                      <div className={`text-2xl font-bold font-mono ${color}`}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DB Backup */}
+                <div className="flex items-center justify-between rounded-lg border border-slate-700/60 bg-slate-800/30 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-400" />
+                    <span className="text-sm text-slate-300">Datenbank-Backup</span>
+                    <span className="text-xs text-slate-500">SQL · ZIP</span>
                   </div>
-                ))}
+                  <Button size="sm" variant="outline"
+                    onClick={async () => {
+                      try {
+                        setMsg('Backup wird erstellt…');
+                        const token = getAuthToken();
+                        const headers: Record<string, string> = {};
+                        if (token) { headers['Authorization'] = `Bearer ${token}`; headers['X-Game-Token'] = token; }
+                        const res = await fetch(`${AUTH_API_BASE_URL}/api/admin/backup`, { headers });
+                        if (!res.ok) { const j = await res.json(); throw new Error(j.error || 'Fehler'); }
+                        const blob = await res.blob();
+                        const cd = res.headers.get('Content-Disposition') || '';
+                        const match = cd.match(/filename="([^"]+)"/);
+                        const filename = match ? match[1] : 'backup.zip';
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = filename; a.click();
+                        URL.revokeObjectURL(url);
+                        setMsg(`✓ ${filename} heruntergeladen`);
+                      } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Backup fehlgeschlagen'); }
+                    }}
+                    className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 text-xs h-7 px-3">
+                    <Download className="w-3 h-3 mr-1" /> Herunterladen
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -1799,6 +1833,37 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
                       <LogOut className="w-3 h-3 mr-1" /> Alle Spieler kicken
                     </Button>
                   </div>
+                </div>
+
+                {/* DB Backup */}
+                <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-300 uppercase tracking-wide">
+                    <Database className="w-4 h-4" /> Datenbank-Backup
+                  </div>
+                  <p className="text-xs text-slate-500">Exportiert alle Tabellen als SQL-Dump und verpackt sie in eine ZIP-Datei.</p>
+                  <Button size="sm" variant="outline"
+                    onClick={async () => {
+                      try {
+                        setMsg('Backup wird erstellt…');
+                        const token = getAuthToken();
+                        const headers: Record<string, string> = {};
+                        if (token) { headers['Authorization'] = `Bearer ${token}`; headers['X-Game-Token'] = token; }
+                        const res = await fetch(`${AUTH_API_BASE_URL}/api/admin/backup`, { headers });
+                        if (!res.ok) { const j = await res.json(); throw new Error(j.error || 'Fehler'); }
+                        const blob = await res.blob();
+                        const cd = res.headers.get('Content-Disposition') || '';
+                        const match = cd.match(/filename="([^"]+)"/);
+                        const filename = match ? match[1] : 'backup.zip';
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = filename; a.click();
+                        URL.revokeObjectURL(url);
+                        setMsg(`Backup heruntergeladen: ${filename}`);
+                      } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Backup fehlgeschlagen'); }
+                    }}
+                    className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 text-xs h-8">
+                    <Download className="w-3 h-3 mr-1" /> Backup herunterladen
+                  </Button>
                 </div>
               </div>
             )}

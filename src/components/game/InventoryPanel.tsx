@@ -13,11 +13,12 @@ interface InvItem {
   category: string;
   icon: string | null;
   price: number;
+  pair_id?: number;
 }
 
 interface InventoryPanelProps {
   /** Called when user clicks "Platzieren" — sends PLACE_ITEM to the iframe */
-  onPlace?: (itemCode: string, quantity: number) => void;
+  onPlace?: (itemCode: string, quantity: number, pairId?: number) => void;
   /** Force a reload (e.g., after buying) */
   refreshTrigger?: number;
 }
@@ -26,10 +27,16 @@ export function InventoryPanel({ onPlace, refreshTrigger }: InventoryPanelProps)
   const [items, setItems]     = useState<InvItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
-  // Track which item is currently being placed (to show active state)
-  const [placingCode, setPlacingCode] = useState<string | null>(null);
+  const [placingKey, setPlacingKey] = useState<string | null>(null);
   const itemsRef = useRef<InvItem[]>([]);
   itemsRef.current = items;
+  // Stores pair_id of the currently-being-placed teleporter
+  const pendingPairIdRef = useRef<number | null>(null);
+
+  const getItemKey = (item: InvItem) =>
+    item.item_code === 'teleporter' && item.pair_id != null
+      ? `teleporter_${item.pair_id}`
+      : item.item_code;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,29 +63,35 @@ export function InventoryPanel({ onPlace, refreshTrigger }: InventoryPanelProps)
     const handler = async (e: MessageEvent) => {
       if (!e.data || e.data.type !== 'ITEM_PLACED') return;
       const code = e.data.item_code as string;
+      const pairId = code === 'teleporter' ? pendingPairIdRef.current : null;
 
-      // Decrement local quantity immediately
       setItems(prev => {
-        const updated = prev.map(it =>
-          it.item_code === code ? { ...it, quantity: Math.max(0, it.quantity - 1) } : it
-        ).filter(it => it.quantity > 0);
+        const updated = prev.map(it => {
+          if (it.item_code !== code) return it;
+          // For teleporters, only decrement the active pair
+          if (code === 'teleporter' && pairId != null && it.pair_id !== pairId) return it;
+          return { ...it, quantity: Math.max(0, it.quantity - 1) };
+        }).filter(it => it.quantity > 0);
         return updated;
       });
 
-      // If nothing left to place, clear the active placement indicator
-      const remaining = (itemsRef.current.find(it => it.item_code === code)?.quantity ?? 1) - 1;
-      if (remaining <= 0) setPlacingCode(null);
+      const remaining = (itemsRef.current.find(it =>
+        it.item_code === code && (code !== 'teleporter' || it.pair_id === pairId)
+      )?.quantity ?? 1) - 1;
+      if (remaining <= 0) setPlacingKey(null);
 
-      // Persist decrement to backend
       try {
         const token = getAuthToken() || '';
         await fetch(`${API_BASE}/api/game/user/inventory/place`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
-          body: JSON.stringify({ item_code: code }),
+          body: JSON.stringify({
+            item_code: code,
+            ...(pairId != null ? { pair_id: pairId } : {}),
+          }),
         });
       } catch {
-        // ignore — local state is already updated; backend may be slightly out of sync
+        // ignore
       }
     };
     window.addEventListener('message', handler);
@@ -86,8 +99,12 @@ export function InventoryPanel({ onPlace, refreshTrigger }: InventoryPanelProps)
   }, []);
 
   const handlePlace = useCallback((item: InvItem) => {
-    setPlacingCode(prev => (prev === item.item_code ? null : item.item_code));
-    onPlace?.(item.item_code, item.quantity);
+    const key = getItemKey(item);
+    setPlacingKey(prev => (prev === key ? null : key));
+    if (item.item_code === 'teleporter') {
+      pendingPairIdRef.current = item.pair_id ?? null;
+    }
+    onPlace?.(item.item_code, item.quantity, item.pair_id);
   }, [onPlace]);
 
   return (
@@ -127,39 +144,42 @@ export function InventoryPanel({ onPlace, refreshTrigger }: InventoryPanelProps)
         )}
         {!loading && !error && items.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            {items.map(item => (
-              <div
-                key={item.item_code}
-                className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 border border-white/10"
-                style={{ background: placingCode === item.item_code ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.03)' }}
-              >
-                {/* Icon */}
+            {items.map(item => {
+              const key = getItemKey(item);
+              return (
                 <div
-                  className="w-8 h-8 rounded flex items-center justify-center text-lg shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.05)' }}
+                  key={key}
+                  className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 border border-white/10"
+                  style={{ background: placingKey === key ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.03)' }}
                 >
-                  {item.icon || '📦'}
-                </div>
-                {/* Name + qty */}
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-slate-200 truncate" title={item.display_name}>
-                    {item.display_name}
+                  {/* Icon */}
+                  <div
+                    className="w-8 h-8 rounded flex items-center justify-center text-lg shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.05)' }}
+                  >
+                    {item.icon || '📦'}
                   </div>
-                  <div className="text-xs text-slate-500">×{item.quantity}</div>
+                  {/* Name + qty */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-slate-200 truncate" title={item.display_name}>
+                      {item.display_name}
+                    </div>
+                    <div className="text-xs text-slate-500">×{item.quantity}</div>
+                  </div>
+                  {/* Place button */}
+                  <button
+                    onClick={() => handlePlace(item)}
+                    className={`text-xs px-2 py-0.5 rounded transition-colors shrink-0 ${
+                      placingKey === key
+                        ? 'bg-violet-600 text-white ring-1 ring-violet-400'
+                        : 'bg-violet-800 hover:bg-violet-700 text-white'
+                    }`}
+                  >
+                    {placingKey === key ? 'Aktiv' : 'Platzieren'}
+                  </button>
                 </div>
-                {/* Place button */}
-                <button
-                  onClick={() => handlePlace(item)}
-                  className={`text-xs px-2 py-0.5 rounded transition-colors shrink-0 ${
-                    placingCode === item.item_code
-                      ? 'bg-violet-600 text-white ring-1 ring-violet-400'
-                      : 'bg-violet-800 hover:bg-violet-700 text-white'
-                  }`}
-                >
-                  {placingCode === item.item_code ? 'Aktiv' : 'Platzieren'}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

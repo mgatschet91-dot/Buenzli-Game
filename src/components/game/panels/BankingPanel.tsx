@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Landmark, CreditCard, BadgeInfo, ReceiptText, RefreshCw } from 'lucide-react';
+import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,32 @@ import {
   type UserBankingProfile,
   type BankingTransaction,
 } from '@/lib/api/bankingApi';
+
+const UI_LABELS = {
+  title:          msg('Bank & Identität'),
+  refresh:        msg('Aktualisieren'),
+  loading:        msg('Lade Bankdaten...'),
+  account:        msg('Konto'),
+  identity:       msg('Identität'),
+  ahvId:          msg('AHV-ID'),
+  taxNumber:      msg('Steuernummer'),
+  transactions:   msg('Letzte Transaktionen'),
+  noTransactions: msg('Noch keine Transaktionen vorhanden.'),
+  statusLabel:    msg('Status:'),
+  statusActive:   msg('Aktiv'),
+  statusFrozen:   msg('Gesperrt'),
+  statusClosed:   msg('Geschlossen'),
+  txTax:          msg('Steuer'),
+  txIn:           msg('Eingang'),
+  txOut:          msg('Ausgang'),
+  txReward:       msg('Belohnung'),
+  txFee:          msg('Gebühr'),
+  txSalary:       msg('Firmenlohn'),
+  txFounding:     msg('Gründungskosten'),
+  txExpense:      msg('Ausgabe'),
+  txIncome:       msg('Einnahme'),
+  loadError:      msg('Bankdaten konnten nicht geladen werden'),
+};
 
 function formatMoney(amount: number, currency = 'CHF'): string {
   return new Intl.NumberFormat('de-CH', {
@@ -27,23 +54,11 @@ function formatDate(value: string | null): string {
   return parsed.toLocaleString('de-CH');
 }
 
-function txTypeLabel(type: string): string {
-  switch (type) {
-    case 'tax': return 'Steuer';
-    case 'transfer_in': return 'Eingang';
-    case 'transfer_out': return 'Ausgang';
-    case 'reward': return 'Belohnung';
-    case 'fee': return 'Gebühr';
-    case 'salary': return 'Firmenlohn';
-    case 'founding_cost': return 'Gründungskosten';
-    case 'expense': return 'Ausgabe';
-    case 'income': return 'Einnahme';
-    default: return type;
-  }
-}
-
 export function BankingPanel() {
   const { setActivePanel } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserBankingProfile | null>(null);
@@ -60,7 +75,7 @@ export function BankingPanel() {
       setProfile(profileData);
       setTransactions(txData.entries || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bankdaten konnten nicht geladen werden');
+      setError(err instanceof Error ? err.message : mm(UI_LABELS.loadError as Parameters<typeof m>[0]));
     } finally {
       setLoading(false);
     }
@@ -70,18 +85,33 @@ export function BankingPanel() {
     void loadData();
   }, []);
 
+  const txTypeLabel = (type: string): string => {
+    switch (type) {
+      case 'tax': return mm(UI_LABELS.txTax as Parameters<typeof m>[0]);
+      case 'transfer_in': return mm(UI_LABELS.txIn as Parameters<typeof m>[0]);
+      case 'transfer_out': return mm(UI_LABELS.txOut as Parameters<typeof m>[0]);
+      case 'reward': return mm(UI_LABELS.txReward as Parameters<typeof m>[0]);
+      case 'fee': return mm(UI_LABELS.txFee as Parameters<typeof m>[0]);
+      case 'salary': return mm(UI_LABELS.txSalary as Parameters<typeof m>[0]);
+      case 'founding_cost': return mm(UI_LABELS.txFounding as Parameters<typeof m>[0]);
+      case 'expense': return mm(UI_LABELS.txExpense as Parameters<typeof m>[0]);
+      case 'income': return mm(UI_LABELS.txIncome as Parameters<typeof m>[0]);
+      default: return type;
+    }
+  };
+
   const statusLabel = useMemo(() => {
     switch (profile?.status) {
       case 'active':
-        return 'Aktiv';
+        return mm(UI_LABELS.statusActive as Parameters<typeof m>[0]);
       case 'frozen':
-        return 'Gesperrt';
+        return mm(UI_LABELS.statusFrozen as Parameters<typeof m>[0]);
       case 'closed':
-        return 'Geschlossen';
+        return mm(UI_LABELS.statusClosed as Parameters<typeof m>[0]);
       default:
         return '-';
     }
-  }, [profile?.status]);
+  }, [profile?.status, m]);
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
@@ -89,7 +119,7 @@ export function BankingPanel() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Landmark className="w-5 h-5" />
-            Bank & Identität
+            {mm(UI_LABELS.title as Parameters<typeof m>[0])}
           </DialogTitle>
         </DialogHeader>
 
@@ -103,7 +133,7 @@ export function BankingPanel() {
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-              Aktualisieren
+              {mm(UI_LABELS.refresh as Parameters<typeof m>[0])}
             </Button>
           </div>
 
@@ -115,7 +145,7 @@ export function BankingPanel() {
 
           {!error && loading && (
             <div className="rounded-md border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
-              Lade Bankdaten...
+              {mm(UI_LABELS.loading as Parameters<typeof m>[0])}
             </div>
           )}
 
@@ -125,24 +155,26 @@ export function BankingPanel() {
                 <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-slate-300 text-sm">
                     <CreditCard className="w-4 h-4" />
-                    Konto
+                    {mm(UI_LABELS.account as Parameters<typeof m>[0])}
                   </div>
                   <div className="font-mono text-lg text-emerald-300">
                     {formatMoney(profile.balance, profile.currency)}
                   </div>
                   <div className="text-xs text-slate-400 font-mono">{profile.account_number}</div>
                   <div className="text-xs text-slate-400 font-mono">{profile.card_number_masked}</div>
-                  <div className="text-xs text-slate-400">Status: {statusLabel}</div>
+                  <div className="text-xs text-slate-400">
+                    {mm(UI_LABELS.statusLabel as Parameters<typeof m>[0])} {statusLabel}
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-slate-300 text-sm">
                     <BadgeInfo className="w-4 h-4" />
-                    Identität
+                    {mm(UI_LABELS.identity as Parameters<typeof m>[0])}
                   </div>
-                  <div className="text-xs text-slate-400">AHV-ID</div>
+                  <div className="text-xs text-slate-400">{mm(UI_LABELS.ahvId as Parameters<typeof m>[0])}</div>
                   <div className="font-mono text-sm text-slate-100">{profile.ahv_number}</div>
-                  <div className="text-xs text-slate-400">Steuernummer</div>
+                  <div className="text-xs text-slate-400">{mm(UI_LABELS.taxNumber as Parameters<typeof m>[0])}</div>
                   <div className="font-mono text-sm text-slate-100">{profile.tax_number}</div>
                 </div>
               </div>
@@ -150,10 +182,10 @@ export function BankingPanel() {
               <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
                 <div className="flex items-center gap-2 text-slate-300 text-sm mb-2">
                   <ReceiptText className="w-4 h-4" />
-                  Letzte Transaktionen
+                  {mm(UI_LABELS.transactions as Parameters<typeof m>[0])}
                 </div>
                 {transactions.length === 0 ? (
-                  <div className="text-sm text-slate-400">Noch keine Transaktionen vorhanden.</div>
+                  <div className="text-sm text-slate-400">{mm(UI_LABELS.noTransactions as Parameters<typeof m>[0])}</div>
                 ) : (
                   <div className="max-h-72 overflow-y-auto space-y-2">
                     {transactions.map((tx) => (

@@ -239,6 +239,7 @@ export interface BuildingStateUpdate {
   buildingType?: string;
   constructionProgress?: number;
   constructed?: boolean;
+  zoneCleared?: boolean;
 }
 
 export interface CriminalNpcState {
@@ -316,6 +317,8 @@ export interface DeltaResponse {
   }>;
   // Deltas von anderen Spielern die wir noch nicht haben
   newDeltas?: DeltaAction[];
+  // Bestätigtes Treasury nach Verarbeitung — für sofortiges UI-Update
+  newTreasury?: number | null;
 }
 
 export interface StatsUpdateAck {
@@ -388,6 +391,9 @@ class DeltaQueue {
   
   // Callback für neue Deltas von anderen Spielern
   private onRemoteDeltas: ((deltas: DeltaAction[]) => void) | null = null;
+
+  // Callback für vom Server abgelehnte Deltas (z.B. tile_occupied)
+  private onRejectedDeltas: ((rejected: Array<{ type: string; x?: number; y?: number; tool?: string; reason?: string }>) => void) | null = null;
   
   // Callback für Spieler-Updates (Echtzeit)
   private onPlayersUpdate: ((players: DeltaPlayer[]) => void) | null = null;
@@ -911,6 +917,15 @@ class DeltaQueue {
         }
       });
 
+      // ─── Global/Kantonal-Chat: WebSocket-Events ───────────────
+      for (const evt of ['global-chat-message', 'cantonal-chat-message']) {
+        this.wsSocket.on(evt, (data: unknown) => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(evt, { detail: data }));
+          }
+        });
+      }
+
       // ─── Messenger: WebSocket-Events ──────────────────────────
       const messengerEvents = [
         'messenger-message',
@@ -922,6 +937,8 @@ class DeltaQueue {
         'messenger-friend-accepted',
         'messenger-friend-removed',
         'messenger-friend-status',
+        'messenger-blocks-list',
+        'messenger-block-result',
         'messenger-error',
       ];
       for (const evt of messengerEvents) {
@@ -1485,7 +1502,7 @@ class DeltaQueue {
    * Service-Building Upgrade ueber Server starten (server-authoritative).
    * Gibt ein Promise zurueck mit der Server-Antwort.
    */
-  sendUpgradeBuilding(x: number, y: number): Promise<{ success: boolean; data?: { upgradeStartedAt: number | null; upgradeTargetLevel: number; upgradeSeconds: number; newLevel: number }; error?: string }> {
+  sendUpgradeBuilding(x: number, y: number): Promise<{ success: boolean; data?: { upgradeStartedAt: number | null; upgradeTargetLevel: number; upgradeSeconds: number; newLevel: number; newTreasury?: number | null }; error?: string }> {
     return new Promise((resolve) => {
       if (!this.wsSocket?.connected) {
         resolve({ success: false, error: 'not_connected' });
@@ -1496,7 +1513,7 @@ class DeltaQueue {
       }, 5000);
       this.wsSocket.emit('upgrade-building', { x, y }, (response: unknown) => {
         clearTimeout(timeout);
-        resolve(response as { success: boolean; data?: { upgradeStartedAt: number | null; upgradeTargetLevel: number; upgradeSeconds: number; newLevel: number }; error?: string });
+        resolve(response as { success: boolean; data?: { upgradeStartedAt: number | null; upgradeTargetLevel: number; upgradeSeconds: number; newLevel: number; newTreasury?: number | null }; error?: string });
       });
     });
   }
@@ -1504,7 +1521,7 @@ class DeltaQueue {
   /**
    * Gebaeude reparieren ueber Server (server-authoritative).
    */
-  sendRepairBuilding(x: number, y: number): Promise<{ success: boolean; data?: { repairCost: number; constructionProgress: number; constructionStartedAt: number }; error?: string }> {
+  sendRepairBuilding(x: number, y: number): Promise<{ success: boolean; data?: { repairCost: number; constructionProgress: number; constructionStartedAt: number; newTreasury?: number | null }; error?: string }> {
     return new Promise((resolve) => {
       if (!this.wsSocket?.connected) {
         resolve({ success: false, error: 'not_connected' });
@@ -1515,7 +1532,23 @@ class DeltaQueue {
       }, 5000);
       this.wsSocket.emit('repair-building', { x, y }, (response: unknown) => {
         clearTimeout(timeout);
-        resolve(response as { success: boolean; data?: { repairCost: number; constructionProgress: number; constructionStartedAt: number }; error?: string });
+        resolve(response as { success: boolean; data?: { repairCost: number; constructionProgress: number; constructionStartedAt: number; newTreasury?: number | null }; error?: string });
+      });
+    });
+  }
+
+  sendMoveBuilding(fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      if (!this.wsSocket?.connected) {
+        resolve({ success: false, error: 'not_connected' });
+        return;
+      }
+      const timeout = setTimeout(() => {
+        resolve({ success: false, error: 'timeout' });
+      }, 8000);
+      this.wsSocket.emit('move-building', { fromX, fromY, toX, toY, flipped: !!flipped }, (response: unknown) => {
+        clearTimeout(timeout);
+        resolve(response as { success: boolean; error?: string });
       });
     });
   }
@@ -1523,7 +1556,7 @@ class DeltaQueue {
   /**
    * Stadt erweitern ueber Server (server-authoritative).
    */
-  sendExpandCity(): Promise<{ success: boolean; data?: { newGridSize: number; offset: number; cost: number }; error?: string }> {
+  sendExpandCity(): Promise<{ success: boolean; data?: { newGridSize: number; offset: number; cost: number; newTreasury?: number | null }; error?: string }> {
     return new Promise((resolve) => {
       if (!this.wsSocket?.connected) {
         resolve({ success: false, error: 'not_connected' });
@@ -1534,7 +1567,7 @@ class DeltaQueue {
       }, 10000);
       this.wsSocket.emit('expand-city', {}, (response: unknown) => {
         clearTimeout(timeout);
-        resolve(response as { success: boolean; data?: { newGridSize: number; offset: number; cost: number }; error?: string });
+        resolve(response as { success: boolean; data?: { newGridSize: number; offset: number; cost: number; newTreasury?: number | null }; error?: string });
       });
     });
   }
@@ -1583,6 +1616,21 @@ class DeltaQueue {
   messengerStartChat(friendId: number): void {
     if (this.wsSocket?.connected) {
       this.wsSocket.emit('messenger-start-chat', { friendId });
+    }
+  }
+  messengerBlock(userId: number): void {
+    if (this.wsSocket?.connected) {
+      this.wsSocket.emit('messenger-block', { userId });
+    }
+  }
+  messengerUnblock(userId: number): void {
+    if (this.wsSocket?.connected) {
+      this.wsSocket.emit('messenger-unblock', { userId });
+    }
+  }
+  messengerLoadBlocks(): void {
+    if (this.wsSocket?.connected) {
+      this.wsSocket.emit('messenger-load-blocks');
     }
   }
 
@@ -1635,6 +1683,26 @@ class DeltaQueue {
 
   setOnConnectionStatusChange(callback: ((connected: boolean, reason?: string) => void) | null): void {
     this.onConnectionStatusChange = callback;
+  }
+
+  setOnRejectedDeltas(callback: ((rejected: Array<{ type: string; x?: number; y?: number; tool?: string; reason?: string }>) => void) | null): void {
+    this.onRejectedDeltas = callback;
+  }
+
+  /** Sofortiger Delta-Fetch vom Server um nach einer Ablehnung den korrekten Tile-Zustand wiederherzustellen */
+  async triggerStateSync(): Promise<void> {
+    if (!this.roomCode || !this.municipalitySlug) return;
+    try {
+      const result = await fetchNewDeltas(this.municipalitySlug, this.roomCode, this.clientVersion, this.clientId);
+      if (result) {
+        this.clientVersion = result.serverVersion;
+        if (result.deltas.length > 0 && this.onRemoteDeltas) {
+          this.onRemoteDeltas(result.deltas);
+        }
+      }
+    } catch (_e) {
+      // silent
+    }
   }
 
   /**
@@ -1709,12 +1777,23 @@ class DeltaQueue {
           }
         }
         
+        // Treasury sofort updaten ohne auf nächsten Tick zu warten
+        if (response.newTreasury != null && this.onStatsUpdate) {
+          this.onStatsUpdate({ money: response.newTreasury } as GameStatsData);
+        }
+
         // Log Konflikte
         if (response.conflicts && response.conflicts.length > 0) {
           debugLog.conflict(response.conflicts);
         }
         if (response.rejectedDeltas && response.rejectedDeltas.length > 0) {
-          debugLog.error(`⚠️ ${response.rejectedDeltas.length} Delta(s) vom Server abgelehnt`, response.rejectedDeltas);
+          const unexpected = response.rejectedDeltas.filter(r => r.reason !== 'tile_occupied');
+          if (unexpected.length > 0) {
+            debugLog.error(`⚠️ ${unexpected.length} Delta(s) vom Server abgelehnt`, unexpected);
+          }
+          if (this.onRejectedDeltas) {
+            this.onRejectedDeltas(response.rejectedDeltas);
+          }
         }
       }
     } catch (error) {
@@ -1752,6 +1831,11 @@ class DeltaQueue {
    */
   get pendingCount(): number {
     return this.queue.length;
+  }
+
+  /** True wenn noch Deltas in der Queue oder gerade am Flushen — Tick soll Money nicht überschreiben */
+  get hasPendingWork(): boolean {
+    return this.queue.length > 0 || this.isFlushing;
   }
 
   /**

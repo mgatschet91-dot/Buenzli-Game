@@ -7,6 +7,11 @@ import { useMobile } from '@/hooks/useMobile';
 import { MobileToolbar } from '@/components/mobile/MobileToolbar';
 import { MobileTopBar } from '@/components/mobile/MobileTopBar';
 import { msg, useMessages, useGT } from 'gt-next';
+import { initItemPrices } from '@/lib/itemPrices';
+
+const UI_LABELS = {
+  playersOnline: 'Spieler online',
+};
 
 // Import shadcn components
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -61,7 +66,7 @@ import { ReporterPanel } from '@/components/game/panels/ReporterPanel';
 import { BankingPanel } from '@/components/game/panels/BankingPanel';
 import { UserPanel } from '@/components/game/panels/UserPanel';
 import { MusicPlayerWidget } from '@/components/game/panels/MusicPlayerWidget';
-import { GrowthDebugPanel } from '@/components/game/panels/GrowthDebugPanel';
+
 import { CanvasIsometricGrid } from '@/components/game/CanvasIsometricGrid';
 import { ChunkManager, CHUNK_SIZE } from '@/lib/chunkManager';
 
@@ -84,6 +89,7 @@ interface GameProps {
   coatOfArms?: { svg: string | null; image_url: string | null } | null;
   onVisitMunicipality?: (slug: string, roomCode?: string, roomName?: string) => void;
   cityNameOverride?: string;
+  homeCity?: string;
 }
 
 async function convertSvgToPngDataUrl(svg: string): Promise<string> {
@@ -117,9 +123,10 @@ async function convertSvgToPngDataUrl(svg: string): Promise<string> {
   }
 }
 
-export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnly = false, isFullyViewOnly = false, disablePartnerships = false, isOwner = true, canUseDebug = false, ownerName, municipalityName, memberCount, administrators, coatOfArms, onVisitMunicipality, cityNameOverride }: GameProps) {
+export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnly = false, isFullyViewOnly = false, disablePartnerships = false, isOwner = true, canUseDebug = false, ownerName, municipalityName, memberCount, administrators, coatOfArms, onVisitMunicipality, cityNameOverride, homeCity }: GameProps) {
   const gt = useGT();
   const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, municipalitySlug, loadPartnershipsFromApi, applyGridPatch, isStateReady } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
@@ -218,11 +225,20 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
     return () => window.removeEventListener('messenger-has-unread', onUnread);
   }, []);
 
+  // Gebäudepreise einmalig beim Spielstart laden (statische JSON vom Server)
+  useEffect(() => { initItemPrices(); }, []);
+
   useEffect(() => {
     if (showMessenger) setMessengerUnreadCount(0);
   }, [showMessenger]);
 
   const toggleMessenger = useCallback(() => setShowMessenger(v => !v), []);
+
+  useEffect(() => {
+    const handler = () => setShowMessenger(true);
+    window.addEventListener('open-messenger', handler);
+    return () => window.removeEventListener('open-messenger', handler);
+  }, []);
 
   // Profile State
   const [profileUserId, setProfileUserId] = useState<number | 'me' | null>(null);
@@ -661,20 +677,13 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           typeof window !== 'undefined' &&
           typeof sessionStorage !== 'undefined' &&
           sessionStorage.getItem(RELOAD_FLAG_KEY) === '1';
-        const seconds = alreadyReloaded ? 5 : 8;
+        const seconds = alreadyReloaded ? 15 : 45;
         setWsOfflineUi({
           visible: true,
           secondsRemaining: seconds,
           reloadAttempted: alreadyReloaded,
           reason: connectionState === 'error' ? 'Verbindungsfehler' : 'WebSocket getrennt',
         });
-        addNotification(
-          'Server offline',
-          alreadyReloaded
-            ? 'Server weiterhin nicht erreichbar. Rückkehr ins Hauptmenü wird vorbereitet.'
-            : 'Verbindung unterbrochen. Seite wird automatisch neu geladen.',
-          'default'
-        );
       }, 3000);
     }
 
@@ -685,7 +694,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
       typeof window !== 'undefined' &&
       typeof sessionStorage !== 'undefined' &&
       sessionStorage.getItem(RELOAD_FLAG_KEY) === '1';
-    const timeoutMs = (alreadyReloaded ? 5 : 8) * 1000;
+    const timeoutMs = (alreadyReloaded ? 15 : 45) * 1000;
     const startedAt = Date.now();
 
     clearOfflineTimers();
@@ -729,17 +738,14 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
   }, [roomCode, connectionState, addNotification, goToMainMenu]);
 
   const wsOfflineOverlay = wsOfflineUi.visible ? (
-    <div className="absolute inset-0 z-[70] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm">
-      <div className="rounded-lg border border-rose-700/40 bg-slate-900/95 px-5 py-4 text-center shadow-xl max-w-md">
-        <div className="text-sm font-semibold text-rose-200">Server offline</div>
-        <div className="mt-1 text-xs text-slate-300">
-          {wsOfflineUi.reason || 'Verbindung zum WebSocket-Server getrennt.'}
-        </div>
-        <div className="mt-2 text-xs text-slate-400">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[70] pointer-events-none">
+      <div className="flex items-center gap-2 rounded-full border border-rose-700/50 bg-slate-900/90 px-3 py-1.5 shadow-lg backdrop-blur-sm">
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${wsOfflineUi.reloadAttempted ? 'bg-rose-500' : 'bg-amber-400 animate-pulse'}`} />
+        <span className="text-xs text-slate-300 whitespace-nowrap">
           {wsOfflineUi.reloadAttempted
-            ? `Rückkehr ins Hauptmenü in ${wsOfflineUi.secondsRemaining}s ...`
-            : `Automatischer Reload in ${wsOfflineUi.secondsRemaining}s ...`}
-        </div>
+            ? `Offline – Reload in ${wsOfflineUi.secondsRemaining}s`
+            : `Reconnecting… (${wsOfflineUi.secondsRemaining}s)`}
+        </span>
       </div>
     </div>
   ) : null;
@@ -1489,7 +1495,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
                 <div className="bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1.5 shadow-lg">
                   <div className="flex items-center gap-1.5 text-xs text-white">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    <span>{players.length} Spieler online</span>
+                    <span>{players.length} {UI_LABELS.playersOnline}</span>
                   </div>
                   <div className="mt-1 space-y-0.5">
                     {players.map((player) => (
@@ -1566,11 +1572,10 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           */}
           
           {/* Panels - render as fullscreen modals on mobile */}
-          {!disablePartnerships && state.activePanel === 'statistics' && <StatisticsPanel />}
+          {!disablePartnerships && (state.activePanel === 'statistics' || state.activePanel === 'growth_debug') && <StatisticsPanel />}
           {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'advisors' && <AdvisorsPanel />}
           {state.activePanel === 'settings' && <SettingsPanel onViewProfile={() => setProfileUserId('me')} />}
           {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'trade' && <TradePanel onVisitMunicipality={onVisitMunicipality} />}
-          {isDev && state.activePanel === 'growth_debug' && <GrowthDebugPanel />}
           {effectiveCanUseDebug && state.activePanel === 'debug' && <ApiDebugPanel debugWeatherOverride={debugWeatherOverride} onDebugWeatherChange={setDebugWeatherOverride} serverWeather={serverWeather} chunkManager={chunkManagerRef.current ?? undefined} />}
           {effectiveCanUseAdmin && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
           {!isFullyViewOnly && state.activePanel === 'chat' && <ChatPanel />}
@@ -1632,8 +1637,14 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           )}
           {/* Zurück-Banner für Gemeinde-Besuche (Admin oder Besucher) */}
           {!disablePartnerships && onBackToHome && (
-            <div className="bg-sky-600/90 text-white px-4 py-1.5 flex items-center text-sm">
+            <div className="bg-sky-600/90 text-white px-4 py-1.5 flex items-center justify-between text-sm">
               <span className="font-medium">Du besuchst: {municipalityName || 'Fremde Gemeinde'}</span>
+              <button
+                onClick={onBackToHome}
+                className="ml-4 flex items-center gap-1 rounded bg-white/15 px-2.5 py-0.5 text-xs font-medium hover:bg-white/25 transition-colors"
+              >
+                ← Zurück zu {homeCity || 'meiner Gemeinde'}
+              </button>
             </div>
           )}
           {!disablePartnerships && <TopBar isViewOnly={isViewOnly} cityNameOverride={cityNameOverride} serverWeather={serverWeather} />}
@@ -1676,7 +1687,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
                 <div className="bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 shadow-lg min-w-[120px]">
                   <div className="flex items-center gap-2 text-sm text-white">
                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span>{players.length} Spieler online</span>
+                    <span>{players.length} {UI_LABELS.playersOnline}</span>
                   </div>
                   <div className="mt-1.5 space-y-0.5">
                     {players.map((player) => (
@@ -1700,11 +1711,10 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           <PublicRoomFooterBar onBackToHome={onBackToHome ?? onExit} onToggleMessenger={toggleMessenger} />
         )}
         
-        {!disablePartnerships && state.activePanel === 'statistics' && <StatisticsPanel />}
+        {!disablePartnerships && (state.activePanel === 'statistics' || state.activePanel === 'growth_debug') && <StatisticsPanel />}
         {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'advisors' && <AdvisorsPanel />}
         {state.activePanel === 'settings' && <SettingsPanel onViewProfile={() => setProfileUserId('me')} />}
         {!isFullyViewOnly && !disablePartnerships && state.activePanel === 'trade' && <TradePanel onVisitMunicipality={onVisitMunicipality} />}
-        {state.activePanel === 'growth_debug' && <GrowthDebugPanel />}
         {effectiveCanUseDebug && state.activePanel === 'debug' && <ApiDebugPanel debugWeatherOverride={debugWeatherOverride} onDebugWeatherChange={setDebugWeatherOverride} serverWeather={serverWeather} chunkManager={chunkManagerRef.current ?? undefined} />}
         {effectiveCanUseAdmin && state.activePanel === 'admin' && <AdminPanel onVisitMunicipality={onVisitMunicipality} />}
         {!isFullyViewOnly && state.activePanel === 'chat' && <ChatPanel />}

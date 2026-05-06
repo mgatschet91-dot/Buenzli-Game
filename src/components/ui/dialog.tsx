@@ -36,6 +36,7 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      aria-describedby={undefined}
       className={cn(
         // Base: centered dialog, width determined by left/right insets
         "fixed left-2 right-2 top-[50%] z-50 grid max-w-lg mx-auto translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 rounded-lg",

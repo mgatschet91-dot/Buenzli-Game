@@ -3370,11 +3370,11 @@ export function placeBuilding(
         newGrid[y][x].building = createBuilding('grass');
       }
     } else {
-      // Can't zone over existing buildings (only allow zoning on grass, tree, or road)
+      // Can't zone over existing buildings or roads (only allow zoning on grass or tree)
       // NOTE: 'empty' tiles are part of multi-tile buildings, so we can't zone them either
-      const allowedTypesForZoning: BuildingType[] = ['grass', 'tree', 'road'];
+      const allowedTypesForZoning: BuildingType[] = ['grass', 'tree'];
       if (!allowedTypesForZoning.includes(tile.building.type)) {
-        return state; // Can't zone over existing building or part of multi-tile building
+        return state; // Can't zone over existing building, road, or part of multi-tile building
       }
       // Setting zone
       newGrid[y][x].zone = zone;

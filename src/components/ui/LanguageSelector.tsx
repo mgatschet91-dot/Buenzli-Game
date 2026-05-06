@@ -15,14 +15,9 @@ import { Card } from '@/components/ui/card';
 // Language configuration with display names
 const LANGUAGES = [
   { code: 'en', name: 'English' },
-  { code: 'es', name: 'Español' },
-  { code: 'zh', name: '中文' },
-  { code: 'ja', name: '日本語' },
-  { code: 'fr', name: 'Français' },
   { code: 'de', name: 'Deutsch' },
-  { code: 'pt-BR', name: 'Português' },
+  { code: 'fr', name: 'Français' },
   { code: 'it', name: 'Italiano' },
-  { code: 'tr', name: 'Türkçe' },
 ] as const;
 
 // Globe icon for language button

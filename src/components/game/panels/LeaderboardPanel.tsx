@@ -1,11 +1,23 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { msg } from 'gt-next';
+import { useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CircleDashed, Trophy, Users, Crown, Medal } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
+
+const UI_LABELS = {
+  title:        msg('Rangliste'),
+  tabPlayers:   msg('Spieler'),
+  tabMunicip:   msg('Gemeinden'),
+  noMunicip:    msg('Keine Gemeinde'),
+  levelAbbr:    msg('Lv.'),
+  noOwner:      msg('Kein Besitzer'),
+  noEntries:    msg('Noch keine Einträge'),
+};
 
 const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100';
 
@@ -45,6 +57,8 @@ interface LeaderboardPanelProps {
 
 export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) {
   const { setActivePanel } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [tab, setTab] = useState<Tab>('players');
   const [players, setPlayers] = useState<PlayerEntry[]>([]);
   const [municipalities, setMunicipalities] = useState<MunicipalityEntry[]>([]);
@@ -88,7 +102,7 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Trophy className="w-5 h-5 text-amber-400" />
-            Rangliste
+            {mm(UI_LABELS.title)}
           </DialogTitle>
         </DialogHeader>
 
@@ -101,7 +115,7 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            Spieler
+            {mm(UI_LABELS.tabPlayers)}
           </button>
           <button
             onClick={() => setTab('municipalities')}
@@ -110,7 +124,7 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
             }`}
           >
             <Trophy className="w-3.5 h-3.5" />
-            Gemeinden
+            {mm(UI_LABELS.tabMunicip)}
           </button>
         </div>
 
@@ -136,10 +150,10 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
                   <div className="w-6 flex justify-center">{rankIcon(i)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm text-white truncate">{p.nickname}</div>
-                    <div className="text-xs text-slate-400">{p.municipality_name || 'Keine Gemeinde'}</div>
+                    <div className="text-xs text-slate-400">{p.municipality_name || mm(UI_LABELS.noMunicip)}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold text-amber-400">Lv. {p.level}</div>
+                    <div className="text-sm font-bold text-amber-400">{mm(UI_LABELS.levelAbbr)} {p.level}</div>
                     <div className="text-xs text-slate-500">{(p.xp ?? 0).toLocaleString()} XP</div>
                   </div>
                 </button>
@@ -152,7 +166,7 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
                   <div className="w-6 flex justify-center">{rankIcon(i)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm text-white truncate">{m.name}</div>
-                    <div className="text-xs text-slate-400">{m.owner_name || 'Kein Besitzer'}</div>
+                    <div className="text-xs text-slate-400">{m.owner_name || mm(UI_LABELS.noOwner)}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold text-blue-400">{(m.population ?? 0).toLocaleString()}</div>
@@ -164,7 +178,7 @@ export function LeaderboardPanel({ onViewProfile }: LeaderboardPanelProps = {}) 
               ))}
 
               {((tab === 'players' && players.length === 0) || (tab === 'municipalities' && municipalities.length === 0)) && (
-                <p className="text-sm text-slate-400 text-center py-8">Noch keine Einträge</p>
+                <p className="text-sm text-slate-400 text-center py-8">{mm(UI_LABELS.noEntries)}</p>
               )}
             </div>
           </ScrollArea>

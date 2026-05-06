@@ -699,7 +699,7 @@ renderer.domElement.addEventListener('click', e => {
       if (dist < HIT_R) {
         hideFurniturePanel()
         const ownName = (typeof _localPlayerName !== 'undefined' && _localPlayerName) ? _localPlayerName : ''
-        showPlayerPanel(true, ownName, charGroup, typeof AVATAR !== 'undefined' ? AVATAR : null, window._localMotto, window._localMunicipalityName, window._localUserLevel)
+        showPlayerPanel(true, ownName, charGroup, typeof AVATAR !== 'undefined' ? AVATAR : null, window._localMotto, window._localMunicipalityName, window._localUserLevel, window._localUserId)
         return
       }
     } else {
@@ -715,7 +715,7 @@ renderer.domElement.addEventListener('click', e => {
         if (dist < HIT_R) {
           hideFurniturePanel()
           const remoteCfg = (typeof _parseAvatarCodeToCfg === 'function') ? _parseAvatarCodeToCfg(ra.avatarCode) : null
-          showPlayerPanel(false, ra.name || '', ra.group, remoteCfg, ra.motto, ra.municipalityName, ra.userLevel)
+          showPlayerPanel(false, ra.name || '', ra.group, remoteCfg, ra.motto, ra.municipalityName, ra.userLevel, ra.userId)
           return
         }
       }

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, Clock, AlertTriangle, CheckCircle2, Shield, CircleDashed, X } from 'lucide-react';
 import { useGame } from '@/context/GameContext';
+import { msg, useMessages } from 'gt-next';
 import {
   startInspection as apiStartInspection,
   getActiveInspection,
@@ -36,6 +37,49 @@ type StoredInspectionContext = {
   savedAt: number;
 };
 
+const UI_LABELS = {
+  title:            msg('Buenzli-Inspektion'),
+  tileLabel:        msg('Feld'),
+  radiusLabel:      msg('Radius'),
+  retry:            msg('Nochmal versuchen'),
+  checking:         msg('Prüfe...'),
+  foreignMunicip:   msg('Fremde Gemeinde'),
+  externalReports:  msg('— Externe Meldungen möglich'),
+  activeMunicip:    msg('Aktive Gemeinde:'),
+  foreignDesc:      msg('Untersuche diese fremde Gemeinde. Gefundene Vergehen können extern gemeldet werden.'),
+  ownDesc:          msg('Der Buenzli wird 10 Min. nach Vergehen suchen.'),
+  startButton:      msg('Inspektion starten'),
+  searching:        msg('Suche läuft...'),
+  progress1:        msg('Der Buenzli schaut sich um...'),
+  progress2:        msg('Er überprüft die Gebäude...'),
+  progress3:        msg('Er macht sich Notizen...'),
+  progress4:        msg('Fast abgeschlossen...'),
+  cancel:           msg('Abbrechen'),
+  loading:          msg('Laden...'),
+  allClean:         msg('Alles sauber!'),
+  close:            msg('Schliessen'),
+  violationsFound:  msg('Vergehen gefunden!'),
+  estimatedReward:  msg('Bei Annahme: ca.'),
+  rewardLabel:      msg('Belohnung'),
+  extReportBtn:     msg('Ext. Report'),
+  reportBtn:        msg('Melden'),
+  investigateBtn:   msg('Prüfen'),
+  fixNote:          msg('Beheben erfolgt über die Gemeinde-Verwaltung.'),
+  reported:         msg('Gemeldet!'),
+  xpLabel:          msg('XP'),
+  chfLabel:         msg('CHF'),
+  foreignBonus:     msg('Fremd-Gemeinde Bonus!'),
+  payoutNote:       msg('Auszahlung erfolgt erst, wenn die Gemeinde den Report akzeptiert. Du bekommst dann eine Benachrichtigung mit dem Betrag.'),
+  doneButton:       msg('Fertig'),
+  severityCritical: msg('Kritisch'),
+  severityHigh:     msg('Hoch'),
+  severityMedium:   msg('Mittel'),
+  severityLow:      msg('Niedrig'),
+  severityMinimal:  msg('Gering'),
+  errorStart:       msg('Fehler beim Starten'),
+  errorUnknown:     msg('Unbekannter Fehler'),
+};
+
 export function InspectionPanel({
   inspectTileX,
   inspectTileY,
@@ -45,6 +89,9 @@ export function InspectionPanel({
   currentMunicipalityName,
 }: InspectionPanelProps) {
   const { municipalitySlug } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+
   const [inspectionId, setInspectionId] = useState<number | null>(null);
   const [tileX, setTileX] = useState(inspectTileX);
   const [tileY, setTileY] = useState(inspectTileY);
@@ -221,11 +268,11 @@ export function InspectionPanel({
       setReportResult(null);
       fetchedRef.current = false;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Fehler beim Starten');
+      setError(err instanceof Error ? err.message : mm(UI_LABELS.errorStart as Parameters<typeof m>[0]));
     } finally {
       setLoading(false);
     }
-  }, [inspectTileX, inspectTileY, isVisiting, currentMunicipalityName, municipalitySlug, saveInspectionContext]);
+  }, [inspectTileX, inspectTileY, isVisiting, currentMunicipalityName, municipalitySlug, saveInspectionContext, m]);
 
   // Report mit inspection_id an Server senden
   const handleReport = useCallback(async (eventId: number, type: 'confirm' | 'investigate') => {
@@ -236,11 +283,11 @@ export function InspectionPanel({
       setReportResult(result);
       setPhase('reported');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
+      setError(err instanceof Error ? err.message : mm(UI_LABELS.errorUnknown as Parameters<typeof m>[0]));
     } finally {
       setReportingId(null);
     }
-  }, [inspectionId]);
+  }, [inspectionId, m]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -284,12 +331,13 @@ export function InspectionPanel({
   };
 
   const severityLabel = (severity: number) => {
-    if (severity >= 5) return 'Kritisch';
-    if (severity >= 4) return 'Hoch';
-    if (severity >= 3) return 'Mittel';
-    if (severity >= 2) return 'Niedrig';
-    return 'Gering';
+    if (severity >= 5) return mm(UI_LABELS.severityCritical as Parameters<typeof m>[0]);
+    if (severity >= 4) return mm(UI_LABELS.severityHigh as Parameters<typeof m>[0]);
+    if (severity >= 3) return mm(UI_LABELS.severityMedium as Parameters<typeof m>[0]);
+    if (severity >= 2) return mm(UI_LABELS.severityLow as Parameters<typeof m>[0]);
+    return mm(UI_LABELS.severityMinimal as Parameters<typeof m>[0]);
   };
+
   const estimateExternalReportPayout = (fixCost: number): number => {
     const raw = Math.round(Number(fixCost || 0) * EXTERNAL_REPORT_PAYOUT_RATIO);
     return Math.max(EXTERNAL_REPORT_PAYOUT_MIN, Math.min(EXTERNAL_REPORT_PAYOUT_MAX, raw));
@@ -309,7 +357,7 @@ export function InspectionPanel({
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-700">
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-amber-400" />
-          <span className="text-sm font-semibold">Buenzli-Inspektion</span>
+          <span className="text-sm font-semibold">{mm(UI_LABELS.title as Parameters<typeof m>[0])}</span>
         </div>
         <button
           onClick={handleClose}
@@ -322,9 +370,9 @@ export function InspectionPanel({
       <div className="p-3 space-y-3">
         {/* Tile info */}
         <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span>Feld <span className="text-blue-400 font-mono font-medium">{tileX},{tileY}</span></span>
+          <span>{mm(UI_LABELS.tileLabel as Parameters<typeof m>[0])} <span className="text-blue-400 font-mono font-medium">{tileX},{tileY}</span></span>
           <span className="text-slate-600">|</span>
-          <span>Radius <span className="text-amber-400 font-mono font-medium">{radius}</span></span>
+          <span>{mm(UI_LABELS.radiusLabel as Parameters<typeof m>[0])} <span className="text-amber-400 font-mono font-medium">{radius}</span></span>
         </div>
 
         {error && (
@@ -339,7 +387,7 @@ export function InspectionPanel({
                 setError(null);
               }}
             >
-              Nochmal versuchen
+              {mm(UI_LABELS.retry as Parameters<typeof m>[0])}
             </button>
           </div>
         )}
@@ -348,22 +396,22 @@ export function InspectionPanel({
         {phase === 'loading' && (
           <div className="text-center text-slate-400 py-4">
             <CircleDashed className="w-5 h-5 animate-spin mx-auto mb-1" />
-            <span className="text-xs">Prüfe...</span>
+            <span className="text-xs">{mm(UI_LABELS.checking as Parameters<typeof m>[0])}</span>
           </div>
         )}
 
         {/* Visiting Badge */}
         {isVisiting && (
           <div className="px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 text-xs text-purple-300 flex items-center gap-2">
-            <span className="font-bold">Fremde Gemeinde</span>
-            <span className="text-purple-400/70">— Externe Meldungen möglich</span>
+            <span className="font-bold">{mm(UI_LABELS.foreignMunicip as Parameters<typeof m>[0])}</span>
+            <span className="text-purple-400/70">{mm(UI_LABELS.externalReports as Parameters<typeof m>[0])}</span>
           </div>
         )}
 
         {/* Zeige aktive Gemeinde nur, wenn es nicht die eigene ist */}
         {shouldShowForeignMunicipality && (
           <div className="px-2.5 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-xs text-cyan-200">
-            Aktive Gemeinde: <span className="font-semibold">{inspectionMunicipalityName}</span>
+            {mm(UI_LABELS.activeMunicip as Parameters<typeof m>[0])} <span className="font-semibold">{inspectionMunicipalityName}</span>
           </div>
         )}
 
@@ -372,8 +420,8 @@ export function InspectionPanel({
           <div className="space-y-2">
             <p className="text-xs text-slate-400">
               {isVisiting
-                ? 'Untersuche diese fremde Gemeinde. Gefundene Vergehen können extern gemeldet werden.'
-                : 'Der Buenzli wird 10 Min. nach Vergehen suchen.'}
+                ? mm(UI_LABELS.foreignDesc as Parameters<typeof m>[0])
+                : mm(UI_LABELS.ownDesc as Parameters<typeof m>[0])}
             </p>
             <Button
               size="sm"
@@ -386,7 +434,7 @@ export function InspectionPanel({
               ) : (
                 <Search className="w-3 h-3 mr-1.5" />
               )}
-              Inspektion starten
+              {mm(UI_LABELS.startButton as Parameters<typeof m>[0])}
             </Button>
           </div>
         )}
@@ -396,7 +444,7 @@ export function InspectionPanel({
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-amber-400 text-xs">
               <Clock className="w-3 h-3 animate-pulse" />
-              <span className="font-medium">Suche läuft...</span>
+              <span className="font-medium">{mm(UI_LABELS.searching as Parameters<typeof m>[0])}</span>
             </div>
 
             <div className="space-y-1">
@@ -414,19 +462,19 @@ export function InspectionPanel({
 
             <p className="text-[10px] text-white italic">
               {progress < 25
-                ? 'Der Buenzli schaut sich um...'
+                ? mm(UI_LABELS.progress1 as Parameters<typeof m>[0])
                 : progress < 50
-                ? 'Er überprüft die Gebäude...'
+                ? mm(UI_LABELS.progress2 as Parameters<typeof m>[0])
                 : progress < 75
-                ? 'Er macht sich Notizen...'
-                : 'Fast abgeschlossen...'}
+                ? mm(UI_LABELS.progress3 as Parameters<typeof m>[0])
+                : mm(UI_LABELS.progress4 as Parameters<typeof m>[0])}
             </p>
 
             <button
               className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors"
               onClick={handleCancel}
             >
-              Abbrechen
+              {mm(UI_LABELS.cancel as Parameters<typeof m>[0])}
             </button>
           </div>
         )}
@@ -437,19 +485,19 @@ export function InspectionPanel({
             {loading && (
               <div className="text-center text-slate-400 py-4">
                 <CircleDashed className="w-5 h-5 animate-spin mx-auto mb-1" />
-                <span className="text-xs">Laden...</span>
+                <span className="text-xs">{mm(UI_LABELS.loading as Parameters<typeof m>[0])}</span>
               </div>
             )}
 
             {!loading && !error && foundEvents.length === 0 && (
               <div className="text-center py-3 space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <p className="text-xs text-emerald-300 font-medium">Alles sauber!</p>
+                <p className="text-xs text-emerald-300 font-medium">{mm(UI_LABELS.allClean as Parameters<typeof m>[0])}</p>
                 <button
                   className="text-xs text-slate-400 hover:text-white underline"
                   onClick={onClose}
                 >
-                  Schliessen
+                  {mm(UI_LABELS.close as Parameters<typeof m>[0])}
                 </button>
               </div>
             )}
@@ -458,7 +506,7 @@ export function InspectionPanel({
               <>
                 <div className="flex items-center gap-1.5 px-2 py-1.5 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                  {foundEvents.length} Vergehen gefunden!
+                  {foundEvents.length} {mm(UI_LABELS.violationsFound as Parameters<typeof m>[0])}
                 </div>
 
                 <div className="space-y-2 max-h-[240px] overflow-y-auto pr-0.5">
@@ -486,7 +534,7 @@ export function InspectionPanel({
                       <p className="text-[10px] text-slate-400 leading-snug">{event.description}</p>
                       {isVisiting && (
                         <div className="text-[10px] text-purple-300">
-                          Bei Annahme: ca. <span className="font-mono font-semibold">{estimateExternalReportPayout(event.fix_cost).toLocaleString()} CHF</span> Belohnung
+                          {mm(UI_LABELS.estimatedReward as Parameters<typeof m>[0])} <span className="font-mono font-semibold">{estimateExternalReportPayout(event.fix_cost).toLocaleString()} CHF</span> {mm(UI_LABELS.rewardLabel as Parameters<typeof m>[0])}
                         </div>
                       )}
 
@@ -504,7 +552,7 @@ export function InspectionPanel({
                           ) : (
                             <AlertTriangle className="w-2.5 h-2.5 mr-1" />
                           )}
-                          {isVisiting ? 'Ext. Report' : 'Melden'}
+                          {isVisiting ? mm(UI_LABELS.extReportBtn as Parameters<typeof m>[0]) : mm(UI_LABELS.reportBtn as Parameters<typeof m>[0])}
                         </Button>
                         {!isVisiting && event.category === 'Verwaltung' && (
                           <Button
@@ -515,12 +563,12 @@ export function InspectionPanel({
                             onClick={() => handleReport(event.id, 'investigate')}
                           >
                             <Shield className="w-2.5 h-2.5 mr-1" />
-                            Pruefen
+                            {mm(UI_LABELS.investigateBtn as Parameters<typeof m>[0])}
                           </Button>
                         )}
                       </div>
                       <div className="text-[10px] text-slate-500 pt-0.5">
-                        Beheben erfolgt über die Gemeinde-Verwaltung.
+                        {mm(UI_LABELS.fixNote as Parameters<typeof m>[0])}
                       </div>
                     </div>
                   ))}
@@ -534,31 +582,30 @@ export function InspectionPanel({
         {phase === 'reported' && reportResult && (
           <div className="text-center py-2 space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-            <p className="text-sm text-emerald-300 font-medium">Gemeldet!</p>
+            <p className="text-sm text-emerald-300 font-medium">{mm(UI_LABELS.reported as Parameters<typeof m>[0])}</p>
 
             <div className="bg-emerald-900/30 border border-emerald-700 rounded p-2 text-left space-y-1">
               {reportResult.xp && (
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">XP</span>
+                  <span className="text-slate-400">{mm(UI_LABELS.xpLabel as Parameters<typeof m>[0])}</span>
                   <span className="text-amber-400 font-bold">+{reportResult.xp.xp}</span>
                 </div>
               )}
               {reportResult.coins && reportResult.coins.user > 0 && (
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">CHF</span>
+                  <span className="text-slate-400">{mm(UI_LABELS.chfLabel as Parameters<typeof m>[0])}</span>
                   <span className="text-yellow-400 font-bold">+{reportResult.coins.user}</span>
                 </div>
               )}
               {reportResult.is_foreign_report && (
                 <div className="flex items-center gap-1 text-[10px] text-purple-300 pt-1 border-t border-emerald-700/50">
                   <Shield className="w-2.5 h-2.5" />
-                  Fremd-Gemeinde Bonus!
+                  {mm(UI_LABELS.foreignBonus as Parameters<typeof m>[0])}
                 </div>
               )}
               {reportResult.is_foreign_report && (
                 <div className="text-[10px] text-slate-400 pt-1">
-                  Auszahlung erfolgt erst, wenn die Gemeinde den Report akzeptiert.
-                  Du bekommst dann eine Benachrichtigung mit dem Betrag.
+                  {mm(UI_LABELS.payoutNote as Parameters<typeof m>[0])}
                 </div>
               )}
             </div>
@@ -568,7 +615,7 @@ export function InspectionPanel({
               className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
               onClick={onClose}
             >
-              Fertig
+              {mm(UI_LABELS.doneButton as Parameters<typeof m>[0])}
             </Button>
           </div>
         )}

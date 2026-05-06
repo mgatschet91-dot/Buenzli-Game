@@ -33,7 +33,7 @@ export type Tool =
   | 'community_garden' | 'pond_park' | 'park_gate' | 'mountain_lodge' | 'mountain_trailhead'
   | 'woodcutter_house'
   | 'werkhof'
-  | 'parking_spot' | 'parking_lot' | 'parking_lot_large'
+  | 'parking_spot'
   | 'fcbasel_stadium' | 'st_ursen_kathedrale' | 'primetower' | 'disco_solothurn'
   | 'bank_house'
   | 'npc_woodcutter'
@@ -155,9 +155,7 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   // Municipal infrastructure
   werkhof: { name: msg('Werkhof'), cost: 4500, description: msg('Kommunaler Bauhof – repariert Gebäude und organisiert die Müllabfuhr (2x2)'), size: 2 },
   // Parking
-  parking_spot:      { name: msg('Parkplatz'),         cost: 150,  description: msg('Kleiner Parkplatz für ~2 Autos (1x1)'), size: 1 },
-  parking_lot:       { name: msg('Parkfeld'),          cost: 400,  description: msg('Mittleres Parkfeld für ~6 Autos (2x2)'), size: 2 },
-  parking_lot_large: { name: msg('Grosses Parkfeld'),  cost: 900,  description: msg('Grosses Parkfeld für ~12 Autos (3x3)'), size: 3 },
+  parking_spot:      { name: msg('Parkplatz'),         cost: 220,  description: msg('Kleiner Parkplatz für ~2 Autos (1x1)'), size: 1 },
   bank_house: { name: msg('Bank'), cost: 2000, description: msg('Bankgebäude für Finanzdienstleistungen'), size: 1 },
   fcbasel_stadium: { name: msg('Stadion FC Basel'), cost: 50000, description: msg('Heimstadion des FC Basel – einmalig pro Stadt (3x3)'), size: 3 },
   st_ursen_kathedrale: { name: msg('St. Ursen Kathedrale'), cost: 30000, description: msg('Die St. Ursen Kathedrale – einmalig pro Stadt (2x2)'), size: 2 },

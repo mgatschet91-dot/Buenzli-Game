@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SpriteTestPanel } from './SpriteTestPanel';
+import { LanguageSelector } from '@/components/ui/LanguageSelector';
 import { getAuthToken } from '@/lib/api/coreApi';
 import {
   GraduationCap, UserRound, Pencil, Lock, Check, X, Loader2,
-  Monitor, Volume2, Bell, Gamepad2, Settings, Cpu, Keyboard,
+  Monitor, Volume2, Bell, Gamepad2, Settings, Cpu, Keyboard, Languages,
 } from 'lucide-react';
 
 const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || '';
@@ -137,6 +138,15 @@ export function SettingsPanel({ onViewProfile }: SettingsPanelProps = {}) {
                   </button>
                 </SettingsSection>
               )}
+              <SettingsSection title="Sprache / Language">
+                <div className="flex items-center justify-between px-1 py-1">
+                  <div className="flex items-center gap-2 text-sm text-slate-200">
+                    <Languages className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span>Sprache der Benutzeroberfläche</span>
+                  </div>
+                  <LanguageSelector variant="outline" />
+                </div>
+              </SettingsSection>
               <SettingsSection title="Steuerung & HUD">
                 <SettingsToggle label="Schnelltasten-Hinweise" storageKey="meinort-hotkey-hints" defaultValue={true} />
                 <SettingsToggle label="Gebäude-Vorschau beim Platzieren" storageKey="meinort-building-preview" defaultValue={true} />
@@ -233,32 +243,40 @@ export function SettingsPanel({ onViewProfile }: SettingsPanelProps = {}) {
 // ── Tastatur-Tab ─────────────────────────────────────────────────────────────
 const SHORTCUT_GROUPS = [
   {
-    title: 'Kamera & Navigation',
+    title: msg('Camera & Navigation'),
     shortcuts: [
-      { keys: ['W', 'A', 'S', 'D'],     desc: 'Karte bewegen' },
-      { keys: ['↑', '↓', '←', '→'],    desc: 'Karte bewegen (Pfeiltasten)' },
-      { keys: ['Scroll'],               desc: 'Zoom rein / raus' },
+      { keys: ['W', 'A', 'S', 'D'],     desc: msg('Move map') },
+      { keys: ['↑', '↓', '←', '→'],    desc: msg('Move map (arrow keys)') },
+      { keys: ['Scroll'],               desc: msg('Zoom in / out') },
     ],
   },
   {
-    title: 'Werkzeuge',
+    title: msg('Buildings & Tools'),
     shortcuts: [
-      { keys: ['B'],          desc: 'Bulldozer aktivieren' },
-      { keys: ['R'],          desc: 'Gebäude drehen / spiegeln' },
-      { keys: ['Esc'],        desc: 'Auswahl aufheben / Panel schliessen' },
+      { keys: ['B'],              desc: msg('Activate bulldozer') },
+      { keys: ['M'],              desc: msg('Move building (select building first)') },
+      { keys: ['R'],              desc: msg('Rotate / mirror building (while placing or moving)') },
+    ],
+  },
+  {
+    title: msg('General'),
+    shortcuts: [
+      { keys: ['Esc'],            desc: msg('Deselect / cancel action / close panel') },
+      { keys: ['Ctrl', 'K'],      desc: msg('Open command menu') },
     ],
   },
 ];
 
 function TastaturSection() {
+  const m = useMessages();
   return (
     <div className="space-y-3">
-      {SHORTCUT_GROUPS.map(group => (
-        <SettingsSection key={group.title} title={group.title}>
+      {SHORTCUT_GROUPS.map((group, gi) => (
+        <SettingsSection key={gi} title={m(group.title)}>
           <div className="divide-y divide-slate-700/30 rounded-lg overflow-hidden">
             {group.shortcuts.map((s, i) => (
               <div key={i} className="flex items-center justify-between px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800/80 transition-colors">
-                <span className="text-sm text-slate-200">{s.desc}</span>
+                <span className="text-sm text-slate-200">{m(s.desc)}</span>
                 <div className="flex items-center gap-1 shrink-0">
                   {s.keys.map((k, ki) => (
                     <React.Fragment key={ki}>
@@ -277,7 +295,7 @@ function TastaturSection() {
         </SettingsSection>
       ))}
       <div className="px-3 py-2 text-[11px] text-slate-500 text-center">
-        Tastenbelegung wird in einer späteren Version anpassbar sein.
+        {m(msg('Keyboard shortcuts will be customizable in a future update.'))}
       </div>
     </div>
   );

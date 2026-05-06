@@ -9,10 +9,19 @@ import { Label } from '@/components/ui/label';
 import { TrendingUp, TrendingDown, Wallet, Building2, Landmark, Wrench } from 'lucide-react';
 
 const UI_LABELS = {
-  budget: msg('Budget'),
-  income: msg('Income'),
-  expenses: msg('Expenses'),
-  net: msg('Net'),
+  budget:            msg('Budget'),
+  income:            msg('Einkommen'),
+  expenses:          msg('Ausgaben'),
+  net:               msg('Netto'),
+  perDay:            msg('/Tag'),
+  incomeDetails:     msg('Einnahmen-Details'),
+  totalTaxes:        msg('Steuern gesamt'),
+  populationTax:     msg('- Einwohnersteuer'),
+  businessTax:       msg('- Firmensteuer (v1)'),
+  propertyTax:       msg('- Grundsteuer'),
+  buildingIncome:    msg('Gebäude-Einkommen'),
+  maintenance:       msg('Unterhalt'),
+  viewOnly:          msg('Nur Besitzer oder Verwaltung können das Budget ändern'),
 };
 
 interface BudgetPanelProps {
@@ -23,6 +32,7 @@ export function BudgetPanel({ isViewOnly = false }: BudgetPanelProps) {
   const { state, setActivePanel, setBudgetFunding } = useGame();
   const { budget, stats } = state;
   const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
 
   const netIncome = stats.income - stats.expenses;
   const taxIncome = stats.tax_income || 0;
@@ -58,28 +68,28 @@ export function BudgetPanel({ isViewOnly = false }: BudgetPanelProps) {
             <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-3">
               <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1">
                 <TrendingUp className="w-3 h-3" />
-                Einkommen
+                {mm(UI_LABELS.income as Parameters<typeof m>[0])}
               </div>
               <div className="text-emerald-400 font-mono font-semibold text-sm">
-                ${stats.income.toLocaleString()}/Tag
+                ${stats.income.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}
               </div>
             </div>
             <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-3">
               <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1">
                 <TrendingDown className="w-3 h-3" />
-                Ausgaben
+                {mm(UI_LABELS.expenses as Parameters<typeof m>[0])}
               </div>
               <div className="text-red-400 font-mono font-semibold text-sm">
-                ${stats.expenses.toLocaleString()}/Tag
+                ${stats.expenses.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}
               </div>
             </div>
             <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-3">
               <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1">
                 <Wallet className="w-3 h-3" />
-                Netto
+                {mm(UI_LABELS.net as Parameters<typeof m>[0])}
               </div>
               <div className={`font-mono font-semibold text-sm ${netIncome >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {netIncome >= 0 ? '+' : ''}${netIncome.toLocaleString()}/Tag
+                {netIncome >= 0 ? '+' : ''}${netIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}
               </div>
             </div>
           </div>
@@ -87,41 +97,41 @@ export function BudgetPanel({ isViewOnly = false }: BudgetPanelProps) {
           {/* Einkommens-Aufschluesselung */}
           {stats.income > 0 && (
             <div className="space-y-1.5 pb-4 border-b border-slate-700">
-              <div className="text-xs text-slate-400 font-medium mb-2">Einnahmen-Details</div>
+              <div className="text-xs text-slate-400 font-medium mb-2">{mm(UI_LABELS.incomeDetails as Parameters<typeof m>[0])}</div>
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-1.5 text-slate-400">
                   <Landmark className="w-3.5 h-3.5" />
-                  Steuern gesamt
+                  {mm(UI_LABELS.totalTaxes as Parameters<typeof m>[0])}
                 </span>
-                <span className="font-mono text-emerald-400">${taxIncome.toLocaleString()}/Tag</span>
+                <span className="font-mono text-emerald-400">${taxIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
               </div>
               <div className="pl-5 space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">- Einwohnersteuer</span>
-                  <span className="font-mono text-emerald-400">${populationTaxIncome.toLocaleString()}/Tag</span>
+                  <span className="text-slate-500">{mm(UI_LABELS.populationTax as Parameters<typeof m>[0])}</span>
+                  <span className="font-mono text-emerald-400">${populationTaxIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">- Firmensteuer (v1)</span>
-                  <span className="font-mono text-emerald-400">${businessTaxIncome.toLocaleString()}/Tag</span>
+                  <span className="text-slate-500">{mm(UI_LABELS.businessTax as Parameters<typeof m>[0])}</span>
+                  <span className="font-mono text-emerald-400">${businessTaxIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">- Grundsteuer</span>
-                  <span className="font-mono text-emerald-400">${propertyTaxIncome.toLocaleString()}/Tag</span>
+                  <span className="text-slate-500">{mm(UI_LABELS.propertyTax as Parameters<typeof m>[0])}</span>
+                  <span className="font-mono text-emerald-400">${propertyTaxIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-1.5 text-slate-400">
                   <Building2 className="w-3.5 h-3.5" />
-                  Gebäude-Einkommen
+                  {mm(UI_LABELS.buildingIncome as Parameters<typeof m>[0])}
                 </span>
-                <span className="font-mono text-emerald-400">${buildingIncome.toLocaleString()}/Tag</span>
+                <span className="font-mono text-emerald-400">${buildingIncome.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-1.5 text-slate-400">
                   <Wrench className="w-3.5 h-3.5" />
-                  Unterhalt
+                  {mm(UI_LABELS.maintenance as Parameters<typeof m>[0])}
                 </span>
-                <span className="font-mono text-red-400">-${stats.expenses.toLocaleString()}/Tag</span>
+                <span className="font-mono text-red-400">-${stats.expenses.toLocaleString()}{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}</span>
               </div>
             </div>
           )}
@@ -129,7 +139,7 @@ export function BudgetPanel({ isViewOnly = false }: BudgetPanelProps) {
           {isViewOnly && (
             <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/15 border border-amber-500/30 rounded text-amber-400 text-sm">
               <span>🔒</span>
-              <span>Nur Besitzer oder Verwaltung können das Budget ändern</span>
+              <span>{mm(UI_LABELS.viewOnly as Parameters<typeof m>[0])}</span>
             </div>
           )}
           

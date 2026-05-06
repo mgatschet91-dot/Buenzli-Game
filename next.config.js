@@ -6,10 +6,7 @@ const isElectronBuild = process.env.ELECTRON_BUILD === 'true';
 const nextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
-  turbopack: {
-    root: __dirname,
-  },
-  ...(isElectronBuild ? { output: 'standalone' } : {}),
+...(isElectronBuild ? { output: 'standalone' } : {}),
 };
 
 module.exports = withGTConfig(nextConfig);

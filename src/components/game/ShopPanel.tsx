@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { ShoppingBag, Loader2, ChevronDown, X } from 'lucide-react';
+import { ShoppingBag, Loader2, Coins, X } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100';
@@ -45,12 +45,26 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
   const [buying, setBuying]       = useState<string | null>(null);
   const [toast, setToast]         = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('');
+  const [balance, setBalance]     = useState<number | null>(null);
 
   // NPC-Kauf Modal
   const [npcModal, setNpcModal]     = useState(false);
   const [npcName, setNpcName]       = useState('');
   const [npcStyle, setNpcStyle]     = useState(1);
   const [npcBuying, setNpcBuying]   = useState(false);
+
+  const loadBalance = useCallback(async () => {
+    try {
+      const token = getAuthToken() || '';
+      const r = await fetch(`${API_BASE}/api/banking/me`, {
+        headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
+      });
+      const d = await r.json();
+      if (d.ok) setBalance(Number(d.data.balance));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     async function loadItems() {
@@ -69,7 +83,8 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
       }
     }
     loadItems();
-  }, []);
+    loadBalance();
+  }, [loadBalance]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -97,6 +112,7 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
       if (d.ok) {
         showToast(`✓ ${item.display_name} gekauft`);
         onBuy?.(item.item_code, item.display_name);
+        loadBalance();
       } else {
         showToast(d.error || 'Fehler beim Kauf');
       }
@@ -105,7 +121,7 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
     } finally {
       setBuying(null);
     }
-  }, [onBuy, showToast]);
+  }, [onBuy, showToast, loadBalance]);
 
   const handleNpcBuy = useCallback(async () => {
     if (!npcName.trim()) { showToast('Bitte Name eingeben'); return; }
@@ -128,6 +144,7 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
         showToast(`✓ ${NPC_STYLES[npcStyle - 1].label} "${npcName.trim()}" gekauft`);
         onBuy?.('room_npc', npcName.trim());
         setNpcModal(false);
+        loadBalance();
       } else {
         showToast(d.error || 'Fehler beim Kauf');
       }
@@ -136,7 +153,7 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
     } finally {
       setNpcBuying(false);
     }
-  }, [npcName, npcStyle, onBuy, showToast]);
+  }, [npcName, npcStyle, onBuy, showToast, loadBalance]);
 
   // Group by page_caption
   const categories = [...new Set(items.map(i => i.category))];
@@ -146,9 +163,18 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
     <div className="flex flex-col h-full" style={{ background: '#12100c', color: '#e8dbc8' }}>
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/10 shrink-0">
-        <ShoppingBag className="w-4 h-4 text-amber-400" />
-        <span className="text-sm font-semibold text-amber-300 tracking-wide uppercase">Möbel-Shop</span>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 shrink-0">
+        <div className="flex items-center gap-2">
+          <ShoppingBag className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-semibold text-amber-300 tracking-wide uppercase">Möbel-Shop</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold">
+          🪙
+          {balance === null
+            ? <Loader2 className="w-3 h-3 animate-spin" />
+            : balance.toLocaleString('de-CH')
+          }
+        </div>
       </div>
 
       {/* Category tabs */}
@@ -203,18 +229,24 @@ export function ShopPanel({ onBuy }: ShopPanelProps) {
                 {item.item_code === 'teleporter' && (
                   <span className="text-[9px] text-violet-400 leading-tight">1 kaufen = 2 Stück</span>
                 )}
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="text-xs text-amber-400 font-semibold">
-                    {item.price > 0 ? `${item.price.toLocaleString()} 🪙` : 'Gratis'}
-                  </span>
-                  <button
-                    disabled={buying === item.item_code}
-                    onClick={() => handleBuy(item)}
-                    className="text-xs px-2 py-0.5 rounded bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-50 transition-colors"
-                  >
-                    {buying === item.item_code ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kaufen'}
-                  </button>
-                </div>
+                {(() => {
+                  const cantAfford = item.price > 0 && balance !== null && balance < item.price;
+                  return (
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className={`text-xs font-semibold ${cantAfford ? 'text-red-400' : 'text-amber-400'}`}>
+                        {item.price > 0 ? `${item.price.toLocaleString()} 🪙` : 'Gratis'}
+                      </span>
+                      <button
+                        disabled={buying === item.item_code || cantAfford}
+                        onClick={() => handleBuy(item)}
+                        title={cantAfford ? 'Nicht genug Geld' : undefined}
+                        className="text-xs px-2 py-0.5 rounded bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-50 transition-colors"
+                      >
+                        {buying === item.item_code ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kaufen'}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

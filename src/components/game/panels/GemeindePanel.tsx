@@ -1,6 +1,75 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { msg, useMessages } from 'gt-next';
+
+const UI_LABELS = {
+  // Role management
+  changeRole:       msg('Rang ändern'),
+  selfIndicator:    msg('(Du)'),
+  roleButton:       msg('Rang'),
+  removeMember:     msg('Mitglied entfernen'),
+  confirmKick:      msg('Ja, kicken'),
+  cancel:           msg('Abbrechen'),
+  // Event statuses
+  statusDetected:   msg('Entdeckt'),
+  statusReported:   msg('Gemeldet'),
+  statusInvestigating: msg('Untersuchung'),
+  statusAssigned:   msg('Beauftragt'),
+  statusResolved:   msg('Behoben'),
+  statusExpired:    msg('Abgelaufen'),
+  statusFailed:     msg('Fehlgeschlagen'),
+  statusFalseAlarm: msg('Fehlalarm'),
+  statusExtReported: msg('Extern gemeldet'),
+  statusDisputed:   msg('Einspruch'),
+  // Severity
+  sevCatastrophic:  msg('Katastrophal'),
+  sevCritical:      msg('Kritisch'),
+  sevHeavy:         msg('Schwer'),
+  sevMedium:        msg('Mittel'),
+  sevLight:         msg('Leicht'),
+  timeExpired:      msg('Abgelaufen'),
+  // Roles
+  rolePresident:    msg('Gemeindepraesident'),
+  roleCouncil:      msg('Gemeinderat'),
+  roleCitizen:      msg('Bürger'),
+  roleObserver:     msg('Beobachter'),
+  // Ledger transaction types
+  ledgerCompanyContract:   msg('Firmenauftrag'),
+  ledgerBuildingCost:      msg('Baukosten'),
+  ledgerBulldoze:          msg('Abriss'),
+  ledgerUpgrade:           msg('Upgrade'),
+  ledgerCompanyFounding:   msg('Firmengruendung'),
+  ledgerCompanyDissolve:   msg('Firmenaufloesung'),
+  ledgerMarketBuy:         msg('Marktplatz Kauf'),
+  ledgerMarketSell:        msg('Marktplatz Verkauf'),
+  ledgerTradeSend:         msg('Handel gesendet'),
+  ledgerTradeReceive:      msg('Handel erhalten'),
+  ledgerEventFix:          msg('Event behoben'),
+  ledgerEventPenalty:      msg('Strafgebühr'),
+  ledgerEmergencyRepair:   msg('Notfallreparatur'),
+  ledgerShield:            msg('Schutzschild'),
+  ledgerMilestone:         msg('Meilenstein'),
+  ledgerLoanTake:          msg('Kredit aufgenommen'),
+  ledgerLoanRepay:         msg('Kredit zurückgezahlt'),
+  ledgerInterest:          msg('Zinsen'),
+  ledgerIdleEarnings:      msg('Idle-Einnahmen'),
+  ledgerBuenzliFine:       msg('Bünzli-Busse'),
+  ledgerBuenzliPenalty:    msg('Bünzli-Strafe'),
+  ledgerCrimeBurglary:     msg('Einbruch-Schaden'),
+  ledgerCrimeCatch:        msg('Verbrecherjagd'),
+  ledgerPoliceDispatch:    msg('Polizeieinsatz'),
+  ledgerCompanyTax:        msg('Firmensteuer'),
+  ledgerFoundingLoan:      msg('Gründungskredit'),
+  ledgerWerkhofRepair:     msg('🔧 Stadtpatrouille Reparatur'),
+  ledgerParkingFee:        msg('🅿️ Parkgebühren'),
+  ledgerParkingFine:       msg('🚔 Parkbusse (Gemeinde)'),
+  ledgerIncome:            msg('Gemeindeeinnahmen'),
+  ledgerRepairCost:        msg('Reparaturkosten'),
+  ledgerExpandCity:        msg('Stadterweiterung'),
+  ledgerWoodcutterHarvest: msg('🪵 Holzfäller-Ernte'),
+  ledgerEnergySpotSell:    msg('⚡ Energieverkauf'),
+};
 import { PowerStatusWidget } from './PowerStatusWidget';
 import { WaterStatusWidget } from './WaterStatusWidget';
 import { useGame } from '@/context/GameContext';
@@ -26,6 +95,7 @@ import {
   type BauzoneMode, type BankStatus, type LedgerEntry, type LedgerResponse,
   type ElectionDetails, type ElectionCandidate,
 } from '@/lib/api/municipalityAdminApi';
+import { TOOL_INFO } from '@/games/isocity/types/game';
 import {
   fetchVerwaltungMeldungen, beauftragen, selbstBeheben, notfallreparatur, kaufeSchutzschild,
   externalResponse, polizeiSchicken,
@@ -39,7 +109,7 @@ import {
 } from '@/lib/api/companyApi';
 
 const ROLE_CONFIG: Record<MunicipalityRole, {
-  label: string;
+  labelKey: keyof typeof UI_LABELS;
   icon: React.ElementType;
   color: string;
   bgColor: string;
@@ -48,7 +118,7 @@ const ROLE_CONFIG: Record<MunicipalityRole, {
   avatarBg: string;
 }> = {
   owner: {
-    label: 'Gemeindepraesident',
+    labelKey: 'rolePresident',
     icon: Crown,
     color: 'text-amber-400',
     bgColor: 'bg-amber-500/15',
@@ -57,7 +127,7 @@ const ROLE_CONFIG: Record<MunicipalityRole, {
     avatarBg: 'bg-gradient-to-br from-amber-500/30 to-amber-600/20 border-amber-500/40',
   },
   council: {
-    label: 'Gemeinderat',
+    labelKey: 'roleCouncil',
     icon: Shield,
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/15',
@@ -66,7 +136,7 @@ const ROLE_CONFIG: Record<MunicipalityRole, {
     avatarBg: 'bg-gradient-to-br from-blue-500/25 to-blue-600/15 border-blue-500/35',
   },
   citizen: {
-    label: 'Bürger',
+    labelKey: 'roleCitizen',
     icon: User,
     color: 'text-emerald-400',
     bgColor: 'bg-emerald-500/10',
@@ -75,7 +145,7 @@ const ROLE_CONFIG: Record<MunicipalityRole, {
     avatarBg: 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border-emerald-500/30',
   },
   observer: {
-    label: 'Beobachter',
+    labelKey: 'roleObserver',
     icon: Eye,
     color: 'text-slate-400',
     bgColor: 'bg-slate-700/40',
@@ -99,6 +169,8 @@ function InlineRoleSelector({
   onSelect: (role: MunicipalityRole) => void;
   onClose: () => void;
 }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -120,11 +192,11 @@ function InlineRoleSelector({
     <div ref={ref} className="mt-2 rounded-xl border border-slate-600/50 bg-slate-800/60">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/40 bg-slate-800/40 rounded-t-xl">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Rang ändern</span>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{mm(UI_LABELS.changeRole)}</span>
           <ArrowRight className="w-3 h-3 text-slate-600" />
           <div className={`flex items-center gap-1 text-[11px] ${currentCfg.textColor}`}>
             <CurrentIcon className="w-3 h-3" />
-            <span>{currentCfg.label}</span>
+            <span>{mm(UI_LABELS[currentCfg.labelKey])}</span>
           </div>
         </div>
         <button onClick={onClose} className="p-1 rounded-md hover:bg-slate-700/60 text-slate-500 hover:text-slate-300 transition-colors">
@@ -142,7 +214,7 @@ function InlineRoleSelector({
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg border text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] ${cfg.bgColor} ${cfg.borderColor} ${cfg.textColor} hover:brightness-125`}
             >
               <Icon className={`w-4 h-4 ${cfg.color}`} />
-              <span>{cfg.label}</span>
+              <span>{mm(UI_LABELS[cfg.labelKey])}</span>
             </button>
           );
         })}
@@ -176,6 +248,8 @@ function MemberRow({
   handleRoleChange: (userId: number, role: MunicipalityRole) => void;
   handleKick: (userId: number) => void;
 }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const cfg = ROLE_CONFIG[member.role];
   const MemberIcon = cfg.icon;
   const showActions = member.role !== 'owner' && !isSelf && canManage;
@@ -205,7 +279,7 @@ function MemberRow({
               {member.nickname}
             </span>
             {isSelf && (
-              <span className="text-[9px] sm:text-[10px] text-emerald-500/70 font-medium bg-emerald-500/10 px-1 sm:px-1.5 py-0.5 rounded shrink-0">(Du)</span>
+              <span className="text-[9px] sm:text-[10px] text-emerald-500/70 font-medium bg-emerald-500/10 px-1 sm:px-1.5 py-0.5 rounded shrink-0">{mm(UI_LABELS.selfIndicator)}</span>
             )}
           </div>
           <div className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-1.5 sm:gap-2 mt-0.5">
@@ -222,7 +296,7 @@ function MemberRow({
         {/* Role Badge */}
         <div className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-medium shrink-0 ${cfg.bgColor} ${cfg.borderColor} ${cfg.textColor}`}>
           <MemberIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-          <span className="hidden sm:inline">{cfg.label}</span>
+          <span className="hidden sm:inline">{mm(UI_LABELS[cfg.labelKey])}</span>
         </div>
 
         {/* Actions */}
@@ -235,16 +309,16 @@ function MemberRow({
                   ? 'bg-slate-600/80 border-slate-500/60 text-white'
                   : 'bg-slate-700/70 hover:bg-slate-600/80 border-slate-600/60 text-slate-300 hover:text-white'
               }`}
-              title="Rang ändern"
+              title={mm(UI_LABELS.changeRole)}
             >
               {isRoleSelectorOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              <span className="hidden sm:inline">Rang</span>
+              <span className="hidden sm:inline">{mm(UI_LABELS.roleButton)}</span>
             </button>
             {isOwner && !isKickTarget && (
               <button
                 onClick={() => setConfirmKickId(member.user_id)}
                 className="p-1.5 sm:p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-all"
-                title="Mitglied entfernen"
+                title={mm(UI_LABELS.removeMember)}
               >
                 <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
@@ -271,19 +345,19 @@ function MemberRow({
         <div className="flex items-center gap-2 px-4 py-2.5 mt-2 rounded-xl bg-red-500/10 border border-red-500/25">
           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
           <span className="text-xs text-red-300 flex-1">
-            <span className="font-semibold">{member.nickname}</span> wirklich entfernen?
+            <span className="font-semibold">{member.nickname}</span>? {mm(UI_LABELS.removeMember)}
           </span>
           <button
             onClick={() => handleKick(member.user_id)}
             className="text-xs px-3 py-1.5 rounded-lg bg-red-500/25 text-red-300 hover:bg-red-500/40 transition-colors font-medium border border-red-500/30"
           >
-            Ja, kicken
+            {mm(UI_LABELS.confirmKick)}
           </button>
           <button
             onClick={() => setConfirmKickId(null)}
             className="text-xs px-3 py-1.5 rounded-lg bg-slate-700/70 hover:bg-slate-600/80 transition-colors text-slate-400 border border-slate-600/50"
           >
-            Abbrechen
+            {mm(UI_LABELS.cancel)}
           </button>
         </div>
       )}
@@ -293,36 +367,41 @@ function MemberRow({
 
 type GemeindeTab = 'members' | 'meldungen' | 'finanzen' | 'settings' | 'election';
 
-const LEDGER_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  company_contract: { label: 'Firmenauftrag', color: 'text-orange-400' },
-  building_cost: { label: 'Baukosten', color: 'text-red-400' },
-  bulldoze_cost: { label: 'Abriss', color: 'text-red-400' },
-  upgrade_cost: { label: 'Upgrade', color: 'text-orange-400' },
-  company_founding: { label: 'Firmengruendung', color: 'text-red-400' },
-  company_dissolve: { label: 'Firmenaufloesung', color: 'text-emerald-400' },
-  marketplace_buy: { label: 'Marktplatz Kauf', color: 'text-red-400' },
-  marketplace_sell: { label: 'Marktplatz Verkauf', color: 'text-emerald-400' },
-  trade_send: { label: 'Handel gesendet', color: 'text-red-400' },
-  trade_receive: { label: 'Handel erhalten', color: 'text-emerald-400' },
-  event_fix: { label: 'Event behoben', color: 'text-red-400' },
-  event_penalty: { label: 'Strafgebühr', color: 'text-red-400' },
-  emergency_repair: { label: 'Notfallreparatur', color: 'text-red-400' },
-  shield: { label: 'Schutzschild', color: 'text-red-400' },
-  milestone: { label: 'Meilenstein', color: 'text-emerald-400' },
-  loan_take: { label: 'Kredit aufgenommen', color: 'text-blue-400' },
-  loan_repay: { label: 'Kredit zurückgezahlt', color: 'text-cyan-400' },
-  interest: { label: 'Zinsen', color: 'text-red-400' },
-  idle_earnings: { label: 'Idle-Einnahmen', color: 'text-emerald-400' },
-  buenzli_fine: { label: 'Bünzli-Busse', color: 'text-amber-400' },
-  buenzli_penalty: { label: 'Bünzli-Strafe', color: 'text-red-400' },
-  crime_burglary: { label: 'Einbruch-Schaden', color: 'text-red-400' },
-  crime_catch_reward: { label: 'Verbrecherjagd', color: 'text-emerald-400' },
-  police_dispatch: { label: 'Polizeieinsatz', color: 'text-blue-400' },
-  company_tax: { label: 'Firmensteuer', color: 'text-emerald-400' },
-  company_founding_loan: { label: 'Gründungskredit', color: 'text-red-400' },
-  werkhof_repair:        { label: '🔧 Stadtpatrouille Reparatur', color: 'text-amber-400' },
-  parking_fee:           { label: '🅿️ Parkgebühren', color: 'text-emerald-400' },
-  parking_fine:          { label: '🚔 Parkbusse (Gemeinde)', color: 'text-emerald-400' },
+const LEDGER_TYPE_LABEL_KEYS: Record<string, { labelKey: keyof typeof UI_LABELS; color: string }> = {
+  company_contract: { labelKey: 'ledgerCompanyContract', color: 'text-orange-400' },
+  building_cost: { labelKey: 'ledgerBuildingCost', color: 'text-red-400' },
+  bulldoze_cost: { labelKey: 'ledgerBulldoze', color: 'text-red-400' },
+  upgrade_cost: { labelKey: 'ledgerUpgrade', color: 'text-orange-400' },
+  company_founding: { labelKey: 'ledgerCompanyFounding', color: 'text-red-400' },
+  company_dissolve: { labelKey: 'ledgerCompanyDissolve', color: 'text-emerald-400' },
+  marketplace_buy: { labelKey: 'ledgerMarketBuy', color: 'text-red-400' },
+  marketplace_sell: { labelKey: 'ledgerMarketSell', color: 'text-emerald-400' },
+  trade_send: { labelKey: 'ledgerTradeSend', color: 'text-red-400' },
+  trade_receive: { labelKey: 'ledgerTradeReceive', color: 'text-emerald-400' },
+  event_fix: { labelKey: 'ledgerEventFix', color: 'text-red-400' },
+  event_penalty: { labelKey: 'ledgerEventPenalty', color: 'text-red-400' },
+  emergency_repair: { labelKey: 'ledgerEmergencyRepair', color: 'text-red-400' },
+  shield: { labelKey: 'ledgerShield', color: 'text-red-400' },
+  milestone: { labelKey: 'ledgerMilestone', color: 'text-emerald-400' },
+  loan_take: { labelKey: 'ledgerLoanTake', color: 'text-blue-400' },
+  loan_repay: { labelKey: 'ledgerLoanRepay', color: 'text-cyan-400' },
+  interest: { labelKey: 'ledgerInterest', color: 'text-red-400' },
+  idle_earnings: { labelKey: 'ledgerIdleEarnings', color: 'text-emerald-400' },
+  buenzli_fine: { labelKey: 'ledgerBuenzliFine', color: 'text-amber-400' },
+  buenzli_penalty: { labelKey: 'ledgerBuenzliPenalty', color: 'text-red-400' },
+  crime_burglary: { labelKey: 'ledgerCrimeBurglary', color: 'text-red-400' },
+  crime_catch_reward: { labelKey: 'ledgerCrimeCatch', color: 'text-emerald-400' },
+  police_dispatch: { labelKey: 'ledgerPoliceDispatch', color: 'text-blue-400' },
+  company_tax: { labelKey: 'ledgerCompanyTax', color: 'text-emerald-400' },
+  company_founding_loan: { labelKey: 'ledgerFoundingLoan', color: 'text-red-400' },
+  werkhof_repair:        { labelKey: 'ledgerWerkhofRepair', color: 'text-amber-400' },
+  parking_fee:           { labelKey: 'ledgerParkingFee', color: 'text-emerald-400' },
+  parking_fine:          { labelKey: 'ledgerParkingFine', color: 'text-emerald-400' },
+  income:                { labelKey: 'ledgerIncome', color: 'text-emerald-400' },
+  repair_cost:           { labelKey: 'ledgerRepairCost', color: 'text-red-400' },
+  expand_city:           { labelKey: 'ledgerExpandCity', color: 'text-red-400' },
+  woodcutter_harvest:    { labelKey: 'ledgerWoodcutterHarvest', color: 'text-emerald-400' },
+  energy_spot_sell:      { labelKey: 'ledgerEnergySpotSell', color: 'text-emerald-400' },
 };
 
 // ── Meldungen (Verwaltung) ─────────────────────────────────
@@ -335,18 +414,18 @@ const STATUS_TAB_MAP: Record<StatusTab, string> = {
   erledigt: 'resolved,expired,failed,false_alarm',
 };
 
-function meldungStatusLabel(s: EventStatus | string): string {
+function meldungStatusLabel(s: EventStatus | string, mm: (key: Parameters<ReturnType<typeof useMessages>>[0]) => string): string {
   switch (s) {
-    case 'detected': return 'Entdeckt';
-    case 'reported': return 'Gemeldet';
-    case 'investigating': return 'Untersuchung';
-    case 'assigned': return 'Beauftragt';
-    case 'resolved': return 'Behoben';
-    case 'expired': return 'Abgelaufen';
-    case 'failed': return 'Fehlgeschlagen';
-    case 'false_alarm': return 'Fehlalarm';
-    case 'external_reported': return 'Extern gemeldet';
-    case 'disputed': return 'Einspruch';
+    case 'detected': return mm(UI_LABELS.statusDetected);
+    case 'reported': return mm(UI_LABELS.statusReported);
+    case 'investigating': return mm(UI_LABELS.statusInvestigating);
+    case 'assigned': return mm(UI_LABELS.statusAssigned);
+    case 'resolved': return mm(UI_LABELS.statusResolved);
+    case 'expired': return mm(UI_LABELS.statusExpired);
+    case 'failed': return mm(UI_LABELS.statusFailed);
+    case 'false_alarm': return mm(UI_LABELS.statusFalseAlarm);
+    case 'external_reported': return mm(UI_LABELS.statusExtReported);
+    case 'disputed': return mm(UI_LABELS.statusDisputed);
     default: return s;
   }
 }
@@ -374,17 +453,17 @@ function severityColor(severity: number) {
   return 'text-blue-400';
 }
 
-function severityLabel(severity: number) {
-  if (severity >= 5) return 'Katastrophal';
-  if (severity >= 4) return 'Kritisch';
-  if (severity >= 3) return 'Schwer';
-  if (severity >= 2) return 'Mittel';
-  return 'Leicht';
+function severityLabel(severity: number, mm: (key: Parameters<ReturnType<typeof useMessages>>[0]) => string) {
+  if (severity >= 5) return mm(UI_LABELS.sevCatastrophic);
+  if (severity >= 4) return mm(UI_LABELS.sevCritical);
+  if (severity >= 3) return mm(UI_LABELS.sevHeavy);
+  if (severity >= 2) return mm(UI_LABELS.sevMedium);
+  return mm(UI_LABELS.sevLight);
 }
 
-function timeRemaining(expiresAt: string) {
+function timeRemaining(expiresAt: string, mm?: (key: Parameters<ReturnType<typeof useMessages>>[0]) => string) {
   const diff = new Date(expiresAt).getTime() - Date.now();
-  if (diff <= 0) return 'Abgelaufen';
+  if (diff <= 0) return mm ? mm(UI_LABELS.timeExpired) : 'Expired';
   const hours = Math.floor(diff / 3600000);
   const minutes = Math.floor((diff % 3600000) / 60000);
   if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
@@ -393,6 +472,8 @@ function timeRemaining(expiresAt: string) {
 
 function MeldungenContent() {
   const { municipalityRole } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [tab, setTab] = useState<StatusTab>('offen');
   const [events, setEvents] = useState<VerwaltungEvent[]>([]);
   const [stats, setStats] = useState<MunicipalityStats | null>(null);
@@ -532,7 +613,7 @@ function MeldungenContent() {
       {stats?.cantonal_investigation_until && new Date(stats.cantonal_investigation_until) > new Date() && (
         <div className="p-2.5 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-xs">
           <div className="flex items-center gap-2 font-bold mb-1"><Gavel className="w-4 h-4" /> Kantonale Untersuchung aktiv!</div>
-          <p>Event-Rate verdoppelt, Reputation sinkt. Endet in {timeRemaining(stats.cantonal_investigation_until)}.</p>
+          <p>Event-Rate verdoppelt, Reputation sinkt. Endet in {timeRemaining(stats.cantonal_investigation_until, mm)}.</p>
         </div>
       )}
 
@@ -631,13 +712,13 @@ function MeldungenContent() {
                           <div className="text-[10px] text-slate-500">{event.category}</div>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${severityColor(event.severity)}`}>{severityLabel(event.severity)}</Badge>
-                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${meldungStatusColor(event.status)}`}>{meldungStatusLabel(event.status)}</Badge>
+                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${severityColor(event.severity)}`}>{severityLabel(event.severity, mm)}</Badge>
+                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${meldungStatusColor(event.status)}`}>{meldungStatusLabel(event.status, mm)}</Badge>
                         </div>
                       </div>
                       <div className="flex gap-3 text-[10px] text-slate-400 mt-1">
                         <span className="flex items-center gap-0.5"><Coins className="w-2.5 h-2.5" />{event.fix_cost.toLocaleString()}</span>
-                        <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{timeRemaining(event.expires_at)}</span>
+                        <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{timeRemaining(event.expires_at, mm)}</span>
                         {event.external_reporter_nickname && <span className="text-purple-400">von {event.external_reporter_nickname}</span>}
                         {event.escalation_level > 0 && <span className="text-red-400">Eskaliert ({event.escalation_level}x)</span>}
                         {event.assigned_company_name && <span className="flex items-center gap-0.5"><Building2 className="w-2.5 h-2.5" />{event.assigned_company_name}</span>}
@@ -660,6 +741,8 @@ function MeldungEventDetail({ event, companies, loading, stats, municipalityRole
   onBack: () => void; onBeauftragen: (eid: number, cid: number) => void; onSelbstBeheben: (eid: number) => void;
   onNotfallreparatur: (eid: number) => void; onPolizeiSchicken: (eid: number) => void; onExternalResponse: (eid: number, action: 'accept' | 'dispute') => void;
 }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const canAct = ['reported', 'external_reported'].includes(event.status);
   const canAfford = stats ? stats.treasury >= event.fix_cost : false;
 
@@ -685,7 +768,7 @@ function MeldungEventDetail({ event, companies, loading, stats, municipalityRole
         <p className="text-sm text-slate-300 mb-3">{event.description}</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="flex items-center gap-2"><Coins className="w-4 h-4 text-amber-400" /><span className="text-slate-400">Kosten:</span><span className="font-mono font-bold text-amber-400">{event.fix_cost.toLocaleString()}</span></div>
-          <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-blue-400" /><span className="text-slate-400">Frist:</span><span className="font-mono text-blue-400">{new Date(event.expires_at).getTime() > Date.now() ? `${Math.ceil((new Date(event.expires_at).getTime() - Date.now()) / 3600000)}h` : 'Abgelaufen'}</span></div>
+          <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-blue-400" /><span className="text-slate-400">Frist:</span><span className="font-mono text-blue-400">{new Date(event.expires_at).getTime() > Date.now() ? `${Math.ceil((new Date(event.expires_at).getTime() - Date.now()) / 3600000)}h` : mm(UI_LABELS.timeExpired)}</span></div>
           {event.stat_impact && (() => {
             const statNames: Record<string, { label: string; icon: string }> = { security: { label: 'Sicherheit', icon: '\uD83D\uDEE1' }, attractiveness: { label: 'Attraktivität', icon: '\u2B50' }, cleanliness: { label: 'Sauberkeit', icon: '\uD83E\uDDF9' }, infrastructure: { label: 'Infrastruktur', icon: '\uD83C\uDFD7' }, transparency: { label: 'Transparenz', icon: '\uD83D\uDD0D' } };
             const stat = statNames[event.stat_impact] || { label: event.stat_impact, icon: '\uD83D\uDCCA' };
@@ -713,7 +796,7 @@ function MeldungEventDetail({ event, companies, loading, stats, municipalityRole
             <div className="flex items-center gap-2 font-bold mb-1"><Globe className="w-4 h-4" /> Externe Meldung</div>
             <p>Ein Bürger einer anderen Gemeinde hat dieses Problem gemeldet.</p>
             {event.external_reporter_nickname && <p className="mt-1">Melder: <span className="font-medium text-purple-200">{event.external_reporter_nickname}</span></p>}
-            {event.external_deadline && <p className="mt-1">Frist: <span className="font-mono text-amber-400">{timeRemaining(event.external_deadline)}</span></p>}
+            {event.external_deadline && <p className="mt-1">Frist: <span className="font-mono text-amber-400">{timeRemaining(event.external_deadline, mm)}</span></p>}
             {event.escalation_level > 0 && <p className="mt-1 text-red-400">Eskalationsstufe: {event.escalation_level}</p>}
           </div>
           <div className="flex gap-2">
@@ -731,7 +814,7 @@ function MeldungEventDetail({ event, companies, loading, stats, municipalityRole
         <div className="p-3 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs text-rose-300">
           <div className="flex items-center gap-2 font-bold mb-1"><Gavel className="w-4 h-4" /> Einspruch läuft</div>
           <p>Evidence-Score: <span className="font-mono font-bold">{event.evidence_score ?? '?'}/100</span></p>
-          {event.dispute_until && <p>Auswertung in: <span className="font-mono">{timeRemaining(event.dispute_until)}</span></p>}
+          {event.dispute_until && <p>Auswertung in: <span className="font-mono">{timeRemaining(event.dispute_until, mm)}</span></p>}
         </div>
       )}
 
@@ -782,7 +865,7 @@ function MeldungEventDetail({ event, companies, loading, stats, municipalityRole
             {event.status === 'resolved' && <CheckCircle2 className="w-4 h-4" />}
             {event.status === 'assigned' && <Wrench className="w-4 h-4" />}
             {event.status === 'failed' && <AlertTriangle className="w-4 h-4" />}
-            <span className="font-medium">Status: {event.status === 'resolved' ? `Behoben am ${new Date(event.resolved_at || '').toLocaleDateString('de-CH')}` : event.status === 'assigned' ? 'Firma arbeitet daran...' : meldungStatusLabel(event.status)}</span>
+            <span className="font-medium">Status: {event.status === 'resolved' ? `Behoben am ${new Date(event.resolved_at || '').toLocaleDateString('de-CH')}` : event.status === 'assigned' ? 'Firma arbeitet daran...' : meldungStatusLabel(event.status, mm)}</span>
           </div>
         </div>
       )}
@@ -821,11 +904,14 @@ function formatCHF(amount: number): string {
 
 function FinanzenContent({ canManage }: { canManage: boolean }) {
   const { state, setTaxRate, setBudgetFunding, setSocialContributionRate, setWelfarePerUnemployed } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [draftTaxRate, setDraftTaxRate] = useState<number>(Math.round(state.taxRate || 0));
   const [financeSubTab, setFinanceSubTab] = useState<'tax_budget' | 'bank_ledger' | 'company_loans' | 'social_fund'>('tax_budget');
   const [bankStatus, setBankStatus] = useState<BankStatus | null>(null);
   const [ledgerData, setLedgerData] = useState<LedgerResponse | null>(null);
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
   const [loanAmount, setLoanAmount] = useState('');
@@ -837,7 +923,7 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
       setLoading(true);
       const [statusResult, ledgerResult] = await Promise.allSettled([
         getBankStatus(),
-        getLedger(15, 0, ledgerFilter),
+        getLedger(200, 0, ledgerFilter, 24),
       ]);
       if (statusResult.status === 'fulfilled') setBankStatus(statusResult.value);
       if (ledgerResult.status === 'fulfilled') setLedgerData(ledgerResult.value);
@@ -913,11 +999,15 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
   const businessTaxIncome = state.stats.tax_income_business || 0;
   const propertyTaxIncome = state.stats.tax_income_property || 0;
   const buildingIncome = state.stats.building_income || 0;
+  const companyTaxIncome = Number((state.stats as any).company_tax_income || 0);
   const budgetExpense = state.stats.budget_expenses || 0;
   const maintenanceExpense = state.stats.maintenance_expenses || 0;
   const administrationBaseExpense = state.stats.administration_base_expenses || 0;
   const civicOverheadExpense = state.stats.civic_overhead_expenses || 0;
   const utilityOverheadExpense = state.stats.utility_overhead_expenses || 0;
+  const winterHeatingSurcharge = Number((state.stats as any).winterHeatingSurcharge || 0);
+  const powerImportCost = Number((state.stats as any).power_import_cost || 0);
+  const tradeIncome = Number((state as any).tradeIncome || 0);
   const budgetCategories = [
     { key: 'police', ...state.budget.police },
     { key: 'fire', ...state.budget.fire },
@@ -1055,50 +1145,71 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
 
         <div className="space-y-1.5 pt-1">
           <div className="text-xs text-slate-400">Einnahmen-Aufschlüsselung pro Tag</div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">Steuern gesamt</span>
-            <span className="font-mono text-emerald-400">{taxIncome.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">- Einwohnersteuer</span>
-            <span className="font-mono text-emerald-400">{populationTaxIncome.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">- Firmensteuer (v1)</span>
-            <span className="font-mono text-emerald-400">{businessTaxIncome.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">- Grundsteuer</span>
-            <span className="font-mono text-emerald-400">{propertyTaxIncome.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
+          {taxIncome > 0 && <>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">Steuern gesamt</span>
+              <span className="font-mono text-emerald-400">{taxIncome.toLocaleString()} CHF</span>
+            </div>
+            {populationTaxIncome > 0 && <div className="flex items-center justify-between text-xs pl-3">
+              <span className="text-slate-500">- Einwohnersteuer</span>
+              <span className="font-mono text-emerald-400">{populationTaxIncome.toLocaleString()} CHF</span>
+            </div>}
+            {businessTaxIncome > 0 && <div className="flex items-center justify-between text-xs pl-3">
+              <span className="text-slate-500">- Firmensteuer (v1)</span>
+              <span className="font-mono text-emerald-400">{businessTaxIncome.toLocaleString()} CHF</span>
+            </div>}
+            {propertyTaxIncome > 0 && <div className="flex items-center justify-between text-xs pl-3">
+              <span className="text-slate-500">- Grundsteuer</span>
+              <span className="font-mono text-emerald-400">{propertyTaxIncome.toLocaleString()} CHF</span>
+            </div>}
+          </>}
+          {buildingIncome > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Gebäude-Einnahmen</span>
             <span className="font-mono text-emerald-400">{buildingIncome.toLocaleString()} CHF</span>
-          </div>
+          </div>}
+          {companyTaxIncome > 0 && <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">🏢 Firmen-Steuer</span>
+            <span className="font-mono text-emerald-400">{companyTaxIncome.toLocaleString()} CHF</span>
+          </div>}
+          {tradeIncome > 0 && <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">🤝 Handelspartner</span>
+            <span className="font-mono text-emerald-400">{tradeIncome.toLocaleString()} CHF</span>
+          </div>}
+          {taxIncome === 0 && buildingIncome === 0 && companyTaxIncome === 0 && tradeIncome === 0 && (
+            <div className="text-xs text-slate-600 italic">Keine Einnahmen — baue Wohnzonen und Gebäude</div>
+          )}
         </div>
 
         <div className="space-y-1.5 pt-1">
           <div className="text-xs text-slate-400">Ausgaben-Aufschlüsselung pro Tag</div>
-          <div className="flex items-center justify-between text-xs">
+          {budgetExpense > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Budget (Regler)</span>
             <span className="font-mono text-red-400">{budgetExpense.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
+          </div>}
+          {maintenanceExpense > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Gebäude-Wartung</span>
             <span className="font-mono text-red-400">{maintenanceExpense.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
+          </div>}
+          {administrationBaseExpense > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Basis-Verwaltung</span>
             <span className="font-mono text-red-400">{administrationBaseExpense.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
+          </div>}
+          {civicOverheadExpense > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Bürger-/Job-Overhead</span>
             <span className="font-mono text-red-400">{civicOverheadExpense.toLocaleString()} CHF</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
+          </div>}
+          {utilityOverheadExpense > 0 && <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Strom/Wasser Betrieb</span>
             <span className="font-mono text-red-400">{utilityOverheadExpense.toLocaleString()} CHF</span>
-          </div>
+          </div>}
+          {powerImportCost > 0 && <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">⚡ Strom-Import</span>
+            <span className="font-mono text-red-400">{powerImportCost.toLocaleString()} CHF</span>
+          </div>}
+          {winterHeatingSurcharge > 0 && <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">❄️ Winter-Heizung</span>
+            <span className="font-mono text-red-400">{winterHeatingSurcharge.toLocaleString()} CHF</span>
+          </div>}
         </div>
 
         {/* Strom-Status */}
@@ -1296,10 +1407,14 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
         </div>
       )}
 
+
       {/* Ledger */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-white">Buchungen</span>
+          <div>
+            <span className="text-sm font-semibold text-white">Buchungen</span>
+            <span className="text-[10px] text-slate-600 ml-2">letzte 24 Std, gruppiert</span>
+          </div>
           <div className="flex gap-1 bg-slate-800/60 rounded-lg p-0.5">
             {(['all', 'income', 'expense'] as const).map(f => (
               <button
@@ -1317,45 +1432,173 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
           </div>
         </div>
 
-        {ledgerData && ledgerData.entries.length > 0 ? (
-          <div className="space-y-1.5">
-            {ledgerData.entries.map((entry: LedgerEntry) => {
-              const typeInfo = LEDGER_TYPE_LABELS[entry.type] || { label: entry.type, color: 'text-slate-400' };
-              const isPositive = entry.amount >= 0;
+        {ledgerData && ledgerData.entries.length > 0 ? (() => {
+          // Einträge nach Typ gruppieren + Einzeleinträge indexieren
+          const groupMap = new Map<string, { type: string; totalAmount: number; count: number; latestTs: string }>();
+          const entriesByType = new Map<string, typeof ledgerData.entries>();
+          for (const entry of ledgerData.entries) {
+            const existing = groupMap.get(entry.type);
+            if (!existing) {
+              groupMap.set(entry.type, { type: entry.type, totalAmount: entry.amount, count: 1, latestTs: entry.ts });
+            } else {
+              existing.totalAmount += entry.amount;
+              existing.count++;
+              if (new Date(entry.ts) > new Date(existing.latestTs)) existing.latestTs = entry.ts;
+            }
+            if (!entriesByType.has(entry.type)) entriesByType.set(entry.type, []);
+            entriesByType.get(entry.type)!.push(entry);
+          }
+          const groups = Array.from(groupMap.values()).sort(
+            (a, b) => new Date(b.latestTs).getTime() - new Date(a.latestTs).getTime()
+          );
+          // Nächste Einnahmen berechnen
+          const nextIncomeInfo = bankStatus.lastIncomeAt ? (() => {
+            const nextAt = new Date(bankStatus.lastIncomeAt).getTime() + 60 * 60 * 1000;
+            const diffMs = nextAt - Date.now();
+            const diffMin = Math.round(diffMs / 60000);
+            const dailyNet = bankStatus.dailyIncome - bankStatus.dailyExpenses;
+            const hourlyNet = Math.round(dailyNet / 24);
+            return { diffMin, hourlyNet, isOverdue: diffMs <= 0 };
+          })() : null;
 
-              return (
-                <div
-                  key={entry.id}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-700/30 bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
-                >
-                  <div className={`w-1 h-8 rounded-full shrink-0 ${isPositive ? 'bg-emerald-500/60' : 'bg-red-500/60'}`} />
+          return (
+            <div className="space-y-1.5">
+              {/* Nächste Auszahlung */}
+              {nextIncomeInfo && (ledgerFilter === 'all' || ledgerFilter === 'income') && (
+                <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${nextIncomeInfo.isOverdue ? 'border-emerald-500/25 bg-emerald-500/5' : 'border-slate-700/30 bg-slate-800/20'}`}>
+                  <div className="w-1 h-8 rounded-full shrink-0 bg-emerald-500/30" />
                   <div className="flex-1 min-w-0">
-                    <span className={`text-xs font-medium ${typeInfo.color}`}>
-                      {typeInfo.label}
-                    </span>
-                    <div className="text-[10px] text-slate-600 mt-0.5">
-                      {new Date(entry.ts).toLocaleString('de-CH', {
-                        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                      })}
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-slate-500" />
+                      <span className="text-xs font-medium text-slate-400">Nächste Einnahmen</span>
+                    </div>
+                    <div className={`text-[10px] mt-0.5 ${nextIncomeInfo.isOverdue ? 'text-emerald-400' : 'text-slate-600'}`}>
+                      {nextIncomeInfo.isOverdue ? 'Wird gleich gutgeschrieben...' : `in ${nextIncomeInfo.diffMin} Min`}
                     </div>
                   </div>
-                  <span className={`text-sm font-mono font-semibold shrink-0 ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {formatCHF(entry.amount)}
+                  <span className={`text-sm font-mono font-semibold shrink-0 ${nextIncomeInfo.hourlyNet >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+                    {nextIncomeInfo.hourlyNet >= 0 ? '+' : ''}{nextIncomeInfo.hourlyNet.toLocaleString('de-CH')}
                   </span>
                 </div>
-              );
-            })}
-            {ledgerData.hasMore && (
-              <div className="text-center pt-2">
-                <span className="text-[11px] text-slate-600">
-                  {ledgerData.total} Einträge insgesamt
-                </span>
-              </div>
-            )}
-          </div>
-        ) : (
+              )}
+
+              {/* Gruppierte Einträge */}
+              {groups.map(group => {
+                const typeInfo = LEDGER_TYPE_LABEL_KEYS[group.type];
+                const typeLabel = typeInfo ? mm(UI_LABELS[typeInfo.labelKey]) : group.type;
+                const typeColor = typeInfo ? typeInfo.color : 'text-slate-400';
+                const isPositive = group.totalAmount >= 0;
+                const isExpandable = group.count > 1;
+                const isExpanded = expandedGroups.has(group.type);
+                const individualEntries = entriesByType.get(group.type) ?? [];
+                return (
+                  <div key={group.type}>
+                    <div
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-700/30 bg-slate-800/20 transition-colors ${isExpandable ? 'cursor-pointer hover:bg-slate-800/50' : ''}`}
+                      onClick={() => {
+                        if (!isExpandable) return;
+                        setExpandedGroups(prev => {
+                          const next = new Set(prev);
+                          if (next.has(group.type)) next.delete(group.type); else next.add(group.type);
+                          return next;
+                        });
+                      }}
+                    >
+                      <div className={`w-1 self-stretch rounded-full shrink-0 ${isPositive ? 'bg-emerald-500/60' : 'bg-red-500/60'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-medium ${typeColor}`}>{typeLabel}</span>
+                          {group.count > 1 && (
+                            <span className="text-[10px] text-slate-600 bg-slate-700/50 px-1.5 py-0.5 rounded-full">×{group.count}</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">
+                          {group.type === 'income' ? 'Letzte: ' : ''}
+                          {new Date(group.latestTs).toLocaleString('de-CH', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-sm font-mono font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {isPositive ? '+' : ''}{group.totalAmount.toLocaleString('de-CH')}
+                        </span>
+                        {isExpandable && (
+                          <ChevronDown className={`w-3.5 h-3.5 text-slate-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                        )}
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div className="ml-4 mt-1 space-y-1 border-l border-slate-700/40 pl-3">
+                        {individualEntries.map(entry => {
+                          const meta = entry.meta as Record<string, unknown> | null;
+                          const buildingType = meta?.buildingType as string | undefined;
+                          const buildingName = buildingType
+                            ? (TOOL_INFO[buildingType as keyof typeof TOOL_INFO]?.name ?? buildingType)
+                            : null;
+                          const fromLevel = meta?.fromLevel as number | undefined;
+                          const toLevel = meta?.toLevel as number | undefined;
+                          const hours = meta?.hours as number | undefined;
+                          const dailyIncome = meta?.dailyIncome as number | undefined;
+                          const dailyExpenses = meta?.dailyExpenses as number | undefined;
+                          const buildings = meta?.buildings as { tool: string; cost: number }[] | undefined;
+                          return (
+                            <div key={entry.id} className="px-2 py-1.5 rounded-md bg-slate-800/30 text-[11px]">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 text-slate-500">
+                                  {new Date(entry.ts).toLocaleString('de-CH', {
+                                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                                  })}
+                                  {hours != null && <span className="ml-1 text-slate-600">({hours}h)</span>}
+                                </div>
+                                <span className={`font-mono font-semibold ${entry.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {entry.amount >= 0 ? '+' : ''}{entry.amount.toLocaleString('de-CH')}
+                                </span>
+                              </div>
+                              {/* Gebäudeliste bei building_cost (neu: pro Gebäude) */}
+                              {buildings && buildings.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {buildings.map((b, i) => {
+                                    const name = TOOL_INFO[b.tool as keyof typeof TOOL_INFO]?.name ?? b.tool;
+                                    return (
+                                      <div key={i} className="flex justify-between text-slate-600">
+                                        <span>{name}</span>
+                                        <span className="font-mono text-red-400/70">−{b.cost.toLocaleString('de-CH')}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {/* Upgrade: Gebäude + Level */}
+                              {buildingName && fromLevel != null && toLevel != null && (
+                                <div className="mt-0.5 text-slate-500">
+                                  {buildingName} — L{fromLevel} → L{toLevel}
+                                </div>
+                              )}
+                              {/* Repair: nur Gebäudename */}
+                              {buildingName && fromLevel == null && (
+                                <div className="mt-0.5 text-slate-500">{buildingName}</div>
+                              )}
+                              {/* income: Einnahmen/Ausgaben */}
+                              {dailyIncome != null && (
+                                <div className="flex gap-3 mt-0.5 text-slate-600">
+                                  <span>+{Number(dailyIncome).toLocaleString('de-CH')}/T</span>
+                                  <span>−{Number(dailyExpenses).toLocaleString('de-CH')}/T</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })() : (
           <div className="text-center py-8 text-slate-600 text-sm">
-            Keine Buchungen vorhanden
+            Keine Buchungen in den letzten 24 Std
           </div>
         )}
       </div>
@@ -2348,6 +2591,8 @@ function ElectionContent({ slug, myRole, currentUserId }: { slug: string; myRole
 export function GemeindePanel() {
   const { setActivePanel, municipalitySlug, setBauzoneMode } = useGame();
   const slug = municipalitySlug || '';
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2627,7 +2872,7 @@ export function GemeindePanel() {
                     <div className="flex items-center gap-2 mb-3 mt-1">
                       <GroupIcon className={`w-3.5 h-3.5 ${cfg.color}`} />
                       <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {cfg.label}
+                        {mm(UI_LABELS[cfg.labelKey])}
                       </span>
                       <span className="text-[11px] text-slate-600">({members.length})</span>
                       <div className="flex-1 h-px bg-slate-700/50" />

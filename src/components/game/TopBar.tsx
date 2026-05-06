@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -22,18 +21,46 @@ import { useRealTime } from '@/hooks/useRealTime';
 import { NoticeCenter } from '@/components/ui/NoticeCenter';
 import { AchievementCenter } from '@/components/ui/AchievementCenter';
 
-// Translatable UI labels
+// UI labels (deutsch, da Spiel-Sprache Schweizerdeutsch/Deutsch ist)
 const UI_LABELS = {
-  population: msg('Population'),
-  jobs: msg('Jobs'),
-  funds: msg('Funds'),
-  monthly: msg('Daily'),
-  tax: msg('Tax'),
-  happiness: msg('Happiness'),
-  health: msg('Health'),
-  education: msg('Education'),
-  safety: msg('Safety'),
-  environment: msg('Environment'),
+  population: 'Einwohner',
+  jobs: 'Jobs',
+  funds: 'Geld',
+  monthly: 'Täglich',
+  tax: 'Steuer',
+  happiness: 'Zufriedenheit',
+  health: 'Gesundheit',
+  education: 'Bildung',
+  safety: 'Sicherheit',
+  environment: 'Umwelt',
+  // Happiness breakdown
+  happinessBreakdown: 'Zufriedenheit Aufschlüsselung',
+  breakdownSafety:    'Sicherheit (×15%)',
+  breakdownHealth:    'Gesundheit (×20%)',
+  breakdownEducation: 'Bildung (×15%)',
+  breakdownEnv:       'Umwelt (×15%)',
+  breakdownWork:      'Arbeit (×20%)',
+  breakdownTaxes:     'Steuern',
+  breakdownWeather:   'Wetter',
+  breakdownCrime:     'Kriminalität',
+  breakdownUnemploy:  'Arbeitslosigkeit',
+  unemployedLabel:    'Arbeitslose',
+  // Seasons
+  seasonWinter:  'Winter',
+  seasonSpring:  'Frühling',
+  seasonSummer:  'Sommer',
+  seasonAutumn:  'Herbst',
+  // Weather types
+  weatherRain:        'Regen',
+  weatherDrizzle:     'Nieselregen',
+  weatherSnow:        'Schnee',
+  weatherBlizzard:    'Blizzard',
+  weatherStorm:       'Sturm',
+  weatherThunderstorm: 'Gewitter',
+  weatherFog:         'Nebel',
+  weatherClear:       'Klar',
+  // Misc
+  liveIndicator: 'LIVE',
 };
 
 // ============================================================================
@@ -216,7 +243,6 @@ function PenaltyRow({ label, value }: { label: string; value: number }) {
 export const StatsPanel = React.memo(function StatsPanel() {
   const { state } = useGame();
   const { stats } = state;
-  const m = useMessages();
 
   const unemploymentRate = Number(stats.unemployment_rate || 0);
   const unemploymentColor = unemploymentRate <= 5 ? 'text-green-600 dark:text-green-400' : unemploymentRate <= 15 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
@@ -233,34 +259,34 @@ export const StatsPanel = React.memo(function StatsPanel() {
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="cursor-help">
-            <MiniStat icon={<HappyIcon size={12} />} label={String(m(UI_LABELS.happiness))} value={stats.happiness} />
+            <MiniStat icon={<HappyIcon size={12} />} label={UI_LABELS.happiness} value={stats.happiness} />
           </div>
         </TooltipTrigger>
         <TooltipContent className="w-52">
           <div className="space-y-1 py-0.5">
-            <div className="font-semibold text-xs mb-1 text-slate-200">Zufriedenheit Aufschlüsselung</div>
-            <PenaltyRow label="Sicherheit (×15%)" value={Math.round((stats.safety ?? 50) * 0.15)} />
-            <PenaltyRow label="Gesundheit (×20%)" value={Math.round((stats.health ?? 50) * 0.20)} />
-            <PenaltyRow label="Bildung (×15%)" value={Math.round((stats.education ?? 50) * 0.15)} />
-            <PenaltyRow label="Umwelt (×15%)" value={Math.round((stats.environment ?? 75) * 0.15)} />
-            <PenaltyRow label="Arbeit (×20%)" value={Math.round((Number((stats as any).happiness_job_satisfaction ?? stats.happiness)) * 0.20)} />
+            <div className="font-semibold text-xs mb-1 text-slate-200">{UI_LABELS.happinessBreakdown}</div>
+            <PenaltyRow label={UI_LABELS.breakdownSafety} value={Math.round((stats.safety ?? 50) * 0.15)} />
+            <PenaltyRow label={UI_LABELS.breakdownHealth} value={Math.round((stats.health ?? 50) * 0.20)} />
+            <PenaltyRow label={UI_LABELS.breakdownEducation} value={Math.round((stats.education ?? 50) * 0.15)} />
+            <PenaltyRow label={UI_LABELS.breakdownEnv} value={Math.round((stats.environment ?? 75) * 0.15)} />
+            <PenaltyRow label={UI_LABELS.breakdownWork} value={Math.round((Number((stats as any).happiness_job_satisfaction ?? stats.happiness)) * 0.20)} />
             <div className="border-t border-slate-600 my-1" />
-            <PenaltyRow label="Steuern" value={taxComp} />
-            {weatherPen !== 0 && <PenaltyRow label="Wetter" value={weatherPen} />}
-            {crimePen !== 0 && <PenaltyRow label="Kriminalität" value={crimePen} />}
-            {unemployPen !== 0 && <PenaltyRow label="Arbeitslosigkeit" value={unemployPen} />}
+            <PenaltyRow label={UI_LABELS.breakdownTaxes} value={taxComp} />
+            {weatherPen !== 0 && <PenaltyRow label={UI_LABELS.breakdownWeather} value={weatherPen} />}
+            {crimePen !== 0 && <PenaltyRow label={UI_LABELS.breakdownCrime} value={crimePen} />}
+            {unemployPen !== 0 && <PenaltyRow label={UI_LABELS.breakdownUnemploy} value={unemployPen} />}
           </div>
         </TooltipContent>
       </Tooltip>
-      <MiniStat icon={<HealthIcon size={12} />} label={String(m(UI_LABELS.health))} value={stats.health} />
-      <MiniStat icon={<EducationIcon size={12} />} label={String(m(UI_LABELS.education))} value={stats.education} />
-      <MiniStat icon={<SafetyIcon size={12} />} label={String(m(UI_LABELS.safety))} value={stats.safety} />
-      <MiniStat icon={<EnvironmentIcon size={12} />} label={String(m(UI_LABELS.environment))} value={stats.environment} />
+      <MiniStat icon={<HealthIcon size={12} />} label={UI_LABELS.health} value={stats.health} />
+      <MiniStat icon={<EducationIcon size={12} />} label={UI_LABELS.education} value={stats.education} />
+      <MiniStat icon={<SafetyIcon size={12} />} label={UI_LABELS.safety} value={stats.safety} />
+      <MiniStat icon={<EnvironmentIcon size={12} />} label={UI_LABELS.environment} value={stats.environment} />
       <div className="flex items-center gap-2">
         <span className="text-slate-500 dark:text-slate-400">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
         </span>
-        <span className="text-slate-500 dark:text-slate-400">Arbeitslose</span>
+        <span className="text-slate-500 dark:text-slate-400">{UI_LABELS.unemployedLabel}</span>
         <span className={`font-mono ${unemploymentColor}`}>{unemploymentRate.toFixed(1)}%</span>
       </div>
     </div>
@@ -281,7 +307,6 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
   const { state, setTaxRate } = useGame();
   const { stats, taxRate, cityName } = state;
   const displayCityName = cityNameOverride && cityNameOverride.trim().length > 0 ? cityNameOverride : cityName;
-  const m = useMessages();
 
   // Echte Systemzeit
   const realTime = useRealTime();
@@ -296,23 +321,23 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
   const formattedDate = `${String(displayDay).padStart(2, '0')}.${String(displayMonth).padStart(2, '0')}.${displayYear}`;
 
   // Jahreszeit aus dem Monat ableiten (Nordhalbkugel / Schweiz)
-  const season = displayMonth === 12 || displayMonth <= 2 ? { label: 'Winter', color: 'text-sky-300' }
-    : displayMonth <= 5 ? { label: 'Frühling', color: 'text-green-400' }
-    : displayMonth <= 8 ? { label: 'Sommer', color: 'text-yellow-400' }
-    : { label: 'Herbst', color: 'text-orange-400' };
+  const season = displayMonth === 12 || displayMonth <= 2 ? { label: UI_LABELS.seasonWinter, color: 'text-sky-300' }
+    : displayMonth <= 5 ? { label: UI_LABELS.seasonSpring, color: 'text-green-400' }
+    : displayMonth <= 8 ? { label: UI_LABELS.seasonSummer, color: 'text-yellow-400' }
+    : { label: UI_LABELS.seasonAutumn, color: 'text-orange-400' };
 
   // Wetter: serverWeather (vom Echtzeit-Hook) hat Vorrang, Fallback auf State
   const weatherType = serverWeather?.type ?? (state as any).weatherType ?? 'clear';
   const weatherTemp = serverWeather?.temperature ?? (state as any).weatherTemperature ?? null;
   const weatherWind = serverWeather?.windspeed ?? null;
-  const weatherLabel = weatherType === 'rain' ? 'Regen'
-    : weatherType === 'drizzle' ? 'Nieselregen'
-    : weatherType === 'snow' ? 'Schnee'
-    : weatherType === 'blizzard' ? 'Blizzard'
-    : weatherType === 'storm' ? 'Sturm'
-    : weatherType === 'thunderstorm' ? 'Gewitter'
-    : weatherType === 'fog' ? 'Nebel'
-    : 'Klar';
+  const weatherLabel = weatherType === 'rain' ? UI_LABELS.weatherRain
+    : weatherType === 'drizzle' ? UI_LABELS.weatherDrizzle
+    : weatherType === 'snow' ? UI_LABELS.weatherSnow
+    : weatherType === 'blizzard' ? UI_LABELS.weatherBlizzard
+    : weatherType === 'storm' ? UI_LABELS.weatherStorm
+    : weatherType === 'thunderstorm' ? UI_LABELS.weatherThunderstorm
+    : weatherType === 'fog' ? UI_LABELS.weatherFog
+    : UI_LABELS.weatherClear;
   const hasWeather = serverWeather != null || (state as any).weatherType != null;
 
   return (
@@ -353,7 +378,7 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
           {/* LIVE Indikator */}
           <div className="flex items-center gap-1 rounded-lg px-1.5 py-1 bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-200 dark:border-emerald-500/30">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">LIVE</span>
+            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{UI_LABELS.liveIndicator}</span>
           </div>
         </div>
       </div>
@@ -361,19 +386,19 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
       <div className="flex items-center gap-3">
         <ThrottledStatBadge
           rawValue={stats.population}
-          label={String(m(UI_LABELS.population))}
+          label={UI_LABELS.population}
           format={(n) => n.toLocaleString()}
           intervalMs={10000}
         />
         <ThrottledStatBadge
           rawValue={stats.jobs}
-          label={String(m(UI_LABELS.jobs))}
+          label={UI_LABELS.jobs}
           format={(n) => n.toLocaleString()}
           intervalMs={11000}
         />
         <ThrottledStatBadge
           rawValue={stats.money}
-          label={String(m(UI_LABELS.funds))}
+          label={UI_LABELS.funds}
           variant={stats.money < 0 ? 'destructive' : stats.money < 1000 ? 'warning' : 'success'}
           format={(n) => `Fr. ${n.toLocaleString('de-CH')}`}
           intervalMs={9000}
@@ -383,7 +408,7 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
       <div className="flex items-center gap-2">
         <ThrottledStatBadge
           rawValue={stats.income - stats.expenses}
-          label={String(m(UI_LABELS.monthly))}
+          label={UI_LABELS.monthly}
           variant={stats.income - stats.expenses >= 0 ? 'success' : 'destructive'}
           format={(n) => `Fr. ${n.toLocaleString('de-CH')}`}
           intervalMs={12000}

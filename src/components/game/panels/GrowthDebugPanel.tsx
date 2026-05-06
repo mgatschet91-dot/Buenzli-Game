@@ -76,11 +76,11 @@ export function GrowthDebugPanel() {
   const education = pct(stats.education, 50);
 
   // ── Police-Coverage Spawn-Penalty ──
-  // Server: < 20 → 50% penalty; < 40 → 80% penalty
+  // Server (disasters.js): < 20 → skip wenn random >= 0.5 → −50%; < 40 → skip wenn random >= 0.8 → −20%
   let policeLabel = 'Kein Malus';
   let policeMult = 1.0;
   if (safety < 20) { policeLabel = '−50% Spawn-Chance'; policeMult = 0.5; }
-  else if (safety < 40) { policeLabel = '−80% Spawn-Chance'; policeMult = 0.2; }
+  else if (safety < 40) { policeLabel = '−20% Spawn-Chance'; policeMult = 0.8; }
 
   // ── Demand-basierte Spawn-Chance (Wohnzone) ──
   const demandRes = stats.demand_residential ?? 0;
@@ -101,9 +101,10 @@ export function GrowthDebugPanel() {
   const blockers: string[] = [];
   if (!hasPower) blockers.push('Kein Stromüberschuss → Gebäude bauen nicht');
   if (!hasWater) blockers.push('Kein Wasserüberschuss → Gebäude bauen nicht');
-  if (safety < 25) blockers.push(`Sicherheit ${safety}% < 25% → massiver Spawn-Malus`);
+  if (safety < 20) blockers.push(`Sicherheit ${safety}% < 20% → −50% Spawn-Malus`);
+  else if (safety < 40) blockers.push(`Sicherheit ${safety}% < 40% → −20% Spawn-Malus`);
   if (satisfaction < 30) blockers.push(`Zufriedenheit ${satisfaction}% < 30% → tiefe Nachfrage`);
-  if (demandRes < 0) blockers.push(`Nachfrage Wohnen: ${demandRes.toFixed(1)} (negativ = zu viel Leerstand)`);
+  if (demandFactor === 0) blockers.push(`Nachfrage zu niedrig (${demandRes.toFixed(1)}) → kein Wachstum möglich`);
   if (emptyZones === 0) blockers.push('Keine leeren Wohnzonen → Nichts zum Bebauen');
 
   const allGood = blockers.length === 0;
@@ -146,8 +147,8 @@ export function GrowthDebugPanel() {
           {/* Nachfrage */}
           <Section title="Nachfrage">
             <Row label="Wohnen (demand)" value={demandRes.toFixed(1)}
-              ok={demandRes > 0} hint="(+30) / 80 = DemandFactor" />
-            <Row label="DemandFactor" value={demandFactor.toFixed(2)} ok={demandFactor > 0.3} />
+              ok={demandFactor > 0} hint={`→ Faktor: ${demandFactor.toFixed(2)}`} />
+            <Row label="Spawn-Faktor (0–1)" value={demandFactor.toFixed(2)} ok={demandFactor > 0.3} />
             <Row label="Gewerbe (demand)" value={(stats.demand_commercial ?? 0).toFixed(1)} />
             <Row label="Industrie (demand)" value={(stats.demand_industrial ?? 0).toFixed(1)} />
           </Section>

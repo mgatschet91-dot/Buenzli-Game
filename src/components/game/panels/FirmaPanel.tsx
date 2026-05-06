@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -31,6 +32,115 @@ import { consumeFirmaPrefill } from '@/lib/firmaPrefill';
 
 type View = 'overview' | 'details';
 
+const UI_LABELS = {
+  title:              msg('Firma'),
+  subtitle:           msg('Firmen verwalten & Aufträge'),
+  description:        msg('Firmen-Verwaltung'),
+  loading:            msg('Laden...'),
+  tabCreate:          msg('Gründen'),
+  tabMyCompanies:     msg('Meine Firmen'),
+  createInstruction:  msg('Wähle einen Firmen-Typ und gib einen Namen ein.'),
+  noTypes:            msg('Keine Firmen-Typen verfügbar.'),
+  maxMembers:         msg('Max {n} Mitglieder'),
+  namePlaceholder:    msg('Firmenname eingeben (min. 3 Zeichen)'),
+  creating:           msg('Wird gegründet...'),
+  createButton:       msg('Firma gründen ({cost} CHF)'),
+  loanTitle:          msg('Kredit bei der Gemeinde beantragen'),
+  balanceLabel:       msg('Dein Kontostand'),
+  foundingCostLabel:  msg('Gründungskosten'),
+  loanAmountLabel:    msg('Kreditbetrag'),
+  weeklyRateLabel:    msg('Wöchentl. Rate'),
+  loanMsgPlaceholder: msg('Nachricht an den Gemeinderat (optional)'),
+  loanInfo:           msg('Der Gemeinderat muss den Kredit genehmigen. Bei 3 verpassten Raten wird die Firma aufgelöst.'),
+  requestingLoan:     msg('Wird beantragt...'),
+  requestLoanBtn:     msg('🏦 Kredit beantragen'),
+  pendingLoans:       msg('Offene Kredit-Anträge'),
+  loanPending:        msg('Ausstehend'),
+  loanWeeklyRate:     msg('Rate: {rate} CHF/Woche'),
+  cancelBtn:          msg('Stornieren'),
+  loanRejected:       msg('Abgelehnt'),
+  rejectionReason:    msg('Grund:'),
+  noCompanies:        msg('Du hast noch keine Firma.'),
+  createHint:         msg('Wechsle zum Tab "Gründen" um loszulegen (max. 3 eigene Firmen).'),
+  balanceStatLabel:   msg('Konto'),
+  teamLabel:          msg('Team'),
+  backBtn:            msg('Zurück'),
+  tabContracts:       msg('Aufträge'),
+  tabMembers:         msg('Mitglieder'),
+  tabFinances:        msg('Finanzen'),
+  tabBusLines:        msg('🚌 Lines ({n}/{max})'),
+  tabApplications:    msg('Bewerbungen'),
+  tabNpcs:            msg('🤖 NPCs'),
+  inviteSearch:       msg('Username suchen...'),
+  inviteLabel:        msg('Mitglied einladen'),
+  inviteBtn:          msg('Einladen'),
+  promoteTooltip:     msg('Zum Manager befördern'),
+  demoteTooltip:      msg('Zum Mitarbeiter machen'),
+  removeTooltip:      msg('Entfernen'),
+  noTransactions:     msg('Keine Transaktionen'),
+  levelLabel:         msg('Level'),
+  repLabel:           msg('Rep.'),
+  repToNextLevel:     msg('noch {needed} Rep. bis Level {next}'),
+  maxLevel:           msg('Max Level erreicht!'),
+  acceptBtn:          msg('Annehmen'),
+  rejectBtn:          msg('Ablehnen'),
+  loadingLines:       msg('Lade Linien...'),
+  noBusLines:         msg('Noch keine Buslinien erstellt'),
+  busLineInstruction: msg('1. Baue einen Busbahnhof (Sidebar → Utilities)...'),
+  busLineActive:      msg('Aktiv'),
+  busLineDisabled:    msg('Deaktiviert'),
+  editLine:           msg('Linie bearbeiten'),
+  newLine:            msg('+ Neue Linie erstellen'),
+  selectStops:        msg('Stops auf Karte wählen'),
+  busStopInstruction: msg('Nach dem Klick wählst du 4-10 Bushaltestellen auf der Karte aus.'),
+  lineLimitInfo:      msg('Linien-Limit erreicht ({max} bei Level {level}). Level steigern für mehr Linien.'),
+  npcNovice:          msg('Neuling'),
+  npcSkilled:         msg('Fachkraft'),
+  npcSenior:          msg('Senior'),
+  npcExpert:          msg('Experte'),
+  npcMaster:          msg('Meister'),
+  finNpcHire:         msg('👷 NPC Einstellkosten'),
+  finContract:        msg('📋 Auftragseinnahme'),
+  finSalaryPaid:      msg('💸 Lohnzahlung Mitarbeiter'),
+  finTax:             msg('🏛️ Firmensteuer'),
+  finWeeklySalary:    msg('📅 Wochenlohn NPC'),
+  finFiredNoFunds:    msg('❌ NPC entlassen (kein Geld)'),
+  finFounding:        msg('🏗️ Gründungskosten'),
+  finBonus:           msg('🎁 Bonus'),
+  finPenalty:         msg('⚠️ Strafe'),
+  finLoanDisbursement: msg('💰 Kreditauszahlung'),
+  finLoanRepayment:   msg('🔄 Kreditrückzahlung'),
+  finLoanInterest:    msg('📈 Kreditzinsen'),
+  finDissolveRefund:  msg('🔙 Auflösung Rückerstattung'),
+  finWerkhofRepair:   msg('🔧 Stadtpatrouille Reparatur'),
+  finParkingProvision: msg('🚔 Parkbusse Provision'),
+  loadingNpcs:        msg('Lade NPCs…'),
+  activeWorkers:      msg('Aktive Mitarbeiter ({n})'),
+  patrolActive:       msg('Stadtpatrouille aktiv'),
+  patrolRepairInfo:   msg('repariert Gebäude <90%'),
+  efficiencyBonus:    msg('+{pct}% Effizienz'),
+  xpToNextLevel:      msg('{needed} bis Lv.{level}'),
+  patrolRepairs:      msg('🔧 {n} Reparaturen'),
+  botReady:           msg('● Bereit'),
+  botContracts:       msg('{n} Auftr.'),
+  botSalary:          msg('CHF {salary}/Wo.'),
+  fireConfirm:        msg('{name} wirklich entlassen?'),
+  fireBotSuccess:     msg('{name} entlassen.'),
+  fireTooltip:        msg('Entlassen'),
+  // Notification strings
+  creationSuccess:    msg('Firma erfolgreich gegründet!'),
+  loanRequestSuccess: msg('Kredit-Antrag eingereicht! Der Gemeinderat muss diesen genehmigen.'),
+  insufficientFunds:  msg('Du hast nicht genug CHF auf deinem Konto! Du kannst einen Kredit bei der Gemeinde beantragen.'),
+  memberRemoved:      msg('Mitglied entfernt'),
+  roleChanged:        msg('Rolle geändert'),
+  appAccepted:        msg('Bewerbung angenommen'),
+  appRejected:        msg('Bewerbung abgelehnt'),
+  inviteSent:         msg('Einladung gesendet'),
+  loanCancelled:      msg('Kredit-Antrag storniert'),
+  dissolveConfirm:    msg('Firma wirklich auflösen? Diese Aktion kann nicht rückgängig gemacht werden.'),
+  removeConfirm:      msg('Mitglied wirklich entfernen?'),
+};
+
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string; border: string }> = {
   owner: { label: 'Inhaber', color: 'text-amber-300', bg: 'bg-amber-500/15', border: 'border-amber-500/30' },
   manager: { label: 'Manager', color: 'text-blue-300', bg: 'bg-blue-500/15', border: 'border-blue-500/30' },
@@ -43,6 +153,9 @@ function getRoleConfig(role: string) {
 
 export function FirmaPanel() {
   const { state, setActivePanel } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+
   const [view, setView] = useState<View>('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +241,7 @@ export function FirmaPanel() {
       setShowLoanForm(false);
       setLoanErrorData(null);
       await createCompany(createName.trim(), createTypeId);
-      setSuccess('Firma erfolgreich gegründet!');
+      setSuccess(mm(UI_LABELS.creationSuccess));
       setCreateName('');
       setCreateTypeId(null);
       await loadData();
@@ -137,7 +250,7 @@ export function FirmaPanel() {
       if (error.data?.insufficient_funds && error.data?.can_request_loan) {
         setLoanErrorData(error.data);
         setShowLoanForm(true);
-        setError(`Du hast nicht genug CHF auf deinem Konto! Du kannst einen Kredit bei der Gemeinde beantragen.`);
+        setError(mm(UI_LABELS.insufficientFunds));
       } else {
         setError(error.message || 'Fehler beim Gründen');
       }
@@ -152,7 +265,7 @@ export function FirmaPanel() {
       setRequestingLoan(true);
       clearMessages();
       await requestCompanyLoan(createName.trim(), createTypeId, loanMessage || undefined);
-      setSuccess('Kredit-Antrag eingereicht! Der Gemeinderat muss diesen genehmigen.');
+      setSuccess(mm(UI_LABELS.loanRequestSuccess));
       setShowLoanForm(false);
       setLoanErrorData(null);
       setCreateName('');
@@ -170,7 +283,7 @@ export function FirmaPanel() {
     try {
       clearMessages();
       await cancelLoanRequest(requestId);
-      setSuccess('Kredit-Antrag storniert');
+      setSuccess(mm(UI_LABELS.loanCancelled));
       await loadData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Fehler beim Stornieren');
@@ -178,7 +291,7 @@ export function FirmaPanel() {
   };
 
   const handleDissolve = async (companyId: number) => {
-    if (!confirm('Firma wirklich auflösen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+    if (!confirm(mm(UI_LABELS.dissolveConfirm))) return;
     try {
       clearMessages();
       const result = await dissolveCompany(companyId);
@@ -192,11 +305,11 @@ export function FirmaPanel() {
   };
 
   const handleRemoveMember = async (userId: number) => {
-    if (!selectedCompany || !confirm('Mitglied wirklich entfernen?')) return;
+    if (!selectedCompany || !confirm(mm(UI_LABELS.removeConfirm))) return;
     try {
       clearMessages();
       await removeCompanyMember(selectedCompany.company.id, userId);
-      setSuccess('Mitglied entfernt');
+      setSuccess(mm(UI_LABELS.memberRemoved));
       await loadCompanyDetails(selectedCompany.company.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Fehler');
@@ -208,7 +321,7 @@ export function FirmaPanel() {
     try {
       clearMessages();
       await changeCompanyMemberRole(selectedCompany.company.id, userId, newRole);
-      setSuccess('Rolle geändert');
+      setSuccess(mm(UI_LABELS.roleChanged));
       await loadCompanyDetails(selectedCompany.company.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Fehler');
@@ -220,7 +333,7 @@ export function FirmaPanel() {
     try {
       clearMessages();
       await respondToApplication(selectedCompany.company.id, appId, decision);
-      setSuccess(decision === 'accepted' ? 'Bewerbung angenommen' : 'Bewerbung abgelehnt');
+      setSuccess(decision === 'accepted' ? mm(UI_LABELS.appAccepted) : mm(UI_LABELS.appRejected));
       await loadCompanyDetails(selectedCompany.company.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Fehler');
@@ -242,7 +355,7 @@ export function FirmaPanel() {
       setInviting(true);
       clearMessages();
       await inviteCompanyMember(selectedCompany.company.id, userId);
-      setSuccess('Einladung gesendet');
+      setSuccess(mm(UI_LABELS.inviteSent));
       setInviteQuery('');
       setInviteResults([]);
       await loadCompanyDetails(selectedCompany.company.id);
@@ -268,11 +381,11 @@ export function FirmaPanel() {
                 <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
               </div>
               <div className="min-w-0">
-                <span>Firma</span>
-                <p className="text-xs text-slate-500 font-normal mt-0.5">Firmen verwalten & Aufträge</p>
+                <span>{mm(UI_LABELS.title)}</span>
+                <p className="text-xs text-slate-500 font-normal mt-0.5">{mm(UI_LABELS.subtitle)}</p>
               </div>
             </DialogTitle>
-            <DialogDescription className="sr-only">Firmen-Verwaltung</DialogDescription>
+            <DialogDescription className="sr-only">{mm(UI_LABELS.description)}</DialogDescription>
           </DialogHeader>
         </div>
 
@@ -298,7 +411,7 @@ export function FirmaPanel() {
         {loading && !selectedCompany ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="w-6 h-6 border-2 border-slate-600 border-t-blue-400 rounded-full animate-spin" />
-            <span className="text-slate-500 text-sm">Laden...</span>
+            <span className="text-slate-500 text-sm">{mm(UI_LABELS.loading)}</span>
           </div>
         ) : view === 'details' && selectedCompany ? (
           <CompanyDetailView
@@ -320,21 +433,21 @@ export function FirmaPanel() {
             <Tabs value={currentTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="w-full bg-slate-800/50 border border-slate-700/60 rounded-xl p-1 h-auto">
                 <TabsTrigger value="create" className="flex-1 rounded-lg py-1.5 sm:py-2 text-xs sm:text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-white">
-                  Gründen
+                  {mm(UI_LABELS.tabCreate)}
                 </TabsTrigger>
                 <TabsTrigger value="my-company" className="flex-1 rounded-lg py-1.5 sm:py-2 text-xs sm:text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-white">
-                  Meine Firmen{hasCompany ? ` (${myCompanies.length})` : ''}
+                  {mm(UI_LABELS.tabMyCompanies)}{hasCompany ? ` (${myCompanies.length})` : ''}
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="create" className="mt-4">
                   <div className="space-y-3 pr-2">
                     <p className="text-sm text-slate-400 mb-1">
-                      Wähle einen Firmen-Typ und gib einen Namen ein.
+                      {mm(UI_LABELS.createInstruction)}
                     </p>
                     <div className="grid gap-3">
                       {companyTypes.length === 0 && !loading && (
-                        <p className="text-sm text-slate-500 text-center py-4">Keine Firmen-Typen verfügbar.</p>
+                        <p className="text-sm text-slate-500 text-center py-4">{mm(UI_LABELS.noTypes)}</p>
                       )}
                       {companyTypes.map(ct => {
                         const isSelected = createTypeId === ct.id;
@@ -361,7 +474,7 @@ export function FirmaPanel() {
                               </div>
                               <div className="flex flex-wrap gap-1.5 mt-2.5">
                                 <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/50">
-                                  Max {ct.max_members} Mitglieder
+                                  Max {ct.max_members} {mm(UI_LABELS.tabMembers).toLowerCase()}
                                 </span>
                                 {ct.can_fix_categories.map(cat => (
                                   <span key={cat} className="text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -376,7 +489,7 @@ export function FirmaPanel() {
                                 <Input
                                   value={createName}
                                   onChange={e => setCreateName(e.target.value)}
-                                  placeholder="Firmenname eingeben (min. 3 Zeichen)"
+                                  placeholder={mm(UI_LABELS.namePlaceholder)}
                                   maxLength={64}
                                   className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-10 focus:border-emerald-500 focus:ring-emerald-500/30"
                                   autoFocus
@@ -386,7 +499,7 @@ export function FirmaPanel() {
                                   disabled={creating || !createName.trim() || createName.trim().length < 3}
                                   className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm h-10"
                                 >
-                                  {creating ? 'Wird gegründet...' : `Firma gründen (${ct.founding_cost.toLocaleString()} CHF)`}
+                                  {creating ? mm(UI_LABELS.creating) : `${mm(UI_LABELS.tabCreate)} (${ct.founding_cost.toLocaleString()} CHF)`}
                                 </Button>
 
                                 {/* Kredit-Formular bei insufficient_funds */}
@@ -394,43 +507,43 @@ export function FirmaPanel() {
                                   <div className="mt-3 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/5 space-y-2.5">
                                     <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
                                       <Wallet className="w-4 h-4" />
-                                      Kredit bei der Gemeinde beantragen
+                                      {mm(UI_LABELS.loanTitle)}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 text-xs">
                                       <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">Dein Kontostand</span>
+                                        <span className="text-slate-500">{mm(UI_LABELS.balanceLabel)}</span>
                                         <div className="font-mono text-red-400">{loanErrorData.user_balance.toLocaleString()} CHF</div>
                                       </div>
                                       <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">Gründungskosten</span>
+                                        <span className="text-slate-500">{mm(UI_LABELS.foundingCostLabel)}</span>
                                         <div className="font-mono text-white">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
                                       </div>
                                       <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">Kreditbetrag</span>
+                                        <span className="text-slate-500">{mm(UI_LABELS.loanAmountLabel)}</span>
                                         <div className="font-mono text-amber-400">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
                                       </div>
                                       <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">Wöchentl. Rate</span>
+                                        <span className="text-slate-500">{mm(UI_LABELS.weeklyRateLabel)}</span>
                                         <div className="font-mono text-white">~{Math.ceil(loanErrorData.founding_cost / 12).toLocaleString()} CHF</div>
                                       </div>
                                     </div>
                                     <Input
                                       value={loanMessage}
                                       onChange={e => setLoanMessage(e.target.value)}
-                                      placeholder="Nachricht an den Gemeinderat (optional)"
+                                      placeholder={mm(UI_LABELS.loanMsgPlaceholder)}
                                       maxLength={500}
                                       className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-9 focus:border-amber-500 focus:ring-amber-500/30"
                                     />
                                     <div className="text-[11px] text-slate-500 flex items-center gap-1">
                                       <AlertTriangle className="w-3 h-3 text-amber-500/60" />
-                                      Der Gemeinderat muss den Kredit genehmigen. Bei 3 verpassten Raten wird die Firma aufgelöst.
+                                      {mm(UI_LABELS.loanInfo)}
                                     </div>
                                     <Button
                                       onClick={handleRequestLoan}
                                       disabled={requestingLoan || !createName.trim() || createName.trim().length < 3}
                                       className="w-full bg-amber-600 hover:bg-amber-500 text-white text-sm h-10"
                                     >
-                                      {requestingLoan ? 'Wird beantragt...' : '🏦 Kredit beantragen'}
+                                      {requestingLoan ? mm(UI_LABELS.requestingLoan) : mm(UI_LABELS.requestLoanBtn)}
                                     </Button>
                                   </div>
                                 )}
@@ -450,18 +563,18 @@ export function FirmaPanel() {
                       <div className="space-y-2 mb-3">
                         <div className="text-xs font-medium text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                           <Clock className="w-3 h-3" />
-                          Offene Kredit-Anträge
+                          {mm(UI_LABELS.pendingLoans)}
                         </div>
                         {myLoanRequests.filter(r => r.status === 'pending').map(req => (
                           <div key={req.id} className="px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/5">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-lg">{req.type_emoji}</span>
                               <span className="font-medium text-sm text-white flex-1">{req.company_name}</span>
-                              <Badge variant="outline" className="text-[11px] text-amber-400 border-amber-400/30">Ausstehend</Badge>
+                              <Badge variant="outline" className="text-[11px] text-amber-400 border-amber-400/30">{mm(UI_LABELS.loanPending)}</Badge>
                             </div>
                             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 mb-2">
                               <span className="text-amber-400 font-mono">{req.loan_amount.toLocaleString()} CHF</span>
-                              <span>Rate: {req.weekly_repayment.toLocaleString()} CHF/Woche</span>
+                              <span>{mm(UI_LABELS.weeklyRateLabel).replace('{rate}', req.weekly_repayment.toLocaleString())}</span>
                               <span>{req.type_name}</span>
                             </div>
                             {req.message && (
@@ -474,7 +587,7 @@ export function FirmaPanel() {
                               className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
                             >
                               <X className="w-3 h-3 mr-1" />
-                              Stornieren
+                              {mm(UI_LABELS.cancelBtn)}
                             </Button>
                           </div>
                         ))}
@@ -489,10 +602,10 @@ export function FirmaPanel() {
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-lg">{req.type_emoji}</span>
                               <span className="font-medium text-sm text-white flex-1">{req.company_name}</span>
-                              <Badge variant="outline" className="text-[11px] text-red-400 border-red-400/30">Abgelehnt</Badge>
+                              <Badge variant="outline" className="text-[11px] text-red-400 border-red-400/30">{mm(UI_LABELS.loanRejected)}</Badge>
                             </div>
                             {req.reject_reason && (
-                              <p className="text-xs text-red-300/80">Grund: {req.reject_reason}</p>
+                              <p className="text-xs text-red-300/80">{mm(UI_LABELS.rejectionReason)} {req.reject_reason}</p>
                             )}
                           </div>
                         ))}
@@ -504,8 +617,8 @@ export function FirmaPanel() {
                         <div className="w-16 h-16 rounded-2xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center mx-auto mb-4">
                           <Building2 className="w-8 h-8 text-slate-600" />
                         </div>
-                        <p className="text-sm text-slate-400 font-medium">Du hast noch keine Firma.</p>
-                        <p className="text-xs mt-1.5 text-slate-600">Wechsle zum Tab &quot;Gründen&quot; um loszulegen (max. 3 eigene Firmen).</p>
+                        <p className="text-sm text-slate-400 font-medium">{mm(UI_LABELS.noCompanies)}</p>
+                        <p className="text-xs mt-1.5 text-slate-600">{mm(UI_LABELS.createHint)}</p>
                       </div>
                     ) : myCompanies.length === 0 ? null : (
                       myCompanies.map(company => {
@@ -541,11 +654,11 @@ export function FirmaPanel() {
                             </div>
                             <div className="grid grid-cols-2 gap-px mx-3 sm:mx-5 mb-3 sm:mb-4 rounded-lg overflow-hidden border border-slate-700/40">
                               <div className="bg-slate-800/40 px-2 sm:px-3 py-2 sm:py-2.5 text-center">
-                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Konto</div>
+                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.balanceStatLabel)}</div>
                                 <div className="font-mono font-bold text-xs sm:text-sm text-amber-400">{company.balance.toLocaleString()}</div>
                               </div>
                               <div className="bg-slate-800/40 px-2 sm:px-3 py-2 sm:py-2.5 text-center">
-                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Team</div>
+                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.teamLabel)}</div>
                                 <div className="font-mono font-bold text-xs sm:text-sm text-white">{company.member_count}</div>
                               </div>
                             </div>
@@ -602,6 +715,9 @@ function getNpcLevel(xp: number) {
 const COMPANY_LEVEL_THRESHOLDS = [0, 20, 60, 120, 200, 320, 480, 700, 1000, 1400];
 
 function CompanyLevelBar({ level, reputation }: { level: number; reputation: number }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+
   const currentThreshold = COMPANY_LEVEL_THRESHOLDS[level - 1] || 0;
   const nextThreshold = level < 10 ? COMPANY_LEVEL_THRESHOLDS[level] : null;
   const progress = nextThreshold
@@ -612,11 +728,11 @@ function CompanyLevelBar({ level, reputation }: { level: number; reputation: num
     <div className="border-t border-slate-700/40 bg-slate-800/50 px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wider">Level</span>
+          <span className="text-[10px] text-slate-500 uppercase tracking-wider">{mm(UI_LABELS.levelLabel)}</span>
           <span className="font-mono font-bold text-base text-blue-400">{level}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-slate-500">Rep.</span>
+          <span className="text-[10px] text-slate-500">{mm(UI_LABELS.repLabel)}</span>
           <span className="font-mono text-sm text-emerald-400">{reputation}</span>
           {nextThreshold && (
             <span className="text-[10px] text-slate-600">/ {nextThreshold}</span>
@@ -631,11 +747,11 @@ function CompanyLevelBar({ level, reputation }: { level: number; reputation: num
       </div>
       {nextThreshold && (
         <div className="text-[9px] text-slate-600 mt-1 text-right">
-          noch {nextThreshold - reputation} Rep. bis Level {level + 1}
+          {nextThreshold - reputation} {mm(UI_LABELS.repLabel)} bis Level {level + 1}
         </div>
       )}
       {!nextThreshold && (
-        <div className="text-[9px] text-amber-500/70 mt-1 text-center">Max Level erreicht!</div>
+        <div className="text-[9px] text-amber-500/70 mt-1 text-center">{mm(UI_LABELS.maxLevel)}</div>
       )}
     </div>
   );
@@ -687,6 +803,9 @@ function CompanyDetailView({
   const canManage = isOwner || isManager;
   const isTransport = company.type_code === 'transport';
   const { startBusLineCreation, loadTransportCompanyStatus, state: gameState, addNotification, setActivePanel } = useGame();
+
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
 
   // NPC-Bot State
   const [npcBots, setNpcBots] = useState<NpcBot[]>([]);
@@ -763,7 +882,7 @@ function CompanyDetailView({
           className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Zurück</span>
+          <span>{mm(UI_LABELS.backBtn)}</span>
         </button>
 
         {/* Company Info Card */}
@@ -780,7 +899,7 @@ function CompanyDetailView({
           <CompanyLevelBar level={company.level} reputation={company.reputation} />
           <div className="grid grid-cols-2 gap-px border-t border-slate-700/40">
             <div className="bg-slate-800/50 px-3 py-3 text-center">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Konto</div>
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{mm(UI_LABELS.balanceStatLabel)}</div>
               <div className="font-mono font-bold text-base text-amber-400">{company.balance.toLocaleString()}</div>
             </div>
             <div className="bg-slate-800/50 px-3 py-3 text-center">
@@ -809,15 +928,15 @@ function CompanyDetailView({
           <TabsList className="w-full bg-slate-800/50 border border-slate-700/60 rounded-xl p-1 h-auto overflow-x-auto scrollbar-none">
             <TabsTrigger value="members" className="flex-1 rounded-lg py-1.5 sm:py-2 text-[11px] sm:text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white shrink-0">
               <Users className="w-3 h-3 mr-1" />
-              <span className="hidden sm:inline">Mitglieder</span><span className="sm:hidden">Team</span> ({members.length})
+              <span className="hidden sm:inline">{mm(UI_LABELS.tabMembers)}</span><span className="sm:hidden">{mm(UI_LABELS.teamLabel)}</span> ({members.length})
             </TabsTrigger>
             <TabsTrigger value="finances" className="flex-1 rounded-lg py-1.5 sm:py-2 text-[11px] sm:text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white shrink-0">
               <Wallet className="w-3 h-3 mr-1" />
-              Finanzen
+              {mm(UI_LABELS.tabFinances)}
             </TabsTrigger>
             <TabsTrigger value="contracts" className="flex-1 rounded-lg py-1.5 sm:py-2 text-[11px] sm:text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white shrink-0">
               <Briefcase className="w-3 h-3 mr-1" />
-              Aufträge{contracts.length > 0 ? ` (${contracts.length})` : ''}
+              {mm(UI_LABELS.tabContracts)}{contracts.length > 0 ? ` (${contracts.length})` : ''}
             </TabsTrigger>
             {isTransport && (
               <TabsTrigger value="linien" className="flex-1 rounded-lg py-1.5 sm:py-2 text-[11px] sm:text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white shrink-0">
@@ -826,7 +945,7 @@ function CompanyDetailView({
             )}
             {canManage && applications.length > 0 && (
               <TabsTrigger value="applications" className="flex-1 rounded-lg py-1.5 sm:py-2 text-[11px] sm:text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white shrink-0">
-                <span className="hidden sm:inline">Bewerbungen</span><span className="sm:hidden">Bew.</span> ({applications.length})
+                <span className="hidden sm:inline">{mm(UI_LABELS.tabApplications)}</span><span className="sm:hidden">Bew.</span> ({applications.length})
               </TabsTrigger>
             )}
             {isOwner && (
@@ -869,14 +988,14 @@ function CompanyDetailView({
                         <button
                           onClick={() => onChangeRole(member.user_id, member.role === 'manager' ? 'employee' : 'manager')}
                           className="p-1.5 rounded-lg hover:bg-slate-700/60 text-slate-500 hover:text-white transition-all"
-                          title={member.role === 'manager' ? 'Zum Mitarbeiter machen' : 'Zum Manager befördern'}
+                          title={member.role === 'manager' ? mm(UI_LABELS.demoteTooltip) : mm(UI_LABELS.promoteTooltip)}
                         >
                           {member.role === 'manager' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUp className="w-3.5 h-3.5" />}
                         </button>
                         <button
                           onClick={() => onRemoveMember(member.user_id)}
                           className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-all"
-                          title="Entfernen"
+                          title={mm(UI_LABELS.removeTooltip)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -888,11 +1007,11 @@ function CompanyDetailView({
 
               {canManage && (
                 <div className="pt-3 border-t border-slate-700/40 space-y-2">
-                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Mitglied einladen</label>
+                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">{mm(UI_LABELS.inviteLabel)}</label>
                   <Input
                     value={inviteQuery}
                     onChange={e => onInviteSearch(e.target.value)}
-                    placeholder="Username suchen..."
+                    placeholder={mm(UI_LABELS.inviteSearch)}
                     className="bg-slate-800/50 border-slate-700/60 text-white placeholder:text-slate-600 h-9 text-sm focus:border-blue-500/40 focus:ring-blue-500/20"
                   />
                   {inviteResults.length > 0 && (
@@ -913,7 +1032,7 @@ function CompanyDetailView({
                             className="h-7 text-xs bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 border border-blue-500/30"
                           >
                             <UserPlus className="w-3 h-3 mr-1" />
-                            Einladen
+                            {mm(UI_LABELS.inviteBtn)}
                           </Button>
                         </div>
                       ))}
@@ -930,7 +1049,7 @@ function CompanyDetailView({
               {finances.length === 0 ? (
                 <div className="text-center py-8">
                   <Wallet className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">Keine Transaktionen</p>
+                  <p className="text-sm text-slate-500">{mm(UI_LABELS.noTransactions)}</p>
                 </div>
               ) : (
                 finances.map(f => (
@@ -978,7 +1097,7 @@ function CompanyDetailView({
                         className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs"
                       >
                         <Check className="w-3 h-3 mr-1" />
-                        Annehmen
+                        {mm(UI_LABELS.acceptBtn)}
                       </Button>
                       <Button
                         size="sm"
@@ -986,7 +1105,7 @@ function CompanyDetailView({
                         onClick={() => onApplicationResponse(app.id, 'rejected')}
                         className="border-slate-600 hover:bg-slate-700 text-slate-300 text-xs"
                       >
-                        Ablehnen
+                        {mm(UI_LABELS.rejectBtn)}
                       </Button>
                     </div>
                   </div>
@@ -1000,11 +1119,11 @@ function CompanyDetailView({
             <TabsContent value="linien" className="mt-3">
               <div className="space-y-3">
                 {busLinesLoading ? (
-                  <div className="text-center text-slate-500 py-4 text-sm">Lade Linien...</div>
+                  <div className="text-center text-slate-500 py-4 text-sm">{mm(UI_LABELS.loadingLines)}</div>
                 ) : busLines.length === 0 ? (
                   <div className="text-center py-6">
                     <div className="text-2xl mb-2">🚌</div>
-                    <p className="text-slate-400 text-sm mb-3">Noch keine Buslinien erstellt</p>
+                    <p className="text-slate-400 text-sm mb-3">{mm(UI_LABELS.noBusLines)}</p>
                     <p className="text-slate-500 text-xs mb-4">
                       1. Baue einen Busbahnhof (Sidebar → Utilities)<br/>
                       2. Platziere Bushaltestellen entlang der Strassen<br/>
@@ -1021,11 +1140,11 @@ function CompanyDetailView({
                           <div className="text-xs text-slate-400">{line.stops.length} Haltestellen</div>
                         </div>
                         <Badge variant={line.status === 'active' ? 'default' : 'secondary'} className="text-[10px] shrink-0">
-                          {line.status === 'active' ? 'Aktiv' : 'Deaktiviert'}
+                          {line.status === 'active' ? mm(UI_LABELS.busLineActive) : mm(UI_LABELS.busLineDisabled)}
                         </Badge>
                         {canManage && (
                           <div className="flex gap-1 shrink-0">
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-400 hover:text-amber-300" onClick={() => handleEditLine(line)} title="Linie bearbeiten">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-400 hover:text-amber-300" onClick={() => handleEditLine(line)} title={mm(UI_LABELS.editLine)}>
                               <Wrench className="w-3 h-3" />
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => handleToggleLine(line)}>
@@ -1055,14 +1174,14 @@ function CompanyDetailView({
                         />
                         <div className="flex gap-2">
                           <Button size="sm" className="flex-1 h-8 text-xs bg-amber-600 hover:bg-amber-500" onClick={handleStartNewLine}>
-                            Stops auf Karte wählen
+                            {mm(UI_LABELS.selectStops)}
                           </Button>
                           <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowNewLineForm(false)}>
-                            Abbrechen
+                            {mm(UI_LABELS.cancelBtn)}
                           </Button>
                         </div>
                         <p className="text-[10px] text-slate-500">
-                          Nach dem Klick wählst du 4-10 Bushaltestellen auf der Karte aus.
+                          {mm(UI_LABELS.busStopInstruction)}
                         </p>
                       </div>
                     ) : (
@@ -1072,7 +1191,7 @@ function CompanyDetailView({
                         className="w-full h-9 text-xs border-dashed border-slate-600"
                         onClick={() => setShowNewLineForm(true)}
                       >
-                        + Neue Linie erstellen
+                        {mm(UI_LABELS.newLine)}
                       </Button>
                     )}
                   </div>
@@ -1080,7 +1199,7 @@ function CompanyDetailView({
 
                 {canManage && busLines.length >= maxBusLines && (
                   <p className="text-[10px] text-center text-slate-500">
-                    Linien-Limit erreicht ({maxBusLines} bei Level {company.level}). Level steigern für mehr Linien.
+                    {mm(UI_LABELS.lineLimitInfo).replace('{max}', String(maxBusLines)).replace('{level}', String(company.level))}
                   </p>
                 )}
               </div>
@@ -1097,13 +1216,13 @@ function CompanyDetailView({
             <TabsContent value="npcs" className="mt-3">
               <div className="space-y-4">
                 {npcLoading ? (
-                  <p className="text-slate-400 text-xs text-center py-4">Lade NPCs…</p>
+                  <p className="text-slate-400 text-xs text-center py-4">{mm(UI_LABELS.loadingNpcs)}</p>
                 ) : (
                   <>
                     {/* Aktive NPCs */}
                     {npcBots.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider">Aktive Mitarbeiter ({npcBots.length})</div>
+                        <div className="text-[10px] text-slate-500 uppercase tracking-wider">{mm(UI_LABELS.activeWorkers).replace('{n}', String(npcBots.length))}</div>
                         <div className="space-y-2 pr-0.5">
                         {npcBots.map(bot => {
                           const lvl = getNpcLevel(bot.xp_earned ?? 0);
@@ -1119,8 +1238,8 @@ function CompanyDetailView({
                             {bot.patrol_mode && (
                               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/15 border-b border-amber-500/30">
                                 <span className="text-sm">🚛</span>
-                                <span className="text-[11px] font-semibold text-amber-300">Stadtpatrouille aktiv</span>
-                                <span className="text-[10px] text-amber-400/70 ml-auto">repariert Gebäude &lt;90%</span>
+                                <span className="text-[11px] font-semibold text-amber-300">{mm(UI_LABELS.patrolActive)}</span>
+                                <span className="text-[10px] text-amber-400/70 ml-auto">{mm(UI_LABELS.patrolRepairInfo)}</span>
                               </div>
                             )}
                             <div className="p-3">
@@ -1141,7 +1260,7 @@ function CompanyDetailView({
                                   </div>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <span className={`text-[10px] font-medium ${lvl.color}`}>Lv.{lvl.level} {lvl.title}</span>
-                                    {lvl.bonus > 0 && <span className="text-[10px] text-emerald-400">+{Math.round(lvl.bonus*100)}% Effizienz</span>}
+                                    {lvl.bonus > 0 && <span className="text-[10px] text-emerald-400">+{Math.round(lvl.bonus*100)}% {mm(UI_LABELS.tabFinances).toLowerCase()}</span>}
                                     <span className="text-[10px] text-slate-500 ml-auto">{bot.xp_earned ?? 0} XP</span>
                                   </div>
                                   {/* XP Fortschrittsbar */}
@@ -1167,7 +1286,7 @@ function CompanyDetailView({
                                         <span className="text-[10px] text-blue-400 shrink-0">{liveProgress}%</span>
                                       </div>
                                     ) : (
-                                      <span className="text-[10px] text-green-400">● Bereit</span>
+                                      <span className="text-[10px] text-green-400">{mm(UI_LABELS.botReady)}</span>
                                     )}
                                     <span className="text-[10px] text-slate-500">{bot.contracts_completed} Auftr.</span>
                                     <span className="text-[10px] text-amber-400">CHF {bot.salary_weekly}/Wo.</span>
@@ -1176,12 +1295,12 @@ function CompanyDetailView({
                                 {/* Entlassen Button */}
                                 <button
                                   onClick={async () => {
-                                    if (!confirm(`${bot.name} wirklich entlassen?`)) return;
-                                    try { await fireNpcBot(company.id, bot.id); setNpcBots(prev => prev.filter(b => b.id !== bot.id)); setNpcSuccess(`${bot.name} entlassen.`); }
+                                    if (!confirm(mm(UI_LABELS.fireConfirm).replace('{name}', bot.name))) return;
+                                    try { await fireNpcBot(company.id, bot.id); setNpcBots(prev => prev.filter(b => b.id !== bot.id)); setNpcSuccess(mm(UI_LABELS.fireBotSuccess).replace('{name}', bot.name)); }
                                     catch (e: unknown) { setNpcError(e instanceof Error ? e.message : 'Fehler'); }
                                   }}
                                   className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors shrink-0"
-                                  title="Entlassen"
+                                  title={mm(UI_LABELS.fireTooltip)}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1636,7 +1755,7 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
   const [reportedEvents, setReportedEvents] = useState<Array<{ id: number; name: string; emoji: string; category: string; severity: number; fix_cost: number; status: string }>>([]);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [showCreateFrom, setShowCreateFrom] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [contractMsg, setContractMsg] = useState<string | null>(null);
 
   useEffect(() => { setLocalContracts(contracts); }, [contracts]);
 
@@ -1661,8 +1780,8 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
         assigned_user_id: data.assigned_user_id || c.assigned_user_id,
       } : c));
       setSubTab('aktiv');
-      setMsg('Auftrag angenommen! Timer läuft...');
-    } catch (err: unknown) { setMsg(err instanceof Error ? err.message : 'Fehler'); }
+      setContractMsg('Auftrag angenommen! Timer läuft...');
+    } catch (err: unknown) { setContractMsg(err instanceof Error ? err.message : 'Fehler'); }
     finally { setActionLoading(null); }
   };
 
@@ -1682,9 +1801,9 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
       if (result.leveled_up) {
         message += ` 🎉 Level-Up! Firma ist jetzt Level ${result.new_level}!`;
       }
-      setMsg(message);
+      setContractMsg(message);
       onRefresh();
-    } catch (err: unknown) { setMsg(err instanceof Error ? err.message : 'Fehler'); }
+    } catch (err: unknown) { setContractMsg(err instanceof Error ? err.message : 'Fehler'); }
     finally { setActionLoading(null); }
   };
 
@@ -1703,7 +1822,7 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
       setActionLoading(eventId);
       const result = await createContractFromEvent(companyId, eventId);
       setReportedEvents(prev => prev.filter(e => e.id !== eventId));
-      setMsg(`Auftrag erstellt: ${result.payment.toLocaleString()} CHF, ${result.xp_reward} XP`);
+      setContractMsg(`Auftrag erstellt: ${result.payment.toLocaleString()} CHF, ${result.xp_reward} XP`);
       const ev = reportedEvents.find(e => e.id === eventId);
       setLocalContracts(prev => [{ id: result.contract_id, company_id: companyId, event_id: eventId,
         municipality_id: 0, assigned_user_id: null, status: 'open', payment: result.payment,
@@ -1713,7 +1832,7 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
         event_emoji: ev?.emoji || '',
         event_status: 'assigned',
         work_duration_seconds: result.work_duration_seconds || 300, completable_at: null }, ...prev]);
-    } catch (err: unknown) { setMsg(err instanceof Error ? err.message : 'Fehler'); }
+    } catch (err: unknown) { setContractMsg(err instanceof Error ? err.message : 'Fehler'); }
     finally { setActionLoading(null); }
   };
 
@@ -1733,11 +1852,11 @@ function ContractsTab({ companyId, contracts, canManage, canFixCategories, onRef
 
   return (
     <div className="space-y-3">
-      {msg && (
+      {contractMsg && (
         <div className="px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-lg text-emerald-400 text-sm flex items-center gap-2">
           <Check className="w-3.5 h-3.5 shrink-0" />
-          <span className="flex-1">{msg}</span>
-          <button className="text-xs underline text-emerald-500/60 hover:text-emerald-400" onClick={() => setMsg(null)}>OK</button>
+          <span className="flex-1">{contractMsg}</span>
+          <button className="text-xs underline text-emerald-500/60 hover:text-emerald-400" onClick={() => setContractMsg(null)}>OK</button>
         </div>
       )}
 

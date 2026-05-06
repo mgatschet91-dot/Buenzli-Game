@@ -292,6 +292,76 @@ export function findFires(
 }
 
 /**
+ * Findet alle Industriegebäude (Fabriken + Lager) — Export-Quellen für Trade-Trucks.
+ * Gibt zusätzlich die Anzahl Export-Slots pro Gebäude zurück.
+ */
+const EXPORT_SLOT_BY_TYPE: Partial<Record<string, number>> = {
+  factory_small:  1,
+  factory_medium: 2,
+  factory_large:  3,
+  warehouse:      1,
+};
+
+export function findIndustrialBuildings(
+  grid: Tile[][],
+  gridSize: number
+): { x: number; y: number; slots: number; buildingType: string }[] {
+  if (!grid || gridSize <= 0) return [];
+  const result: { x: number; y: number; slots: number; buildingType: string }[] = [];
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      const btype = String(grid[y][x].building.type || '');
+      const slots = EXPORT_SLOT_BY_TYPE[btype];
+      if (slots) result.push({ x, y, slots, buildingType: btype });
+    }
+  }
+  return result;
+}
+
+/**
+ * Findet eine befahrbare Straße am Kartenrand in der gegebenen Richtung.
+ * Wird für Trade-Truck-Ziele (Richtung Partnerstadt) verwendet.
+ */
+export function findEdgeRoadInDirection(
+  grid: Tile[][],
+  gridSize: number,
+  direction: 'north' | 'south' | 'east' | 'west'
+): { x: number; y: number } | null {
+  if (!grid || gridSize <= 0) return null;
+
+  // Kandidaten: alle Straßen-Tiles auf dem jeweiligen Rand
+  const candidates: { x: number; y: number; dist: number }[] = [];
+  const center = Math.floor(gridSize / 2);
+
+  if (direction === 'north') {
+    for (let x = 0; x < gridSize; x++) {
+      const tile = grid[0]?.[x];
+      if (tile?.building?.type === 'road' || tile?.building?.type === 'bridge') candidates.push({ x, y: 0, dist: Math.abs(x - center) });
+    }
+  } else if (direction === 'south') {
+    for (let x = 0; x < gridSize; x++) {
+      const tile = grid[gridSize - 1]?.[x];
+      if (tile?.building?.type === 'road' || tile?.building?.type === 'bridge') candidates.push({ x, y: gridSize - 1, dist: Math.abs(x - center) });
+    }
+  } else if (direction === 'east') {
+    for (let y = 0; y < gridSize; y++) {
+      const tile = grid[y]?.[gridSize - 1];
+      if (tile?.building?.type === 'road' || tile?.building?.type === 'bridge') candidates.push({ x: gridSize - 1, y, dist: Math.abs(y - center) });
+    }
+  } else { // west
+    for (let y = 0; y < gridSize; y++) {
+      const tile = grid[y]?.[0];
+      if (tile?.building?.type === 'road' || tile?.building?.type === 'bridge') candidates.push({ x: 0, y, dist: Math.abs(y - center) });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  // Nächstes zur Mitte
+  candidates.sort((a, b) => a.dist - b.dist);
+  return { x: candidates[0].x, y: candidates[0].y };
+}
+
+/**
  * Find all airports in the city
  */
 export function findAirports(

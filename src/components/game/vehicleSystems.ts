@@ -1,9 +1,9 @@
 import React, { useCallback, useRef } from 'react';
-import type { ParkedVehicle } from '@/lib/deltaSync';
+import type { ParkedVehicle, ParkingConfig } from '@/lib/deltaSync';
 import { Bus, BusLine, Car, CarDirection, EmergencyVehicle, EmergencyVehicleType, Pedestrian, PedestrianDestType, WorldRenderState, TILE_WIDTH, TILE_HEIGHT } from './types';
 import { BUS_COLORS, BUS_MIN_POPULATION, BUS_MIN_ZOOM, BUS_SPEED_MAX, BUS_SPEED_MIN, BUS_SPAWN_INTERVAL_MAX, BUS_SPAWN_INTERVAL_MIN, BUS_STOP_DURATION_MAX, BUS_STOP_DURATION_MIN, BUS_MAX_LINES, BUS_MIN_STOPS_PER_LINE, BUS_MAX_STOPS_PER_LINE, BUS_PASSENGER_CAPACITY, BUS_LINE_COLORS, BUS_WAIT_TIMEOUT, CAR_COLORS, CAR_MIN_ZOOM, CAR_MIN_ZOOM_MOBILE, DIRECTION_META, MAX_BUSES, MAX_BUSES_MOBILE, PEDESTRIAN_MAX_COUNT, PEDESTRIAN_MAX_COUNT_MOBILE, PEDESTRIAN_MIN_ZOOM, PEDESTRIAN_MIN_ZOOM_MOBILE, PEDESTRIAN_ROAD_TILE_DENSITY, PEDESTRIAN_ROAD_TILE_DENSITY_MOBILE, PEDESTRIAN_SPAWN_BATCH_SIZE, PEDESTRIAN_SPAWN_BATCH_SIZE_MOBILE, PEDESTRIAN_SPAWN_INTERVAL, PEDESTRIAN_SPAWN_INTERVAL_MOBILE, VEHICLE_FAR_ZOOM_THRESHOLD } from './constants';
 import { isRoadTile, isAutobahnTile, isDrivableTile, getDirectionOptions, getAutobahnDirectionOptions, pickNextDirection, findPathOnRoads, getDirectionToTile, gridToScreen } from './utils';
-import { findBusStops, findResidentialBuildings, findPedestrianDestinations, findStations, findFires, findRecreationAreas, findEnterableBuildings, SPORTS_TYPES, ACTIVE_RECREATION_TYPES } from './gridFinders';
+import { findBusStops, findResidentialBuildings, findPedestrianDestinations, findStations, findFires, findRecreationAreas, findEnterableBuildings, SPORTS_TYPES, ACTIVE_RECREATION_TYPES, findIndustrialBuildings, findEdgeRoadInDirection } from './gridFinders';
 import { drawPedestrians as drawPedestriansUtil } from './drawPedestrians';
 import { BuildingType, Tile } from '@/types/game';
 import { getTrafficLightState, canProceedThroughIntersection, TRAFFIC_LIGHT_TIMING } from './trafficSystem';
@@ -75,8 +75,17 @@ export interface VehicleSystemState {
   isMobile: boolean;
   visualHour: number;
   isFullyViewOnly?: boolean; // Besuchermodus: Zoom-Gate für Passanten deaktivieren
+  // Handelspartner für Trade-Trucks
+  tradePartnershipsRef: React.MutableRefObject<Array<{
+    slug: string;
+    name: string;
+    direction: 'north' | 'south' | 'east' | 'west';
+    tier: number;
+    tradeIncome: number;
+  }>>;
   // Parking system
   parkedVehiclesRef: React.MutableRefObject<ParkedVehicle[]>;
+  parkingConfigRef: React.MutableRefObject<ParkingConfig[]>;
   emitParkVehicleRef: React.MutableRefObject<(tileX: number, tileY: number, slot: number, color: string) => void>;
   emitLeaveParkingRef: React.MutableRefObject<(tileX: number, tileY: number, slot: number) => void>;
 }
@@ -109,7 +118,7 @@ export function useVehicleSystems(
     serverBusLinesRef,
   } = refs;
 
-  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, cachedIntersectionMapRef, state, isMobile, visualHour, isFullyViewOnly, parkedVehiclesRef, emitParkVehicleRef, emitLeaveParkingRef } = systemState;
+  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, cachedIntersectionMapRef, state, isMobile, visualHour, isFullyViewOnly, tradePartnershipsRef, parkedVehiclesRef, parkingConfigRef, emitParkVehicleRef, emitLeaveParkingRef } = systemState;
 
   const spawnRandomCar = useCallback(() => {
     const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -1086,6 +1095,73 @@ export function useVehicleSystems(
     }
   }, [worldStateRef, findFiresCallback, findCrimeIncidents, findStationsCallback, dispatchEmergencyVehicle, activeFiresRef, activeCrimesRef]);
 
+  // ── TRADE TRUCK DISPATCH ───────────────────────────────────────────────────
+  // Intervall-Timer für Trade-Trucks (sekunden)
+  const tradeTruckTimerRef = React.useRef<number>(20);
+
+  const dispatchTradeTrucks = useCallback(() => {
+    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
+    if (!currentGrid || currentGridSize <= 0 || currentSpeed === 0) return;
+
+    const partners = tradePartnershipsRef?.current ?? [];
+    if (partners.length === 0) return;
+
+    const factories = findIndustrialBuildings(currentGrid, currentGridSize);
+    if (factories.length === 0) return;
+
+    for (const partner of partners) {
+      // Max gleichzeitige Trucks = Tier (1-4)
+      const maxTrucks = Math.max(1, Math.min(4, partner.tier || 1));
+      const activeTrucksForPartner = emergencyVehiclesRef.current.filter(
+        v => v.type === 'trade_truck' && v.tradePartnerSlug === partner.slug
+      ).length;
+      if (activeTrucksForPartner >= maxTrucks) continue;
+
+      // Randstraße in Partnerrichtung finden
+      const edgeRoad = findEdgeRoadInDirection(currentGrid, currentGridSize, partner.direction);
+      if (!edgeRoad) continue;
+
+      // Zufällige Fabrik als Startpunkt
+      const factory = factories[Math.floor(Math.random() * factories.length)];
+
+      // Pfad von Fabrik zur Randstraße
+      const path = findPathOnRoads(currentGrid, currentGridSize, factory.x, factory.y, edgeRoad.x, edgeRoad.y);
+      if (!path || path.length < 2) continue;
+
+      // Truck spawnen
+      const id = ++emergencyVehicleIdRef.current;
+      const firstStep = path[1] ?? path[0];
+      const dir = firstStep.x > factory.x ? 'east' :
+                  firstStep.x < factory.x ? 'west' :
+                  firstStep.y > factory.y ? 'south' : 'north';
+
+      emergencyVehiclesRef.current.push({
+        id,
+        type: 'trade_truck',
+        tileX: factory.x,
+        tileY: factory.y,
+        direction: dir as import('./types').CarDirection,
+        progress: 0,
+        speed: 0.35,
+        state: 'dispatching',
+        stationX: factory.x,
+        stationY: factory.y,
+        targetX: edgeRoad.x,
+        targetY: edgeRoad.y,
+        path,
+        pathIndex: 0,
+        respondTime: 0,
+        laneOffset: 3 + Math.random() * 2,
+        flashTimer: 0,
+        tradePartnerSlug: partner.slug,
+        tradePartnerName: partner.name,
+        tradeTier: partner.tier,
+        tradeIncome: partner.tradeIncome,
+        tradeDirection: partner.direction,
+      });
+    }
+  }, [worldStateRef, tradePartnershipsRef, emergencyVehiclesRef, emergencyVehicleIdRef]);
+
   // ══════════════════════════════════════════════════════════════════════════════
   // WERKHOF-SYSTEM: Gebäudeinstandhaltung und Müllabfuhr
   // ══════════════════════════════════════════════════════════════════════════════
@@ -1260,6 +1336,13 @@ export function useVehicleSystems(
       emergencyDispatchTimerRef.current = 1.5;
     }
 
+    // Trade-Truck-Dispatch alle 30s (Spielzeit)
+    tradeTruckTimerRef.current -= delta * speedMultiplier;
+    if (tradeTruckTimerRef.current <= 0) {
+      dispatchTradeTrucks();
+      tradeTruckTimerRef.current = 28 + Math.random() * 8; // 28-36s
+    }
+
     const updatedVehicles: EmergencyVehicle[] = [];
 
     for (const vehicle of [...emergencyVehiclesRef.current]) {
@@ -1387,6 +1470,11 @@ export function useVehicleSystems(
           // Auto wartet → nicht nach respondDuration zurückfahren
           updatedVehicles.push(vehicle);
           continue;
+        }
+
+        // Trade-Truck: Am Kartenrand angekommen → einfach verschwinden (kein Return)
+        if (vehicle.type === 'trade_truck' && vehicle.respondTime >= 1) {
+          continue; // Truck aus der Liste entfernen (nicht zu updatedVehicles hinzufügen)
         }
 
         // Werkhof-LKW: 60 Sekunden Reparaturzeit, dann Abschluss-Event
@@ -1950,7 +2038,7 @@ export function useVehicleSystems(
       }
 
       // Parking lot check: non-party cars can park in adjacent parking lot tiles
-      if (!car.parked && !car.isParty && Math.random() < 0.03) {
+      if (!car.parked && !car.isParty && Math.random() < 0.06) {
         const { grid: g, gridSize: gs } = worldStateRef.current;
         const parkingTypes: string[] = ['parking_spot', 'parking_lot', 'parking_lot_large'];
         const neighbors = [
@@ -1965,6 +2053,16 @@ export function useVehicleSystems(
           if (nb.x < 0 || nb.y < 0 || nb.x >= gs || nb.y >= gs) continue;
           const nbTile = g[nb.y]?.[nb.x];
           if (!nbTile || !parkingTypes.includes(nbTile.building.type)) continue;
+          // Einparkchance nach Preis: kostenlos=hoch, teuer=niedrig
+          const cfg = parkingConfigRef.current.find((c) => c.tileX === nb.x && c.tileY === nb.y);
+          const isFree = cfg?.isFree ?? false;
+          const feeRate = cfg?.feeRate ?? 3;
+          let parkChance: number;
+          if (isFree)             parkChance = 1.0;  // kostenlos: immer einparken
+          else if (feeRate <= 5)  parkChance = 0.80; // günstig
+          else if (feeRate <= 12) parkChance = 0.50; // mittel
+          else                    parkChance = 0.20; // teuer (13-20 CHF)
+          if (Math.random() > parkChance) continue;
           // Find a free slot (0-7) on this tile — 4 Streifen × 2 Seiten
           const occupied = parkedVehiclesRef.current
             .filter((p) => p.tileX === nb.x && p.tileY === nb.y)
@@ -2716,11 +2814,13 @@ export function useVehicleSystems(
         : vehicle.type === 'ambulance' ? '#f0f0f0'
         : vehicle.type === 'werkhof_truck' ? '#f59e0b'
         : vehicle.type === 'garbage_truck' ? '#4ade80'
+        : vehicle.type === 'trade_truck' ? '#10b981'  // Smaragdgrün für Handels-LKW
         : '#1e40af';
 
       const length = vehicle.type === 'fire_truck' ? 14
         : vehicle.type === 'ambulance' ? 13
         : (vehicle.type === 'werkhof_truck' || vehicle.type === 'garbage_truck') ? 15
+        : vehicle.type === 'trade_truck' ? 14
         : 11;
       ctx.fillStyle = bodyColor;
       ctx.beginPath();
@@ -2788,6 +2888,23 @@ export function useVehicleSystems(
         // Müllauto: grüne Markierung, kein Blaulicht
         ctx.fillStyle = '#4ade80';
         ctx.fillRect(-3 * scale, -7 * scale, 6 * scale, 3 * scale);
+      } else if (vehicle.type === 'trade_truck') {
+        // Handels-LKW: kleines CHF-Symbol auf dem Dach + grüner Blinker
+        ctx.fillStyle = flashOn ? '#10b981' : '#065f46';
+        ctx.fillRect(-4 * scale, -7 * scale, 8 * scale, 3 * scale);
+        if (flashOn) {
+          ctx.shadowColor = '#10b981';
+          ctx.shadowBlur = 5;
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+          ctx.fillRect(-6 * scale, -8 * scale, 12 * scale, 4 * scale);
+          ctx.shadowBlur = 0;
+        }
+        // CHF-Text mini
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${4 * scale}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Fr', 0, 0);
       } else {
         ctx.fillStyle = flashOn ? '#ff0000' : '#880000';
         ctx.fillRect(-5 * scale, -7 * scale, 3 * scale, 3 * scale);
@@ -2967,6 +3084,7 @@ export function useVehicleSystems(
     findCrimeIncidents,
     dispatchEmergencyVehicle,
     updateEmergencyDispatch,
+    dispatchTradeTrucks,
     updateEmergencyVehicles,
     updateCars,
     updateBuses,

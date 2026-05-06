@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { msg } from 'gt-next';
+import { useMessages } from 'gt-next';
+import { useGT } from 'gt-next/client';
 import { BusStationSection } from './BusStationSection';
 import { Tile, BuildingType, TOOL_INFO, Tool, BUILDING_STATS } from '@/types/game';
 import { getCondition, getHasWerkhofNpc } from '@/lib/werkhofConditionStore';
@@ -25,8 +28,8 @@ import {
   type CoatPattern,
   type CoatSymbol,
 } from '@/lib/coatOfArmsGenerator';
-import { 
-  SERVICE_CONFIG, 
+import {
+  SERVICE_CONFIG,
   SERVICE_BUILDING_TYPES,
   NON_UPGRADEABLE_SERVICE_BUILDINGS,
   SERVICE_MAX_LEVEL,
@@ -35,6 +38,22 @@ import {
   getBuildTimeSeconds,
   getUpgradeBuildTimeSeconds,
 } from '@/lib/simulation';
+
+const UI_LABELS = {
+  residenceReleased:  msg('Haus freigegeben.'),
+  residenceClaimed:   msg('Zuhause beansprucht!'),
+  error:              msg('Fehler'),
+  networkError:       msg('Netzwerkfehler'),
+  partyStartError:    msg('Fehler beim Starten'),
+  tenantInvited:      msg('Mieter eingeladen!'),
+  rentalCancelled:    msg('Mietvertrag gekündigt.'),
+  policeNight:        msg('alle 5 Min (Nacht 🌙)'),
+  policeEvening:      msg('alle 10 Min (Abend 🌆)'),
+  policeDay:          msg('alle 20 Min (Tag ☀️)'),
+  fireNpcConfirm:     msg('{name} wirklich entlassen?'),
+  npcFired:           msg('{name} entlassen.'),
+  fireTooltip:        msg('Entlassen'),
+};
 
 interface TileInfoPanelProps {
   tile: Tile;
@@ -87,6 +106,9 @@ export function TileInfoPanel({
   mansionParties = [],
 }: TileInfoPanelProps) {
   const { x, y } = tile;
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+  const gt = useGT();
   const { state, upgradeServiceBuilding, repairAtTile, flipBuildingAtTile, placeAtTile, setTool, setBuildingLabel, setAutobahnDirection, parkedVehiclesRef, parkingConfigRef, parkingViolationsRef, emitSetParkingConfig } = useGame();
   const serverItemDetails = useItemDetails();
   
@@ -150,7 +172,7 @@ export function TileInfoPanel({
 
   React.useEffect(() => {
     if (!isParking) return;
-    setParkingCfg(getConfigForTile());
+    if (!cfgDirty) setParkingCfg(getConfigForTile());
     const interval = setInterval(() => {
       if (!cfgDirty) setParkingCfg(getConfigForTile());
     }, 2000);
@@ -290,8 +312,8 @@ export function TileInfoPanel({
         body: JSON.stringify({ tile_x: x, tile_y: y, room_code: currentRoomCode }),
       });
       const d = await r.json();
-      if (!d.ok) setPartyMsg(d.error || 'Fehler beim Starten');
-    } catch { setPartyMsg('Netzwerkfehler'); }
+      if (!d.ok) setPartyMsg(d.error || mm(UI_LABELS.partyStartError));
+    } catch { setPartyMsg(mm(UI_LABELS.networkError)); }
     finally { setPartyLoading(false); }
   }
 
@@ -313,18 +335,18 @@ export function TileInfoPanel({
           detail: { parties: [], serverTimestamp: Date.now() }
         }));
       } else {
-        setPartyMsg(d.error || 'Fehler');
+        setPartyMsg(d.error || mm(UI_LABELS.error));
       }
-    } catch { setPartyMsg('Netzwerkfehler'); }
+    } catch { setPartyMsg(mm(UI_LABELS.networkError)); }
     finally { setPartyLoading(false); }
   }
 
   // Polizei-Intervall je nach Tageszeit (nur Anzeige)
   const policeIntervalLabel = (() => {
     const h = new Date().getHours();
-    if (h >= 22 || h < 6) return 'alle 5 Min (Nacht 🌙)';
-    if (h >= 18) return 'alle 10 Min (Abend 🌆)';
-    return 'alle 20 Min (Tag ☀️)';
+    if (h >= 22 || h < 6) return mm(UI_LABELS.policeNight);
+    if (h >= 18) return mm(UI_LABELS.policeEvening);
+    return mm(UI_LABELS.policeDay);
   })();
 
   const FINE_STEPS = [150, 300, 600, 1200];
@@ -341,9 +363,9 @@ export function TileInfoPanel({
         body: JSON.stringify({ tile_x: x, tile_y: y, room_code: currentRoomCode, tenant_nickname: inviteNickname.trim(), monthly_rent: inviteRent }),
       });
       const d = await r.json();
-      if (d.ok) { setShowInviteModal(false); setInviteNickname(''); setRentalMsg('Mieter eingeladen!'); await loadTenants(); }
-      else { setInviteError(d.error || 'Fehler'); }
-    } catch (_) { setInviteError('Netzwerkfehler'); }
+      if (d.ok) { setShowInviteModal(false); setInviteNickname(''); setRentalMsg(mm(UI_LABELS.tenantInvited)); await loadTenants(); }
+      else { setInviteError(d.error || mm(UI_LABELS.error)); }
+    } catch (_) { setInviteError(mm(UI_LABELS.networkError)); }
     finally { setInviteLoading(false); }
   }
 
@@ -356,9 +378,9 @@ export function TileInfoPanel({
         headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
       });
       const d = await r.json();
-      if (d.ok) { setRentalMsg('Mietvertrag gekündigt.'); await loadTenants(); }
-      else { setRentalMsg(d.error || 'Fehler'); }
-    } catch (_) { setRentalMsg('Netzwerkfehler'); }
+      if (d.ok) { setRentalMsg(mm(UI_LABELS.rentalCancelled)); await loadTenants(); }
+      else { setRentalMsg(d.error || mm(UI_LABELS.error)); }
+    } catch (_) { setRentalMsg(mm(UI_LABELS.networkError)); }
   }
 
   async function handleClaim() {
@@ -366,8 +388,8 @@ export function TileInfoPanel({
     setResidenceLoading(true); setResidenceMsg('');
     try {
       await claimResidence(x, y, currentRoomCode);
-      setResidenceMsg('Zuhause beansprucht!');
-    } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : 'Fehler'); }
+      setResidenceMsg(mm(UI_LABELS.residenceClaimed));
+    } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : mm(UI_LABELS.error)); }
     finally { setResidenceLoading(false); }
   }
 
@@ -375,8 +397,8 @@ export function TileInfoPanel({
     setResidenceLoading(true); setResidenceMsg('');
     try {
       await releaseResidence();
-      setResidenceMsg('Haus freigegeben.');
-    } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : 'Fehler'); }
+      setResidenceMsg(mm(UI_LABELS.residenceReleased));
+    } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : mm(UI_LABELS.error)); }
     finally { setResidenceLoading(false); }
   }
 
@@ -890,7 +912,7 @@ export function TileInfoPanel({
                           <button
                             className="text-[10px] text-red-400/70 hover:text-red-300 ml-1 shrink-0"
                             onClick={() => handleCancelRental(t.id)}
-                            title="Kündigen"
+                            title={mm(UI_LABELS.fireTooltip)}
                           >
                             <X className="w-3 h-3" />
                           </button>

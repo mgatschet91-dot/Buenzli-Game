@@ -26,6 +26,27 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+export interface TierNext {
+  tier: number;
+  name: string;
+  label: string;
+  minDays: number;
+  minInvested: number;
+  daysLeft: number;
+  investLeft: number;
+  ready: boolean;
+}
+
+export interface TierProgress {
+  tier: number;
+  tierName: string;
+  tierLabel: string;
+  dailyIncome: number;
+  next: TierNext | null;
+  connectedDays: number;
+  tierInvested: number;
+}
+
 export interface Partnership {
   id: number;
   partner: {
@@ -41,6 +62,13 @@ export interface Partnership {
   connection_bonus_paid: boolean;
   discovered_at: string | null;
   connected_at: string | null;
+  // Tier-Daten
+  tier: number;
+  tier_name: string;
+  tier_label: string;
+  tier_upgraded_at: string | null;
+  tier_invested: number;
+  tier_progress: TierProgress;
 }
 
 export interface PartnershipsResponse {
@@ -379,6 +407,88 @@ export async function respondMyPartnershipRequest(
 /**
  * Lehne eine Partnerschaftsanfrage ab
  */
+/**
+ * Investiere in eine Partnerschaft (für Tier 3/4 Anforderung)
+ */
+export async function investInPartnership(
+  municipalitySlug: string,
+  partnerSlug: string,
+  amount: number
+): Promise<{ success: boolean; data: { invested: number; tier_progress: TierProgress } }> {
+  const response = await fetch(
+    `${API_BASE_URL}/municipality/${municipalitySlug}/partnerships/${partnerSlug}/invest`,
+    { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ amount }) }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `Investition fehlgeschlagen: ${response.status}`);
+  }
+  return response.json();
+}
+
+// ==========================================
+// DIPLOMATIC ACTIONS
+// ==========================================
+
+export interface ActionCooldown {
+  label: string;
+  cost: number;
+  cooldownDays: number;
+  ready: boolean;
+  daysLeft: number;
+  lastAt: string | null;
+}
+
+export type ActionCooldowns = Record<string, ActionCooldown>;
+
+export interface ExportCapacity {
+  slots: number;
+  multiplier: number;
+}
+
+export async function executeDiplomaticAction(
+  municipalitySlug: string,
+  partnerSlug: string,
+  actionType: 'emergency_aid' | 'city_festival' | 'labor_migration'
+): Promise<{ success: boolean; data: { cooldowns: ActionCooldowns } }> {
+  const response = await fetch(
+    `${API_BASE_URL}/municipality/${municipalitySlug}/partnerships/${partnerSlug}/action`,
+    { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ action_type: actionType }) }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `Aktion fehlgeschlagen: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getActionCooldowns(
+  municipalitySlug: string,
+  partnerSlug: string
+): Promise<{ success: boolean; data: { cooldowns: ActionCooldowns } }> {
+  const response = await fetch(
+    `${API_BASE_URL}/municipality/${municipalitySlug}/partnerships/${partnerSlug}/action`,
+    { method: 'GET', headers: getAuthHeaders() }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `Cooldowns laden fehlgeschlagen: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getExportCapacity(municipalitySlug: string): Promise<{ success: boolean; data: ExportCapacity }> {
+  const response = await fetch(
+    `${API_BASE_URL}/municipality/${municipalitySlug}/partnerships/export-capacity`,
+    { method: 'GET', headers: getAuthHeaders() }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `Export-Kapazität laden fehlgeschlagen: ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function declinePartnershipRequest(
   municipalitySlug: string,
   requestId: number

@@ -5,8 +5,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CircleDashed, User, Star, Building2, Calendar, Pencil, Check, X } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
+import { msg, useMessages } from 'gt-next';
 
 const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100';
+
+const UI_LABELS = {
+  title:          msg('Spielerprofil'),
+  levelAbbr:      msg('Lv.'),
+  xpLabel:        msg('XP'),
+  mottoPlaceholder: msg('Dein Motto...'),
+  mottoEmpty:     msg('Kein Motto gesetzt...'),
+  mottoEdit:      msg('Motto bearbeiten'),
+  memberSince:    msg('Dabei seit'),
+  badgesHeading:  msg('Badges'),
+  companiesHeading: msg('Firmen'),
+  rarityLegendary: msg('Legendär'),
+  rarityEpic:     msg('Episch'),
+  rarityRare:     msg('Selten'),
+  rarityUncommon: msg('Ungewöhnlich'),
+  rarityCommon:   msg('Normal'),
+  reputationAbbr: msg('Rep.'),
+};
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -52,6 +71,8 @@ interface PlayerProfilePanelProps {
 }
 
 export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [profile, setProfile]       = useState<PlayerProfile | null>(null);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
@@ -125,11 +146,11 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
   };
 
   const rarityLabel = (rarity: number) => {
-    if (rarity >= 4) return 'Legendaer';
-    if (rarity >= 3) return 'Episch';
-    if (rarity >= 2) return 'Selten';
-    if (rarity >= 1) return 'Ungewoehnlich';
-    return 'Normal';
+    if (rarity >= 4) return mm(UI_LABELS.rarityLegendary);
+    if (rarity >= 3) return mm(UI_LABELS.rarityEpic);
+    if (rarity >= 2) return mm(UI_LABELS.rarityRare);
+    if (rarity >= 1) return mm(UI_LABELS.rarityUncommon);
+    return mm(UI_LABELS.rarityCommon);
   };
 
   return (
@@ -138,7 +159,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="w-5 h-5 text-blue-400" />
-            Spielerprofil
+            {mm(UI_LABELS.title)}
           </DialogTitle>
         </DialogHeader>
 
@@ -169,9 +190,9 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
 
                 {/* Level + XP */}
                 <div className="flex items-center justify-center gap-3 text-sm">
-                  <span className="text-amber-400 font-bold">Lv. {profile.level}</span>
+                  <span className="text-amber-400 font-bold">{mm(UI_LABELS.levelAbbr)} {profile.level}</span>
                   <span className="text-slate-500">|</span>
-                  <span className="text-slate-400">{profile.xp.toLocaleString()} XP</span>
+                  <span className="text-slate-400">{profile.xp.toLocaleString()} {mm(UI_LABELS.xpLabel)}</span>
                 </div>
 
                 {/* ── Motto ── */}
@@ -184,7 +205,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                         onChange={e => setMottoInput(e.target.value.slice(0, 128))}
                         onKeyDown={e => { if (e.key === 'Enter') saveMotto(); if (e.key === 'Escape') cancelMotto(); }}
                         maxLength={128}
-                        placeholder="Dein Motto..."
+                        placeholder={mm(UI_LABELS.mottoPlaceholder)}
                         className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
                       />
                       <button onClick={saveMotto} disabled={mottoSaving} className="p-1 text-emerald-400 hover:text-emerald-300 disabled:opacity-50">
@@ -197,13 +218,13 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                   ) : (
                     <div className="flex items-center justify-center gap-1.5">
                       <p className={`text-sm italic ${profile.motto ? 'text-slate-300' : 'text-slate-500'}`}>
-                        {profile.motto || (isOwnProfile ? 'Kein Motto gesetzt...' : '')}
+                        {profile.motto || (isOwnProfile ? mm(UI_LABELS.mottoEmpty) : '')}
                       </p>
                       {isOwnProfile && (
                         <button
                           onClick={() => setEditingMotto(true)}
                           className="p-0.5 text-slate-500 hover:text-slate-300"
-                          title="Motto bearbeiten"
+                          title={mm(UI_LABELS.mottoEdit)}
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
@@ -214,7 +235,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
 
                 <div className="text-xs text-slate-500 flex items-center justify-center gap-1">
                   <Calendar className="w-3 h-3" />
-                  Dabei seit {new Date(profile.created_at).toLocaleDateString('de-CH')}
+                  {mm(UI_LABELS.memberSince)} {new Date(profile.created_at).toLocaleDateString('de-CH')}
                 </div>
               </div>
 
@@ -223,7 +244,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                 <div>
                   <h4 className="text-sm font-medium text-slate-300 mb-2 flex items-center gap-1">
                     <Star className="w-3.5 h-3.5 text-amber-400" />
-                    Badges ({profile.badges.length})
+                    {mm(UI_LABELS.badgesHeading)} ({profile.badges.length})
                   </h4>
                   <div className="grid grid-cols-2 gap-2">
                     {profile.badges.map(b => (
@@ -248,7 +269,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
               {/* ── Firmen ── */}
               {profile.companies.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-slate-300 mb-2">Firmen</h4>
+                  <h4 className="text-sm font-medium text-slate-300 mb-2">{mm(UI_LABELS.companiesHeading)}</h4>
                   {profile.companies.map((c, i) => (
                     <div key={i} className="flex items-center gap-2 p-2 rounded-lg border border-slate-700 bg-slate-800/30 mb-1">
                       <span>{c.emoji}</span>
@@ -257,7 +278,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                         <div className="text-[10px] text-slate-400">{c.type_name} · {c.role}</div>
                       </div>
                       <div className="text-right text-[10px] text-slate-500">
-                        Lv. {c.level} · Rep. {c.reputation}
+                        {mm(UI_LABELS.levelAbbr)} {c.level} · {mm(UI_LABELS.reputationAbbr)} {c.reputation}
                       </div>
                     </div>
                   ))}

@@ -7,6 +7,7 @@ import { useMessages, T, Var, useGT } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { TOOL_INFO, Tile, Building, BuildingType, AdjacentCity, Tool } from '@/types/game';
 import { getBuildingSize, requiresWaterAdjacency, getWaterAdjacency } from '@/lib/simulation';
+import { getBuildCost } from '@/lib/itemPrices';
 import { FireIcon, SafetyIcon, AlertIcon, PopulationIcon } from '@/components/ui/Icons';
 import { getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HORIZONTAL_OFFSETS, getActiveSpritePack } from '@/lib/renderConfig';
 import { spawnCarFromParkingRef } from '@/lib/parkingSpawnBridge';
@@ -379,7 +380,7 @@ function _loadFurniComposite(cls: string, dir: number, state: number, notifyFn: 
   });
 }
 const LOCAL_AVATAR_SERVER_ID_PREFIX = 'avatar:';
-const BOBBA_BADGE_BASE_URL = 'https://images.bobba.io/c_images/Badges/';
+const BOBBA_BADGE_BASE_URL = `${(process.env.NEXT_PUBLIC_CORE_API_URL || process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100').replace(/\/+$/, '')}/badges/`;
 const DEFAULT_PROFILE_BADGES = ['AC1', 'BRA', 'Z58'];
 const PUBLIC_ROOM_FIT_PADDING = 36;
 const RAW_GAME_API_BASE_URL =
@@ -623,7 +624,7 @@ function findAvatarPathAStar(
 
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
 export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMobile = false, navigationTarget, onNavigationComplete, onViewportChange, onBargeDelivery, ownerName, municipalityName, memberCount, administrators, coatOfArms, canEditCoatOfArms = false, onSaveCoatOfArms, isFullyViewOnly = false, showPublicRoomWalls = false, onVisitMunicipality, serverWeather, disastersRef, mansionPartiesRef, selectedDisasterId, onSelectDisaster, chunkManager, playerResidences, onViewPlayerProfile, currentRoomCode }: CanvasIsometricGridProps) {
-  const { state, latestStateRef, placeAtTile: originalPlaceAtTile, flipBuildingAtTile, finishTrackDrag, connectToCityWithApi, checkAndDiscoverCities, currentSpritePack, visualHour, setBuildingLabel, addMoney, addNotification, renameWaterBody, municipalitySlug, busLineCreationMode, residencePlacement, cancelResidencePlacement, activeRoom, openResidenceRoom, closeResidenceRoom, parkedVehiclesRef, emitParkVehicle, emitLeaveParking, parkingViolationsRef } = useGame();
+  const { state, latestStateRef, placeAtTile: originalPlaceAtTile, flipBuildingAtTile, finishTrackDrag, connectToCityWithApi, checkAndDiscoverCities, currentSpritePack, visualHour, setBuildingLabel, addMoney, addNotification, renameWaterBody, municipalitySlug, busLineCreationMode, residencePlacement, cancelResidencePlacement, activeRoom, openResidenceRoom, closeResidenceRoom, parkedVehiclesRef, parkingConfigRef, emitParkVehicle, emitLeaveParking, parkingViolationsRef, setTool, moveBuilding } = useGame();
   const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, gameVersion } = state;
 
   // Bünzli Inspection State
@@ -800,16 +801,23 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const [placementFlipped, setPlacementFlipped] = useState(false);
   const placementFlippedRef = useRef(false);
   placementFlippedRef.current = placementFlipped;
+  const [movingBuilding, setMovingBuilding] = useState<{ fromX: number; fromY: number; buildingType: Tool; flipped: boolean } | null>(null);
+  const movingBuildingRef = useRef(movingBuilding);
+  movingBuildingRef.current = movingBuilding;
+  const selectedTileRef = useRef(selectedTile);
+  selectedTileRef.current = selectedTile;
   const [publicRoomCameraDebugOpen, setPublicRoomCameraDebugOpen] = useState(true);
   const [avatarQuickChatInput, setAvatarQuickChatInput] = useState('');
   const [avatarQuickChatSending, setAvatarQuickChatSending] = useState(false);
   const [hasLocalAvatar, setHasLocalAvatar] = useState(false);
   const [selectedAvatarProfile, setSelectedAvatarProfile] = useState<{
     avatarId: string;
+    userId?: string;
     name: string;
     figure: string;
     isLocal: boolean;
     motto?: string;
+    badges?: { code: string; name: string; image_url: string; rarity: number }[];
   } | null>(null);
   const [avatarProfilePreviewUrl, setAvatarProfilePreviewUrl] = useState<string>('');
   // Wind sway — triggers main canvas re-render periodically from the animation loop
@@ -854,11 +862,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const [hoveredIncident, setHoveredIncident] = useState<{
     x: number;
     y: number;
-    type: 'fire' | 'crime' | 'npc_dealer' | 'npc_gangster' | 'npc_homeless' | 'npc_police_chase' | 'npc_buenzli';
+    type: 'fire' | 'crime' | 'npc_dealer' | 'npc_gangster' | 'npc_homeless' | 'npc_police_chase' | 'npc_buenzli' | 'trade_truck';
     crimeType?: CrimeType;
     npcState?: string; // Server-State: 'loitering' | 'dealing' | 'burglary' | 'fleeing'
     screenX: number;
     screenY: number;
+    tradeTruck?: { partnerName: string; tier: number; tradeIncome: number; direction: string };
   } | null>(null);
   const [zoom, setZoom] = useState(isMobile ? 0.6 : 1);
   const carsRef = useRef<Car[]>([]);
@@ -1423,15 +1432,23 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const figure = String(ped.avatarFigure || DEFAULT_HABBO_FIGURE).trim() || DEFAULT_HABBO_FIGURE;
     const isLocal = localAvatarServerIdRef.current === avatarId;
     const motto = isLocal ? (getLocalAvatarAppearanceConfig().motto || '') : '';
-    setSelectedAvatarProfile({
-      avatarId,
-      name: ped.avatarLabel || ped.avatarOwnerId || 'Avatar',
-      figure,
-      isLocal,
-      motto,
-    });
+    const userId = String(ped.avatarOwnerId || '');
+    setSelectedAvatarProfile({ avatarId, userId, name: ped.avatarLabel || ped.avatarOwnerId || 'Avatar', figure, isLocal, motto, badges: undefined });
     setMottoEditing(false);
     setMottoInput(motto);
+    if (userId && /^\d+$/.test(userId)) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('isocity_auth_token') : null;
+      fetch(`${RAW_GAME_API_BASE_URL}/api/users/${userId}/profile`, {
+        headers: token ? { 'Authorization': `Bearer ${token}`, 'X-Game-Token': token } : {},
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d?.ok && Array.isArray(d.data?.badges)) {
+            setSelectedAvatarProfile(prev => prev?.avatarId === avatarId ? { ...prev, motto: d.data.motto || prev.motto, badges: d.data.badges.slice(0, 5) } : prev);
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -2480,6 +2497,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       if (!ped) return;
       const nextConfig = normalizeAvatarAppearanceConfig(custom?.detail?.config || getLocalAvatarAppearanceConfig());
       applyAvatarAppearanceToPedestrian(ped, nextConfig);
+      if (nextConfig.figure) ped.avatarFigure = nextConfig.figure;
       deltaQueue.sendAvatarSpawn({
         avatarId,
         x: ped.tileX,
@@ -2702,6 +2720,15 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     serverBusLinesRef,
   };
 
+  // Trade-Partnerships ref muss vor vehicleSystemState stehen
+  const tradePartnershipsRef = useRef<Array<{
+    slug: string;
+    name: string;
+    direction: 'north' | 'south' | 'east' | 'west';
+    tier: number;
+    tradeIncome: number;
+  }>>([]);
+
   const vehicleSystemState: VehicleSystemState = {
     worldStateRef,
     gridVersionRef,
@@ -2714,10 +2741,32 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     isMobile,
     visualHour,
     isFullyViewOnly,
+    tradePartnershipsRef,
     parkedVehiclesRef,
+    parkingConfigRef,
     emitParkVehicleRef,
     emitLeaveParkingRef,
   };
+
+  // Trade-Partnerships für LKW-Routen laden (Ref oben deklariert)
+  useEffect(() => {
+    if (!municipalitySlug) return;
+    import('@/lib/api/partnershipApi').then(({ getPartnerships }) => {
+      getPartnerships(municipalitySlug).then(res => {
+        if (res.success) {
+          tradePartnershipsRef.current = res.data.partnerships
+            .filter(p => p.status === 'connected')
+            .map(p => ({
+              slug: p.partner.slug,
+              name: p.partner.name,
+              direction: (p.direction || 'north') as 'north' | 'south' | 'east' | 'west',
+              tier: Number(p.tier || 1),
+              tradeIncome: Number(p.trade_income || 100),
+            }));
+        }
+      }).catch(() => {});
+    });
+  }, [municipalitySlug]);
 
   // Load server bus lines for the municipality (from Transport companies)
   const loadServerBusLines = useCallback(() => {
@@ -3231,9 +3280,33 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         pressed.add(key);
         e.preventDefault();
       }
-      // R-Taste: Gebäude-Platzierung spiegeln/drehen
+      // R-Taste: Gebäude-Platzierung spiegeln/drehen (auch im Move-Modus)
       if (key === 'r') {
         setPlacementFlipped((prev) => !prev);
+        if (movingBuildingRef.current) {
+          setMovingBuilding(prev => prev ? { ...prev, flipped: !prev.flipped } : prev);
+        }
+      }
+      // M-Taste: Gebäude verschieben aktivieren
+      if (key === 'm') {
+        const tile = selectedTileRef.current;
+        if (!tile) return;
+        const { grid: g } = worldStateRef.current;
+        const cellData = g[tile.y]?.[tile.x];
+        if (!cellData?.building) return;
+        const bt = cellData.building.type;
+        const nonMovable = ['empty', 'grass', 'water', 'road', 'rail', 'subway', 'autobahn', 'furni'];
+        if (nonMovable.includes(bt)) return;
+        // Nur explizit platzierte Gebäude verschieben (haben TOOL_INFO-Eintrag)
+        if (!(bt in TOOL_INFO)) return;
+        const bType = bt as Tool;
+        setMovingBuilding({ fromX: tile.x, fromY: tile.y, buildingType: bType, flipped: placementFlippedRef.current });
+        setTool(bType);
+      }
+      // ESC: Verschieben abbrechen
+      if (e.key === 'Escape' && movingBuildingRef.current) {
+        setMovingBuilding(null);
+        setTool('select');
       }
     };
 
@@ -4877,8 +4950,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             ctx.stroke();
           }
 
-          // Draw zone border with dashed line (hide when zoomed out, only on grass/empty tiles - not on roads or buildings)
-          if (tile.zone !== 'none' &&
+          // Zone-Rahmen nur sichtbar wenn Zonen-Tool aktiv (nicht dauerhaft auf der Karte)
+          if (showsDragGrid && tile.zone !== 'none' &&
             currentZoom >= 0.95 &&
             (tile.building.type === 'grass' || tile.building.type === 'empty')) {
             ctx.strokeStyle = tile.zone === 'residential' ? '#22c55e' :
@@ -6521,6 +6594,21 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
 
+    // Draw move-mode origin overlay (orange pulsing to show "being moved")
+    if (movingBuilding) {
+      const size = getBuildingSize(movingBuilding.buildingType as BuildingType);
+      for (let dx = 0; dx < size.width; dx++) {
+        for (let dy = 0; dy < size.height; dy++) {
+          const tx = movingBuilding.fromX + dx;
+          const ty = movingBuilding.fromY + dy;
+          if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
+            const { screenX, screenY } = getTileScreenWithElevation(tx, ty);
+            drawHighlight(screenX, screenY, 'rgba(251, 146, 60, 0.35)', '#f97316');
+          }
+        }
+      }
+    }
+
     // Draw road/rail drag preview with bridge validity indication
     if (isDragging && (selectedTool === 'road' || selectedTool === 'rail') && dragStartTile && dragEndTile) {
       const minX = Math.min(dragStartTile.x, dragEndTile.x);
@@ -6637,7 +6725,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-  }, [hoveredTile, selectedTile, selectedTool, offset, zoom, gridSize, grid, isDragging, dragStartTile, dragEndTile, placementFlipped]);
+  }, [hoveredTile, selectedTile, selectedTool, offset, zoom, gridSize, grid, isDragging, dragStartTile, dragEndTile, placementFlipped, movingBuilding]);
 
   // Animate decorative car traffic AND emergency vehicles on top of the base canvas
   useEffect(() => {
@@ -7950,6 +8038,21 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           return;
         }
 
+        // Move-Modus: Klick setzt Gebäude an neue Position
+        if (movingBuildingRef.current) {
+          const mb = movingBuildingRef.current;
+          setMovingBuilding(null);
+          setTool('select');
+          moveBuilding(mb.fromX, mb.fromY, gridX, gridY, mb.flipped).then(result => {
+            if (!result.success) {
+              const errMsg = result.error === 'target_occupied' ? 'Zielfeld ist belegt' : result.error === 'out_of_bounds' ? 'Ausserhalb der Stadtgrenzen' : result.error === 'outside_bauzone' ? 'Zielfeld liegt ausserhalb der Bauzone' : result.error === 'not_your_building' ? 'Nur eigene Gebäude verschieben' : 'Verschieben fehlgeschlagen';
+              addNotification('Fehler', errMsg, '❌');
+              setSelectedTile({ x: mb.fromX, y: mb.fromY });
+            }
+          });
+          return;
+        }
+
         if (selectedTool === 'select') {
           // Check disaster markers BEFORE building selection
           if (disastersRef?.current && onSelectDisaster) {
@@ -8030,7 +8133,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         }
       }
     }
-  }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid, waterBodies, findAvatarByClick, openAvatarProfile, cancelResidencePlacement, addNotification, currentRoomCode, municipalitySlug, isFullyViewOnly]);
+  }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid, waterBodies, findAvatarByClick, openAvatarProfile, cancelResidencePlacement, addNotification, currentRoomCode, municipalitySlug, isFullyViewOnly, moveBuilding, setTool]);
 
   // Calculate camera bounds based on grid size
   const getMapBounds = useCallback((currentZoom: number, canvasW: number, canvasH: number) => {
@@ -8178,7 +8281,25 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             screenX: e.clientX, screenY: e.clientY,
           });
         } else {
-          setHoveredIncident(null);
+          // Trade-Truck in der Nähe?
+          const nearbyTruck = emergencyVehiclesRef.current.find(v =>
+            v.type === 'trade_truck' &&
+            Math.abs(v.tileX - gridX) <= 1 && Math.abs(v.tileY - gridY) <= 1
+          );
+          if (nearbyTruck?.tradePartnerName) {
+            setHoveredIncident({
+              x: gridX, y: gridY, type: 'trade_truck',
+              screenX: e.clientX, screenY: e.clientY,
+              tradeTruck: {
+                partnerName: nearbyTruck.tradePartnerName,
+                tier: nearbyTruck.tradeTier ?? 1,
+                tradeIncome: nearbyTruck.tradeIncome ?? 100,
+                direction: nearbyTruck.tradeDirection ?? 'north',
+              },
+            });
+          } else {
+            setHoveredIncident(null);
+          }
         }
 
         // Update drag rectangle end point for zoning tools
@@ -8829,7 +8950,25 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         );
       })()}
 
-      {hoveredTile && selectedTool !== 'select' && TOOL_INFO[selectedTool] && (() => {
+      {/* Move-Modus UI — zeigt immer wenn aktiv, unabhängig von hoveredTile */}
+      {movingBuilding && selectedTool === movingBuilding.buildingType && (() => {
+        const moveName = TOOL_INFO[movingBuilding.buildingType]?.name ? m(TOOL_INFO[movingBuilding.buildingType].name) : movingBuilding.buildingType;
+        return (
+          <div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 text-sm pointer-events-auto rounded-md border bg-orange-500/20 border-orange-400/60 text-orange-100"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {hoveredTile
+              ? `${moveName} verschieben → (${hoveredTile.x}, ${hoveredTile.y})`
+              : `${moveName} verschieben — Zielfeld anklicken`}
+            {placementFlipped && <span className="ml-2 text-amber-300">[Gespiegelt]</span>}
+            <span className="ml-3 text-orange-300/70 text-xs">(R = Drehen · ESC = Abbrechen)</span>
+          </div>
+        );
+      })()}
+
+      {hoveredTile && selectedTool !== 'select' && !movingBuilding && TOOL_INFO[selectedTool] && (() => {
         // Check if this is a waterfront building tool and if placement is valid
         const buildingType = (selectedTool as string) as BuildingType;
         const isWaterfrontTool = requiresWaterAdjacency(buildingType);
@@ -8843,6 +8982,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         }
 
         const toolName = m(TOOL_INFO[selectedTool].name);
+        const toolCost = getBuildCost(selectedTool) > 0
+          ? getBuildCost(selectedTool)
+          : TOOL_INFO[selectedTool].cost;
 
         return (
           <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 text-sm pointer-events-auto ${isAvatarTool
@@ -8861,11 +9003,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                     {(() => {
                       const areaWidth = Math.abs(dragEndTile.x - dragStartTile.x) + 1;
                       const areaHeight = Math.abs(dragEndTile.y - dragStartTile.y) + 1;
-                      const totalCost = TOOL_INFO[selectedTool].cost * areaWidth * areaHeight;
+                      const totalCost = toolCost * areaWidth * areaHeight;
                       return (
                         <>
                           {gt('{toolName} - {width}x{height} area', { toolName, width: areaWidth, height: areaHeight })}
-                          {TOOL_INFO[selectedTool].cost > 0 && ` - Fr. ${totalCost.toLocaleString('de-CH')}`}
+                          {toolCost > 0 && ` - Fr. ${totalCost.toLocaleString('de-CH')}`}
                         </>
                       );
                     })()}
@@ -8874,12 +9016,20 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   <>
                     {gt('{toolName} must be placed next to water', { toolName })}
                   </>
+                ) : movingBuilding ? (
+                  <>
+                    {hoveredTile
+                      ? `Verschieben → (${hoveredTile.x}, ${hoveredTile.y})`
+                      : `${toolName} verschieben`}
+                    {placementFlipped && <span className="ml-2 text-amber-400">[Gespiegelt]</span>}
+                    <span className="ml-2 text-muted-foreground/60 text-xs">(R = Drehen · ESC = Abbrechen)</span>
+                  </>
                 ) : (
                   <>
                     {hoveredTile
                       ? gt('{toolName} at ({x}, {y})', { toolName, x: hoveredTile.x, y: hoveredTile.y })
                       : `${toolName} aktiv`}
-                    {hoveredTile && TOOL_INFO[selectedTool].cost > 0 && ` - Fr. ${TOOL_INFO[selectedTool].cost.toLocaleString('de-CH')}`}
+                    {hoveredTile && toolCost > 0 && ` - Fr. ${toolCost.toLocaleString('de-CH')}`}
                     {showsDragGrid && gt(' - Drag to zone area')}
                     {supportsDragPlace && !showsDragGrid && gt(' - Drag to place')}
                     {placementFlipped && <span className="ml-2 text-amber-400">[Gespiegelt]</span>}
@@ -8895,8 +9045,61 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
       {/* Quick-Chat in Public Rooms: jetzt im Footer-Bar (PublicRoomFooterBar) */}
 
+      {/* Trade-Truck Tooltip */}
+      {hoveredIncident?.type === 'trade_truck' && hoveredIncident.tradeTruck && (() => {
+        const tooltipWidth = 220;
+        const padding = 16;
+        const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const wouldOverflowRight = hoveredIncident.screenX + padding + tooltipWidth > viewportWidth - padding;
+        const left = wouldOverflowRight ? hoveredIncident.screenX - tooltipWidth - padding : hoveredIncident.screenX + padding;
+        const truck = hoveredIncident.tradeTruck;
+        const truckTierLabels: Record<number, string> = {
+          1: `🤝 ${m('Known' as Parameters<typeof m>[0])}`,
+          2: `🌟 ${m('Friendly' as Parameters<typeof m>[0])}`,
+          3: `🏆 ${m('Strategic' as Parameters<typeof m>[0])}`,
+          4: `👑 ${m('Allied' as Parameters<typeof m>[0])}`,
+        };
+        const truckDirLabels: Record<string, string> = {
+          north: `⬆ ${m('North' as Parameters<typeof m>[0])}`,
+          south: `⬇ ${m('South' as Parameters<typeof m>[0])}`,
+          east:  `➡ ${m('East'  as Parameters<typeof m>[0])}`,
+          west:  `⬅ ${m('West'  as Parameters<typeof m>[0])}`,
+        };
+        return (
+          <div className="fixed pointer-events-none z-[100]" style={{ left, top: hoveredIncident.screenY - 8 }}>
+            <div className="bg-slate-900/95 border border-emerald-700/60 rounded-md shadow-lg px-3 py-2.5 w-[220px]">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-base">🚚</span>
+                <span className="text-xs font-semibold text-emerald-300">{m('Trade Transport' as Parameters<typeof m>[0])}</span>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">{m('Destination:' as Parameters<typeof m>[0])}</span>
+                  <span className="text-white font-medium">{truck.partnerName}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">{m('Direction:' as Parameters<typeof m>[0])}</span>
+                  <span className="text-slate-200">{truckDirLabels[truck.direction] ?? truck.direction}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">{m('Tier:' as Parameters<typeof m>[0])}</span>
+                  <span className="text-slate-200">{truckTierLabels[truck.tier] ?? `Tier ${truck.tier}`}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">{m('Income:' as Parameters<typeof m>[0])}</span>
+                  <span className="text-emerald-400 font-bold">+{truck.tradeIncome} {m('CHF/day' as Parameters<typeof m>[0])}</span>
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-slate-700/50 text-[10px] text-slate-500">
+                {m('Exporting trade goods →' as Parameters<typeof m>[0])}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Incident Tooltip - shows when hovering over fire, crime, or NPCs */}
-      {hoveredIncident && (() => {
+      {hoveredIncident && hoveredIncident.type !== 'trade_truck' && (() => {
         // Calculate position to avoid overflow
         const tooltipWidth = 200;
         const padding = 16;
@@ -9139,15 +9342,27 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                 )}
               </div>
               <div className="badge-container">
-                {DEFAULT_PROFILE_BADGES.map((badge) => (
-                  <div key={badge} className="badge-box">
+                {(selectedAvatarProfile.badges ?? []).map((badge) => (
+                  <div key={badge.code} className="badge-box" title={badge.name}>
                     <img
-                      src={`${BOBBA_BADGE_BASE_URL}${badge}.gif`}
-                      alt={badge}
+                      src={badge.image_url || `${BOBBA_BADGE_BASE_URL}${badge.code}.gif`}
+                      alt={badge.name}
                       className="h-8 w-8 object-contain [image-rendering:pixelated]"
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement;
+                        if (img.src.endsWith('.gif')) img.src = img.src.replace('.gif', '.png');
+                        else img.style.display = 'none';
+                      }}
                     />
                   </div>
                 ))}
+                {(!selectedAvatarProfile.badges || selectedAvatarProfile.badges.length === 0) && (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="badge-box" style={{ opacity: 0.2 }}>
+                      <div className="h-8 w-8 rounded border border-slate-600" />
+                    </div>
+                  ))
+                )}
               </div>
             </div>
             <hr />

@@ -244,6 +244,19 @@ function loop() {
     if (_cx !== char.x && !isBlocked(_cx, char.z, char.level)) char.x = _cx
     if (_cz !== char.z && !isBlocked(char.x, _cz, char.level)) char.z = _cz
 
+    // ── Tür-Austritt: Charakter an Südwand bei Türöffnung → Raum verlassen ───
+    if (!window._roomExitFired && char.level === 0 && mz > 0) {
+      for (const door of ROOM_DOORS) {
+        const distX = Math.abs(char.x - door.wx)
+        const hw    = (door.halfWidth ?? 0.9) + 0.35
+        if (distX <= hw && char.z >= door.wz - 0.55) {
+          window._roomExitFired = true
+          window.parent?.postMessage({ type: 'ROOM_EXIT' }, '*')
+          break
+        }
+      }
+    }
+
     // ── Staircase railing: clamp perpendicular axis so char can't fall off sides ──
     for (const st of ROOM_STAIRS_DATA_NEW) {
       const [sdx, sdz] = _STAIR_DV[st.dir] || [0, 1]
@@ -1400,6 +1413,15 @@ let _playerPanelEl = document.getElementById('player-panel')
     pp.appendChild(body)
   }
 
+  // Badges
+  if (!document.getElementById('pp-badges')) {
+    const bdg = document.createElement('div')
+    bdg.id = 'pp-badges'
+    bdg.style.cssText = 'display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);min-height:44px;align-items:center'
+    pp.insertBefore(bdg, document.getElementById('pp-actions') || null)
+    pp.appendChild(bdg)
+  }
+
   // Buttons
   if (!document.getElementById('pp-actions')) {
     const acts = document.createElement('div')
@@ -1455,7 +1477,7 @@ function _renderAvatarCfgPreview(canvasEl, avatarCfg) {
   }
 }
 
-function showPlayerPanel(isLocal, name, group, avatarCfg, motto, municipalityName, userLevel) {
+function showPlayerPanel(isLocal, name, group, avatarCfg, motto, municipalityName, userLevel, userId) {
   if (!_playerPanelEl) return
   hideFurniturePanel()
   const _id = (id) => document.getElementById(id)
@@ -1575,6 +1597,44 @@ function showPlayerPanel(isLocal, name, group, avatarCfg, motto, municipalityNam
   if (canvasEl) {
     const cfg = avatarCfg || (isLocal ? (typeof AVATAR !== 'undefined' ? AVATAR : null) : null)
     _renderAvatarCfgPreview(canvasEl, cfg)
+  }
+
+  // Badges laden und anzeigen
+  const badgesEl = _id('pp-badges')
+  if (badgesEl) {
+    badgesEl.innerHTML = '<span style="font-size:10px;color:rgba(255,255,255,0.2)">...</span>'
+    const targetUserId = isLocal ? (window._localUserId || null) : (userId || null)
+    if (targetUserId) {
+      const apiBase = window._gameApiBase || 'http://127.0.0.1:4100'
+      const token = window._gameAuthToken || localStorage.getItem('isocity_auth_token')
+      fetch(`${apiBase}/api/users/${targetUserId}/profile`, {
+        headers: token ? { 'Authorization': `Bearer ${token}`, 'X-Game-Token': token } : {}
+      }).then(r => r.ok ? r.json() : null).then(d => {
+        if (!badgesEl.isConnected) return
+        const badges = (d?.ok && Array.isArray(d.data?.badges)) ? d.data.badges.slice(0, 4) : []
+        if (badges.length === 0) {
+          badgesEl.innerHTML = '<span style="font-size:10px;color:rgba(255,255,255,0.2)">Keine Badges</span>'
+          return
+        }
+        badgesEl.innerHTML = ''
+        badges.forEach(b => {
+          const box = document.createElement('div')
+          box.title = b.name || b.code
+          box.style.cssText = 'width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0'
+          const img = document.createElement('img')
+          img.src = b.image_url || `${apiBase}/badges/${b.code}.gif`
+          img.style.cssText = 'width:36px;height:36px;object-fit:contain;image-rendering:pixelated;display:block'
+          img.onerror = () => {
+            if (img.src.endsWith('.gif')) img.src = img.src.replace('.gif', '.png')
+            else img.style.display = 'none'
+          }
+          box.appendChild(img)
+          badgesEl.appendChild(box)
+        })
+      }).catch(() => { if (badgesEl.isConnected) badgesEl.innerHTML = '' })
+    } else {
+      badgesEl.innerHTML = ''
+    }
   }
 
   const waveBtn = _id('pp-wave')
@@ -1798,7 +1858,7 @@ function _spawnRemoteAvatar(playerId, name, x, z, avatarCode, dir, level) {
   const pid = String(playerId)
   group.userData.playerName = name || ''
   // Roller-Sim wird nur noch via explizites onRoller-Flag gestartet (kein auto-findRollerAt)
-  _remoteAvatars.set(pid, { group, x, z, dir: initDir, state: 'idle', animT: 0, waypoints: [], chatSprite: null, chatTimer: 0, name: name || '', avatarCode: avatarCode || null, rollerTarget: null, level: initLevel, motto: null, municipalityName: null, userLevel: 1 })
+  _remoteAvatars.set(pid, { group, x, z, dir: initDir, state: 'idle', animT: 0, waypoints: [], chatSprite: null, chatTimer: 0, name: name || '', avatarCode: avatarCode || null, rollerTarget: null, level: initLevel, motto: null, municipalityName: null, userLevel: 1, userId: null })
 }
 
 // ── Jacuzzi-Undress für Remote-Avatare ──────────────────────────────────────
@@ -1898,6 +1958,7 @@ window.addEventListener('message', (e) => {
   // Room geometry is defined as code constants (ROOM_TEMPLATES) — no JSON stored.
   if (type === 'ROOM_INIT') {
     console.log('[game3d] ROOM_INIT received, placements:', e.data.placements?.length ?? 0)
+    window._roomExitFired = false
     canPlaceFurniture = e.data.is_owner === true
     // Katalog aus SQL-Daten aufbauen (shop_items Tabelle)
     // Raumgeometrie aus SQL aufbauen (grid, Wände, Stockwerke, Treppe)
@@ -1963,6 +2024,7 @@ window.addEventListener('message', (e) => {
     window._localMotto           = e.data.motto           ?? null
     window._localMunicipalityName = e.data.municipalityName ?? null
     window._localUserLevel       = e.data.userLevel        ?? 1
+    window._localUserId          = e.data.userId           ?? null
     return
   }
 
@@ -1978,6 +2040,7 @@ window.addEventListener('message', (e) => {
         ra.motto = av.motto ?? null
         ra.municipalityName = av.municipalityName ?? null
         ra.userLevel = av.userLevel ?? 1
+        ra.userId = av.userId ?? null
       }
     }
     return
@@ -2000,6 +2063,7 @@ window.addEventListener('message', (e) => {
       if (e.data.motto !== undefined)          ra.motto = e.data.motto
       if (e.data.municipalityName !== undefined) ra.municipalityName = e.data.municipalityName
       if (e.data.userLevel !== undefined)        ra.userLevel = e.data.userLevel
+      if (e.data.userId !== undefined)           ra.userId = e.data.userId
     }
     return
   }

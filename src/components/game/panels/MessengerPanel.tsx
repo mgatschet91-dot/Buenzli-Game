@@ -4,6 +4,41 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { deltaQueue } from '@/lib/deltaSync';
 import { getAuthToken } from '@/lib/api/coreApi';
 
+// ─── i18n Labels ──────────────────────────────────────────
+const UI_LABELS = {
+  tabFriends:          'Freunde',
+  onlineFriends:       'Freunde',
+  offlineFriends:      'Offline',
+  showProfile:         'Profil anzeigen',
+  startChat:           'Chat starten',
+  writeMessage:        'Nachricht schreiben',
+  removeFriend:        'Freund entfernen',
+  openChat:            'Chat öffnen',
+  tabSearch:           'Suche',
+  sendFriendRequest:   'Freundschaftsanfrage senden',
+  searchPlaceholder:   'Suche...',
+  tabRequests:         'Anfragen',
+  noRequests:          'Keine Anfragen',
+  acceptAll:           'Alle annehmen',
+  denyAll:             'Alle ablehnen',
+  messengerSounds:     'Messenger-Sounds',
+  allowFriendRequests: 'Freundschaftsanfragen erlauben',
+  profileSearchable:   'Profil in Suche sichtbar',
+  accept:              'Annehmen',
+  deny:                'Ablehnen',
+  back:                'Zurück',
+  settings:            'Einstellungen',
+  closeChat:           'Chat schließen',
+  startConversation:   'Starte eine Unterhaltung...',
+  chatPlaceholder:     'Nachricht schreiben...',
+  otherPlayers:        'Andere Spieler',
+  blockUser:           'Blockieren',
+  unblockUser:         'Entblockieren',
+  blockedUsers:        'Blockierte Spieler',
+  noBlockedUsers:      'Keine blockierten Spieler',
+  blockedErrorMsg:     'Dieser Spieler hat dich blockiert oder du hast ihn blockiert.',
+};
+
 // ─── Sound-System ─────────────────────────────────────────
 let _sendSound: HTMLAudioElement | null = null;
 let _receiveSound: HTMLAudioElement | null = null;
@@ -135,7 +170,6 @@ interface MessengerPanelProps {
 
 export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
   const { ref, pos, zIndex, bringToFront } = useDraggable('.msg-title');
-
   const [currentTab, setCurrentTab] = useState<Tab>(Tab.Friends);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
@@ -149,11 +183,13 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
   const [allowFriendRequests, setAllowFriendRequests] = useState(true);
   const [profileSearchable, setProfileSearchable] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [blocks, setBlocks] = useState<Array<{ userId: number; name: string }>>([]);
 
   // Lade Freundesliste beim Öffnen + periodischer Refresh
   useEffect(() => {
     deltaQueue.messengerLoadFriends();
     deltaQueue.messengerLoadRequests();
+    deltaQueue.messengerLoadBlocks();
     const interval = setInterval(() => {
       deltaQueue.messengerLoadFriends();
     }, 15000);
@@ -215,6 +251,14 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
         setTimeout(() => setErrorMsg(null), 4000);
       }
     };
+    const onBlocksList = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (Array.isArray(data?.blocks)) setBlocks(data.blocks);
+    };
+    const onBlockResult = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data?.success) deltaQueue.messengerLoadBlocks();
+    };
 
     window.addEventListener('messenger-friends-list', onFriendsList);
     window.addEventListener('messenger-requests-list', onRequestsList);
@@ -224,6 +268,8 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     window.addEventListener('messenger-friend-status', onFriendStatus);
     window.addEventListener('messenger-friend-request-received', onNewRequest);
     window.addEventListener('messenger-error', onError);
+    window.addEventListener('messenger-blocks-list', onBlocksList);
+    window.addEventListener('messenger-block-result', onBlockResult);
     return () => {
       window.removeEventListener('messenger-friends-list', onFriendsList);
       window.removeEventListener('messenger-requests-list', onRequestsList);
@@ -233,6 +279,8 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
       window.removeEventListener('messenger-friend-status', onFriendStatus);
       window.removeEventListener('messenger-friend-request-received', onNewRequest);
       window.removeEventListener('messenger-error', onError);
+      window.removeEventListener('messenger-blocks-list', onBlocksList);
+      window.removeEventListener('messenger-block-result', onBlockResult);
     };
   }, []);
 
@@ -292,20 +340,20 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
   const renderFriendsTab = () => {
     if (currentTab !== Tab.Friends) return (
       <div onClick={() => setCurrentTab(Tab.Friends)} className="msg-main-tab msg-selected">
-        <span>Freunde</span>
+        <span>{UI_LABELS.tabFriends}</span>
         <button className="msg-open-arrow" />
       </div>
     );
     return (
       <>
         <div onClick={() => setCurrentTab(Tab.Friends)} className="msg-main-tab msg-selected">
-          <span>Freunde</span>
+          <span>{UI_LABELS.tabFriends}</span>
           <button className="msg-close-arrow" />
         </div>
         <div className="msg-wrapper">
           <div className="msg-friends-container">
             <button onClick={() => setFriendsExpanded(!friendsExpanded)} className="msg-second-tab">
-              Freunde ({onlineFriends.length})
+              {UI_LABELS.onlineFriends} ({onlineFriends.length})
             </button>
             {friendsExpanded && (
               <div className="msg-friend-list">
@@ -314,11 +362,11 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
                     <span className="msg-friend-status online" />
                     <span className="msg-friend-name">{f.name}</span>
                     <div className="msg-icons">
-                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title="Profil anzeigen">
-                        <img src="/images/messenger/open_inbox.png" alt="Profil" />
+                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title={UI_LABELS.showProfile}>
+                        <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title="Chat starten">
-                        <img src="/images/messenger/start_chat.png" alt="Chat" />
+                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title={UI_LABELS.startChat}>
+                        <img src="/images/messenger/start_chat.png" alt={UI_LABELS.startChat} />
                       </button>
                     </div>
                   </div>
@@ -326,7 +374,7 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
               </div>
             )}
             <button onClick={() => setOfflineExpanded(!offlineExpanded)} className="msg-second-tab">
-              Offline ({offlineFriends.length})
+              {UI_LABELS.offlineFriends} ({offlineFriends.length})
             </button>
             {offlineExpanded && (
               <div className="msg-friend-list">
@@ -335,11 +383,11 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
                     <span className="msg-friend-status offline" />
                     <span className="msg-friend-name">{f.name}</span>
                     <div className="msg-icons">
-                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title="Profil anzeigen">
-                        <img src="/images/messenger/open_inbox.png" alt="Profil" />
+                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title={UI_LABELS.showProfile}>
+                        <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title="Nachricht schreiben">
-                        <img src="/images/messenger/start_chat.png" alt="Chat" />
+                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title={UI_LABELS.writeMessage}>
+                        <img src="/images/messenger/start_chat.png" alt={UI_LABELS.writeMessage} />
                       </button>
                     </div>
                   </div>
@@ -348,11 +396,11 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
             )}
           </div>
           <div className="msg-actions">
-            <button onClick={handleRemoveFriend} title="Freund entfernen">
-              <img src="/images/messenger/remove_friend.png" alt="Entfernen" />
+            <button onClick={handleRemoveFriend} title={UI_LABELS.removeFriend}>
+              <img src="/images/messenger/remove_friend.png" alt={UI_LABELS.removeFriend} />
             </button>
-            <button onClick={() => handleStartChat()} title="Chat öffnen">
-              <img src="/images/messenger/open_inbox.png" alt="Chat" />
+            <button onClick={() => handleStartChat()} title={UI_LABELS.openChat}>
+              <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.openChat} />
             </button>
           </div>
         </div>
@@ -365,19 +413,19 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
 
     if (currentTab !== Tab.Search) return (
       <div onClick={() => setCurrentTab(Tab.Search)} className="msg-main-tab">
-        <span>Suche</span>
+        <span>{UI_LABELS.tabSearch}</span>
         <button className="msg-open-arrow" />
       </div>
     );
     return (
       <>
         <div onClick={() => setCurrentTab(Tab.Search)} className="msg-main-tab">
-          <span>Suche</span>
+          <span>{UI_LABELS.tabSearch}</span>
           <button className="msg-close-arrow" />
         </div>
         <div className="msg-wrapper msg-search">
           <div className="msg-friends-container">
-            <button className="msg-second-tab">Freunde ({filteredFriends.length})</button>
+            <button className="msg-second-tab">{UI_LABELS.onlineFriends} ({filteredFriends.length})</button>
             <div className="msg-friend-list">
               {filteredFriends.map(f => (
                 <div key={f.id} className="msg-friend">
@@ -386,14 +434,14 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
                 </div>
               ))}
             </div>
-            <button className="msg-second-tab">Andere Spieler ({searchResults.length})</button>
+            <button className="msg-second-tab">{UI_LABELS.otherPlayers} ({searchResults.length})</button>
             <div className="msg-friend-list">
               {searchResults.map(r => (
                 <div key={r.id} className="msg-friend">
                   <span className="msg-friend-name">{r.name}</span>
                   <div className="msg-icons">
-                    <button onClick={() => handleAddFriend(r.id)} className="msg-icon-btn" title="Freundschaftsanfrage senden">
-                      <img src="/images/messenger/ask_for_friend.png" alt="Anfrage" />
+                    <button onClick={() => handleAddFriend(r.id)} className="msg-icon-btn" title={UI_LABELS.sendFriendRequest}>
+                      <img src="/images/messenger/ask_for_friend.png" alt={UI_LABELS.sendFriendRequest} />
                     </button>
                   </div>
                 </div>
@@ -406,10 +454,10 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
                 type="text"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
-                placeholder="Suche..."
+                placeholder={UI_LABELS.searchPlaceholder}
                 autoComplete="off"
               />
-              <button type="submit">Suche</button>
+              <button type="submit">{UI_LABELS.tabSearch}</button>
             </form>
           </div>
         </div>
@@ -423,14 +471,14 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
 
     if (currentTab !== Tab.Requests) return (
       <div onClick={() => setCurrentTab(Tab.Requests)} className={tabClass}>
-        <span>Anfragen {hasRequests ? `(${requests.length})` : ''}</span>
+        <span>{UI_LABELS.tabRequests} {hasRequests ? `(${requests.length})` : ''}</span>
         <button className="msg-open-arrow" />
       </div>
     );
     return (
       <>
         <div onClick={() => setCurrentTab(Tab.Requests)} className={tabClass}>
-          <span>Anfragen ({requests.length})</span>
+          <span>{UI_LABELS.tabRequests} ({requests.length})</span>
           <button className="msg-close-arrow" />
         </div>
         <div className="msg-wrapper">
@@ -440,28 +488,28 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
                 <div key={r.senderId} className="msg-friend">
                   <span className="msg-friend-name">{r.senderName}</span>
                   <div className="msg-icons">
-                    <button onClick={() => handleAcceptRequest(r.senderId)} className="msg-icon-btn" title="Annehmen">
-                      <img src="/images/messenger/accept.png" alt="Annehmen" />
+                    <button onClick={() => handleAcceptRequest(r.senderId)} className="msg-icon-btn" title={UI_LABELS.accept}>
+                      <img src="/images/messenger/accept.png" alt={UI_LABELS.accept} />
                     </button>
-                    <button onClick={() => handleDenyRequest(r.senderId)} className="msg-icon-btn" title="Ablehnen">
-                      <img src="/images/messenger/decline.png" alt="Ablehnen" />
+                    <button onClick={() => handleDenyRequest(r.senderId)} className="msg-icon-btn" title={UI_LABELS.deny}>
+                      <img src="/images/messenger/decline.png" alt={UI_LABELS.deny} />
                     </button>
                   </div>
                 </div>
               ))}
               {requests.length === 0 && (
-                <div style={{ padding: '10px', color: '#888', textAlign: 'center' }}>Keine Anfragen</div>
+                <div style={{ padding: '10px', color: '#888', textAlign: 'center' }}>{UI_LABELS.noRequests}</div>
               )}
             </div>
           </div>
           <div className="msg-actions msg-requests-actions">
             <button onClick={handleAcceptAll}>
-              <img src="/images/messenger/accept.png" alt="Alle annehmen" />
-              <span>Alle annehmen</span>
+              <img src="/images/messenger/accept.png" alt={UI_LABELS.acceptAll} />
+              <span>{UI_LABELS.acceptAll}</span>
             </button>
             <button onClick={handleDenyAll}>
-              <img src="/images/messenger/decline.png" alt="Alle ablehnen" />
-              <span>Alle ablehnen</span>
+              <img src="/images/messenger/decline.png" alt={UI_LABELS.denyAll} />
+              <span>{UI_LABELS.denyAll}</span>
             </button>
           </div>
         </div>
@@ -518,9 +566,30 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     return (
       <div className="msg-wrapper msg-settings-wrapper">
         <div className="msg-settings-list">
-          {toggleItem('Messenger-Sounds', messengerSounds, setMessengerSounds, 'messenger_sounds')}
-          {toggleItem('Freundschaftsanfragen erlauben', allowFriendRequests, setAllowFriendRequests, 'allow_friend_requests')}
-          {toggleItem('Profil in Suche sichtbar', profileSearchable, setProfileSearchable, 'profile_searchable')}
+          {toggleItem(UI_LABELS.messengerSounds, messengerSounds, setMessengerSounds, 'messenger_sounds')}
+          {toggleItem(UI_LABELS.allowFriendRequests, allowFriendRequests, setAllowFriendRequests, 'allow_friend_requests')}
+          {toggleItem(UI_LABELS.profileSearchable, profileSearchable, setProfileSearchable, 'profile_searchable')}
+        </div>
+        <div className="msg-settings-section-title">{UI_LABELS.blockedUsers}</div>
+        <div className="msg-friends-container msg-blocklist">
+          {blocks.length === 0 ? (
+            <div className="msg-blocklist-empty">{UI_LABELS.noBlockedUsers}</div>
+          ) : (
+            blocks.map(b => (
+              <div key={b.userId} className="msg-friend">
+                <span className="msg-friend-name">{b.name}</span>
+                <div className="msg-icons">
+                  <button
+                    onClick={() => deltaQueue.messengerUnblock(b.userId)}
+                    className="msg-icon-btn"
+                    title={UI_LABELS.unblockUser}
+                  >
+                    <img src="/images/messenger/accept.png" alt={UI_LABELS.unblockUser} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     );
@@ -536,7 +605,7 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
         onMouseDown={bringToFront}
       >
         <button className="msg-close-btn" onClick={onClose}>X</button>
-        <h2 className="msg-title">Freunde</h2>
+        <h2 className="msg-title">{UI_LABELS.tabFriends}</h2>
         {currentTab !== Tab.Settings && renderFriendsTab()}
         {currentTab !== Tab.Settings && renderSearchTab()}
         {currentTab !== Tab.Settings && renderRequestsTab()}
@@ -549,8 +618,8 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
             if (currentTab === Tab.Settings) { setCurrentTab(Tab.Friends); }
             else { loadSettings(); setCurrentTab(Tab.Settings); }
           }}>
-            <img src="/images/messenger/open_edit_ctgs.png" alt="Settings" />
-            <span>{currentTab === Tab.Settings ? 'Zurück' : 'Einstellungen'}</span>
+            <img src="/images/messenger/open_edit_ctgs.png" alt={UI_LABELS.settings} />
+            <span>{currentTab === Tab.Settings ? UI_LABELS.back : UI_LABELS.settings}</span>
           </button>
         </div>
       </div>
@@ -578,11 +647,11 @@ interface MessengerChatPanelProps {
 
 export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose }: MessengerChatPanelProps) {
   const { ref, pos, zIndex, bringToFront } = useDraggable('.msgchat-title');
-
   const [activeChats, setActiveChats] = useState<ActiveChat[]>([]);
   const [currentChatFriendId, setCurrentChatFriendId] = useState(initialFriendId);
   const [text, setText] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
+  const currentChatFriendIdRef = useRef(initialFriendId);
 
   // Initialen Chat öffnen
   useEffect(() => {
@@ -641,11 +710,32 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
       setTimeout(scrollDown, 50);
     };
 
+    const onMessengerError = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data?.code === 'BLOCKED') {
+        const fid = currentChatFriendIdRef.current;
+        const systemMsg: ChatMessage = {
+          id: Date.now(),
+          senderId: 0,
+          senderName: 'System',
+          text: UI_LABELS.blockedErrorMsg,
+          type: 'system',
+          createdAt: new Date().toISOString(),
+        };
+        setActiveChats(prev => prev.map(c =>
+          c.friendId === fid ? { ...c, messages: [...c.messages, systemMsg] } : c
+        ));
+        setTimeout(scrollDown, 50);
+      }
+    };
+
     window.addEventListener('messenger-chat-opened', onChatOpened);
     window.addEventListener('messenger-message', onMessage);
+    window.addEventListener('messenger-error', onMessengerError);
     return () => {
       window.removeEventListener('messenger-chat-opened', onChatOpened);
       window.removeEventListener('messenger-message', onMessage);
+      window.removeEventListener('messenger-error', onMessengerError);
     };
   }, [currentChatFriendId, scrollDown]);
 
@@ -665,6 +755,8 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
       handleSend();
     }
   };
+
+  useEffect(() => { currentChatFriendIdRef.current = currentChatFriendId; }, [currentChatFriendId]);
 
   const handleTabChange = (friendId: number) => {
     setCurrentChatFriendId(friendId);
@@ -724,8 +816,20 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
           ))}
         </div>
         <div className="msgchat-actions-bar">
-          <button onClick={handleCloseChat} className="msgchat-close-chat" title="Chat schließen">
-            <img src="/images/messenger/close.png" alt="Close" />
+          <button
+            onClick={() => {
+              const name = currentChat?.friendName || 'diesen Spieler';
+              if (window.confirm(`${name} blockieren? Du kannst ihn danach keine PN mehr schicken.`)) {
+                deltaQueue.messengerBlock(currentChatFriendId);
+              }
+            }}
+            className="msgchat-block-btn"
+            title={UI_LABELS.blockUser}
+          >
+            {UI_LABELS.blockUser}
+          </button>
+          <button onClick={handleCloseChat} className="msgchat-close-chat" title={UI_LABELS.closeChat}>
+            <img src="/images/messenger/close.png" alt={UI_LABELS.closeChat} />
           </button>
         </div>
         <div className="msgchat-messages" ref={chatRef}>
@@ -741,7 +845,7 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
             );
           })}
           {(!currentChat || currentChat.messages.length === 0) && (
-            <p className="msgchat-msg info">Starte eine Unterhaltung...</p>
+            <p className="msgchat-msg info">{UI_LABELS.startConversation}</p>
           )}
         </div>
         <div className="msgchat-input-area">
@@ -750,7 +854,7 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
             onChange={e => setText(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={2}
-            placeholder="Nachricht schreiben..."
+            placeholder={UI_LABELS.chatPlaceholder}
           />
         </div>
       </div>
@@ -1090,6 +1194,28 @@ const messengerCSS = `
   height: 240px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+}
+.msg-settings-section-title {
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 5px 8px 3px;
+  border-top: 1px solid #334155;
+}
+.msg-blocklist {
+  height: auto;
+  max-height: 100px;
+  overflow-y: auto;
+}
+.msg-blocklist-empty {
+  padding: 8px;
+  color: #64748b;
+  font-size: 11px;
+  text-align: center;
 }
 .msg-settings-list {
   display: flex;
@@ -1262,8 +1388,10 @@ const chatCSS = `
   background: #0f172a;
   height: 28px;
   display: flex;
+  align-items: center;
   padding: 3px 5px;
   justify-content: flex-end;
+  gap: 6px;
 }
 .msgchat-close-chat {
   border: none !important;
@@ -1272,6 +1400,19 @@ const chatCSS = `
   padding: 0;
 }
 .msgchat-close-chat img { width: 14px; height: 14px; }
+.msgchat-block-btn {
+  border: 1px solid #7f1d1d;
+  background: #450a0a;
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 600;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.msgchat-block-btn:hover { background: #7f1d1d; }
 
 /* Messages */
 .msgchat-messages {

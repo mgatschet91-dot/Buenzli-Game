@@ -4,8 +4,9 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { IsometricRoomViewer } from './IsometricRoomViewer';
 import { ShopPanel } from './ShopPanel';
 import { InventoryPanel } from './InventoryPanel';
+import { RoomModerationPanel } from './RoomModerationPanel';
 import { getAuthToken } from '@/lib/api/coreApi';
-import { ArrowLeft, Home, Loader2, ShoppingBag, Archive, User, Pencil } from 'lucide-react';
+import { ArrowLeft, Home, Loader2, ShoppingBag, Archive, User, Pencil, Shield } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,12 @@ interface RoomData {
 }
 
 type SideTab = 'shop' | 'inventory' | 'avatar' | null;
+
+interface RoomVisitor {
+  playerId: string;
+  userId: number | null;
+  name: string;
+}
 
 export interface RoomViewerOverlayProps {
   userId: number;
@@ -54,6 +61,12 @@ export function RoomViewerOverlay({
   const [invRefresh, setInvRefresh] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [localNickname, setLocalNickname] = useState<string>('');
+  const [visitors, setVisitors] = useState<RoomVisitor[]>([]);
+  const [modOpen, setModOpen] = useState(false);
+  // Aktuell angezeigte Raum-User-ID (kann sich durch Teleportation ändern)
+  const [currentUserId, setCurrentUserId] = useState(userId);
+  const myId = typeof window !== 'undefined' ? Number(localStorage.getItem('isocity_user_id') || 0) : 0;
+  const currentIsOwner = currentUserId === myId;
   const iframeRef                   = useRef<HTMLIFrameElement>(null);
 
   // ── Load room + avatar ───────────────────────────────────────────────────
@@ -63,7 +76,7 @@ export function RoomViewerOverlay({
     try {
       const token = getAuthToken() || '';
       const r = await fetch(
-        `${API_BASE}/api/game/municipality/${municipalitySlug}/residence/room/${userId}`,
+        `${API_BASE}/api/game/municipality/${municipalitySlug}/residence/room/${currentUserId}`,
         { headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token } }
       );
       const d = await r.json();
@@ -80,14 +93,14 @@ export function RoomViewerOverlay({
     } finally {
       setLoading(false);
     }
-  }, [municipalitySlug, userId]);
+  }, [municipalitySlug, currentUserId]);
 
   useEffect(() => { loadRoom(); }, [loadRoom]);
 
   // Owner: localNickname direkt aus prop setzen (Gäste bekommen es via my_nickname aus loadRoom)
   useEffect(() => {
-    if (isOwner) setLocalNickname(nickname);
-  }, [isOwner, nickname]);
+    if (currentIsOwner) setLocalNickname(nickname);
+  }, [currentIsOwner, nickname]);
 
   // ── ESC closes overlay ───────────────────────────────────────────────────
   useEffect(() => {
@@ -117,7 +130,7 @@ export function RoomViewerOverlay({
   // ── Avatar change from iframe ────────────────────────────────────────────
   const handleAvatarChange = useCallback(async (code: string) => {
     setAvatarCode(code);
-    if (!isOwner) return;
+    if (!currentIsOwner) return;
     setSaving(true);
     try {
       const token = getAuthToken() || '';
@@ -143,12 +156,14 @@ export function RoomViewerOverlay({
 
   // ── Tab buttons (Shop + Inventar nur für Eigentümer) ─────────────────────
   const TAB_BTNS: { id: SideTab; icon: React.ReactNode; label: string }[] = [
-    ...(isOwner ? [
+    ...(currentIsOwner ? [
       { id: 'shop'      as SideTab, icon: <ShoppingBag className="w-4 h-4" />, label: 'Shop' },
       { id: 'inventory' as SideTab, icon: <Archive     className="w-4 h-4" />, label: 'Inventar' },
     ] : []),
     { id: 'avatar', icon: <User className="w-4 h-4" />, label: 'Avatar' },
   ];
+
+  const visitorCount = visitors.filter(v => v.userId !== null).length;
 
   const sideOpen = activeTab !== null && activeTab !== 'avatar';
 
@@ -176,7 +191,7 @@ export function RoomViewerOverlay({
         </div>
 
         {/* Bearbeiten-Button — nur für Eigentümer */}
-        {isOwner && roomData && !loading ? (
+        {currentIsOwner && roomData && !loading ? (
           <button
             onClick={() => setEditorOpen(true)}
             title="Raum bearbeiten"
@@ -209,14 +224,17 @@ export function RoomViewerOverlay({
           {roomData && !loading && (
             <IsometricRoomViewer
               modelName={roomData.model_name}
-              avatarCode={isOwner ? avatarCode : null}
+              avatarCode={currentIsOwner ? avatarCode : null}
               geometry={roomData.geometry}
-              ownerId={userId}
-              isOwner={isOwner}
+              ownerId={currentUserId}
+              isOwner={currentIsOwner}
               municipalitySlug={municipalitySlug}
-              playerName={localNickname || (isOwner ? nickname : '')}
+              playerName={localNickname || (currentIsOwner ? nickname : '')}
               ownerNickname={roomData?.owner_nickname || nickname}
               onAvatarChange={handleAvatarChange}
+              onTeleportToRoom={setCurrentUserId}
+              onExit={onClose}
+              onVisitorsChange={setVisitors}
             />
           )}
 
@@ -242,7 +260,36 @@ export function RoomViewerOverlay({
                 <span className="text-[9px] leading-none">{btn.label}</span>
               </button>
             ))}
+            {/* Moderation-Button — nur für Eigentümer */}
+            {currentIsOwner && (
+              <button
+                onClick={() => setModOpen(o => !o)}
+                title="Moderation"
+                className={`relative flex flex-col items-center gap-0.5 rounded-l-xl px-2 py-2.5 text-xs transition-colors shadow-lg ${
+                  modOpen ? 'bg-rose-800 text-white' : 'bg-black/60 text-slate-400 hover:text-rose-300 hover:bg-black/80'
+                }`}
+                style={{ border: '1px solid rgba(255,255,255,0.10)', borderRight: 'none' }}
+              >
+                <Shield className="w-4 h-4" />
+                <span className="text-[9px] leading-none">Mod</span>
+                {visitorCount > 0 && (
+                  <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[8px] font-bold flex items-center justify-center">
+                    {visitorCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
+
+          {/* Moderation-Panel — floating, oben rechts */}
+          {modOpen && currentIsOwner && (
+            <div className="absolute top-2 right-12 z-30">
+              <RoomModerationPanel
+                visitors={visitors}
+                onClose={() => setModOpen(false)}
+              />
+            </div>
+          )}
         </div>
 
         {/* Side panel (Shop or Inventory) */}
@@ -259,13 +306,17 @@ export function RoomViewerOverlay({
             {activeTab === 'inventory' && (
               <InventoryPanel
                 refreshTrigger={invRefresh}
-                onPlace={(itemCode, quantity) => {
+                onPlace={(itemCode, quantity, pairId) => {
                   const win = (document.querySelector('#isometric-iframe') as HTMLIFrameElement | null)?.contentWindow;
                   // NPC: pending Metadaten mitsenden
                   let npcMeta = undefined;
                   if (itemCode === 'room_npc') {
                     const pending = JSON.parse(localStorage.getItem('pending_npc_meta') || '[]');
                     if (pending.length > 0) npcMeta = pending[0]; // peek, nicht shiften
+                  }
+                  // Teleporter: pair_id an IsometricRoomViewer signalisieren (via parent window)
+                  if (itemCode === 'teleporter' && pairId != null) {
+                    window.postMessage({ type: '__TELEPORTER_PAIR_SET', pair_id: pairId }, '*');
                   }
                   win?.postMessage({ type: 'PLACE_ITEM', item_code: itemCode, quantity, npc_meta: npcMeta }, '*');
                 }}

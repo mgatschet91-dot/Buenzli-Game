@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { User, Landmark, Settings, LogOut, ReceiptText, ClipboardList, UserPlus, Copy, Check, Home, Award, Loader2, Lock, Crown, ShieldCheck, Star, Sparkles } from 'lucide-react';
+import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,54 @@ import { VillaSpriteCanvas } from '@/components/game/VillaSpriteCanvas';
 import { getAuthToken } from '@/lib/api/coreApi';
 
 const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100';
+
+const UI_LABELS = {
+  title:           msg('User Panel'),
+  tabOverview:     msg('Übersicht'),
+  tabBank:         msg('Bank'),
+  tabBadges:       msg('Badges'),
+  tabVilla:        msg('Mein Haus'),
+  profileHeading:  msg('Profil'),
+  defaultPlayer:   msg('Spieler'),
+  roleLabel:       msg('Rolle:'),
+  levelLabel:      msg('Level'),
+  xpLabel:         msg('XP:'),
+  rankLabel:       msg('Rang'),
+  steamConnected:  msg('Mit Steam angemeldet'),
+  googleConnected: msg('Mit Google angemeldet'),
+  referredBy:      msg('Geworben von'),
+  myReports:       msg('Meine Reports'),
+  advisors:        msg('Stadtberater'),
+  settingsBtn:     msg('Einstellungen'),
+  logoutBtn:       msg('Logout'),
+  referralTitle:   msg('Freunde einladen'),
+  friendBonus:     msg('800 Fr'),
+  referrerBonus:   msg('200 Fr + 100 XP'),
+  loadingLink:     msg('Lade Einladungslink...'),
+  steamInvite:     msg('Freunde über Steam einladen'),
+  steamCopied:     msg('Link kopiert — im Steam-Chat einfügen (Ctrl+V)'),
+  copyLink:        msg('Link kopieren'),
+  linkCopied:      msg('Link kopiert!'),
+  linkUnavailable: msg('Link wird nach dem nächsten Login verfügbar.'),
+  bankLoading:     msg('Lade Bankdaten...'),
+  accountHeading:  msg('Konto'),
+  identityHeading: msg('Identität'),
+  ahvLabel:        msg('AHV-ID'),
+  taxLabel:        msg('Steuernummer'),
+  txHeading:       msg('Letzte Transaktionen'),
+  noTx:            msg('Noch keine Transaktionen vorhanden.'),
+  roleAdmin:       msg('Administrator'),
+  roleMod:         msg('Moderator'),
+  villaNoMunicip:  msg('Tritt einer Gemeinde bei, um ein Traumhaus zu kaufen.'),
+  loading:         msg('Lade...'),
+  villaPaid:       msg('Bezahlt:'),
+  villaPlace:      msg('Platzieren'),
+  villaPlaced:     msg('Platziert'),
+  villaEmpty:      msg('Noch kein Traumhaus gekauft. Wähle ein Design aus dem Katalog!'),
+  villaPaymentDir: msg('Privatkonto → Gemeindekasse'),
+  villaBuy:        msg('Kaufen'),
+  cancel:          msg('Abbrechen'),
+};
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -42,6 +91,7 @@ interface UserBadge {
   category: string;
   rarity: number;
   slot: number | null;
+  image_url?: string | null;
 }
 
 interface VillaPurchase {
@@ -81,7 +131,31 @@ function isUnlocked(variant: VillaVariant, userRank: number, municipalityRole: s
 }
 
 // ─── Badge Tab ───────────────────────────────────────────────────────────────
+function BadgeImage({ src, alt, label }: { src: string; alt: string; label: string }) {
+  const alt1 = src.endsWith('.gif') ? src.replace(/\.gif$/, '.png') : src.replace(/\.png$/, '.gif');
+  const [urls] = useState([src, alt1]);
+  const [idx, setIdx] = useState(0);
+
+  if (idx >= urls.length) {
+    return (
+      <div className="w-10 h-10 flex items-center justify-center rounded bg-slate-700/60 text-slate-400 text-xs font-bold select-none">
+        {label.slice(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={urls[idx]}
+      alt={alt}
+      className="w-10 h-10 object-contain"
+      onError={() => setIdx(i => i + 1)}
+    />
+  );
+}
+
 function BadgesTab({ myUserId }: { myUserId: number }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -95,11 +169,11 @@ function BadgesTab({ myUserId }: { myUserId: number }) {
       .finally(() => setLoading(false));
   }, [myUserId]);
 
-  if (loading) return <div className="text-slate-400 text-sm py-6 text-center">Lade Badges...</div>;
+  if (loading) return <div className="text-slate-400 text-sm py-6 text-center">{mm(UI_LABELS.loading)}</div>;
   if (!badges.length) return (
     <div className="text-center py-10 text-slate-500">
       <Award className="w-10 h-10 mx-auto mb-2 opacity-30" />
-      <p className="text-sm">Noch keine Badges verdient.</p>
+      <p className="text-sm">{mm(UI_LABELS.tabBadges)}</p>
     </div>
   );
 
@@ -111,12 +185,13 @@ function BadgesTab({ myUserId }: { myUserId: number }) {
           className={`relative flex flex-col items-center gap-1 p-2 rounded-lg border ${RARITY_COLORS[badge.rarity] || RARITY_COLORS[1]} bg-slate-800/60`}
           title={`${badge.name}: ${badge.description}`}
         >
-          <img
-            src={`https://images.bobba.io/c_images/Badges/${badge.code}.gif`}
-            alt={badge.name}
-            className="w-10 h-10 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
+          {badge.code && (
+            <BadgeImage
+              src={badge.image_url || `${AUTH_API_BASE_URL}/badges/${badge.code}.gif`}
+              alt={badge.name}
+              label={badge.name}
+            />
+          )}
           <div className="text-[10px] text-center text-slate-300 leading-tight truncate w-full">{badge.name}</div>
           <div className={`text-[9px] ${RARITY_COLORS[badge.rarity]?.split(' ')[1] || 'text-slate-400'}`}>
             {RARITY_LABELS[badge.rarity] || 'Common'}
@@ -145,6 +220,8 @@ function VillaTab({
   loadingPurchase: boolean;
   onReloadPurchase: () => Promise<void>;
 }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [selectedVariant, setSelectedVariant] = useState<VillaVariant | null>(null);
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState('');
@@ -179,7 +256,7 @@ function VillaTab({
     return (
       <div className="text-center py-10 text-slate-500">
         <Home className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm">Tritt einer Gemeinde bei, um ein Traumhaus zu kaufen.</p>
+        <p className="text-sm">{mm(UI_LABELS.villaNoMunicip)}</p>
       </div>
     );
   }
@@ -190,7 +267,7 @@ function VillaTab({
     <div className="space-y-4">
       {/* Current purchase info */}
       {loadingPurchase ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="w-4 h-4 animate-spin" />Lade...</div>
+        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="w-4 h-4 animate-spin" />{mm(UI_LABELS.loading)}</div>
       ) : currentVariantDef ? (
         <div className="flex items-center gap-3 bg-emerald-900/30 border border-emerald-700/40 rounded-lg px-4 py-3">
           <div className="w-12 h-12 rounded border border-emerald-700/50 overflow-hidden shrink-0 bg-slate-800">
@@ -201,7 +278,7 @@ function VillaTab({
               <Home className="w-3.5 h-3.5" /> {currentVariantDef.name}
             </div>
             <div className="text-xs text-slate-400">{currentVariantDef.description}</div>
-            <div className="text-xs text-slate-500 mt-0.5">Bezahlt: {formatChf(purchase!.price_paid)} · {formatDate(purchase!.purchased_at)}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{mm(UI_LABELS.villaPaid)} {formatChf(purchase!.price_paid)} · {formatDate(purchase!.purchased_at)}</div>
           </div>
           {!purchase!.is_placed && (
             <Button
@@ -211,25 +288,25 @@ function VillaTab({
               onClick={() => onStartPlacement(purchase!.variant_row, purchase!.variant_col)}
             >
               <Home className="w-3 h-3 mr-1" />
-              Platzieren
+              {mm(UI_LABELS.villaPlace)}
             </Button>
           )}
           {purchase!.is_placed && (
             <span className="text-xs text-emerald-400 shrink-0 flex items-center gap-1">
-              <Home className="w-3 h-3" /> Platziert
+              <Home className="w-3 h-3" /> {mm(UI_LABELS.villaPlaced)}
             </span>
           )}
         </div>
       ) : (
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 text-sm text-slate-400">
           <Home className="w-4 h-4 inline mr-1.5 opacity-50" />
-          Noch kein Traumhaus gekauft. Wähle ein Design aus dem Katalog!
+          {mm(UI_LABELS.villaEmpty)}
         </div>
       )}
 
       <p className="text-xs text-slate-500">
         Nach dem Kauf kannst du auf der Karte eine <strong className="text-slate-300">Mansion</strong> platzieren — sie erscheint automatisch in deinem gewählten Design.
-        Die Zahlung geht von deinem Privatkonto direkt in die Gemeindekasse.
+        {' '}{mm(UI_LABELS.villaPaymentDir)}.
       </p>
 
       {/* Error / success */}
@@ -324,7 +401,7 @@ function VillaTab({
             <span className="text-white font-semibold">{selectedVariant.name}</span>
             <span className="text-slate-400"> · </span>
             <span className="text-amber-300 font-bold">{formatChf(selectedVariant.price)}</span>
-            <div className="text-xs text-slate-500">Privatkonto → Gemeindekasse</div>
+            <div className="text-xs text-slate-500">{mm(UI_LABELS.villaPaymentDir)}</div>
           </div>
           <Button
             onClick={handleBuy}
@@ -332,14 +409,14 @@ function VillaTab({
             className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm px-4 flex items-center gap-2"
           >
             {buying ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-            Kaufen
+            {mm(UI_LABELS.villaBuy)}
           </Button>
           <Button
             variant="outline"
             className="border-slate-600 text-slate-300"
             onClick={() => setSelectedVariant(null)}
           >
-            Abbrechen
+            {mm(UI_LABELS.cancel)}
           </Button>
         </div>
       )}
@@ -350,6 +427,8 @@ function VillaTab({
 // ─── Main UserPanel ───────────────────────────────────────────────────────────
 export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLogout }: UserPanelProps) {
   const { setActivePanel, municipalitySlug, municipalityRole, state, startResidencePlacement } = useGame();
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const [tab, setTab] = useState<UserPanelTab>('overview');
   const [nickname, setNickname] = useState('');
   const [rank, setRank] = useState(0);
@@ -400,7 +479,7 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
       })
       .catch(() => {
         if (typeof window !== 'undefined') {
-          setNickname(String(window.localStorage.getItem('isocity_user_name') || 'Spieler'));
+          setNickname(String(window.localStorage.getItem('isocity_user_name') || mm(UI_LABELS.defaultPlayer)));
           setRank(Number(window.localStorage.getItem('isocity_user_rank') || 0));
           setGlobalRole(String(window.localStorage.getItem('isocity_global_role') || 'user'));
         }
@@ -487,10 +566,10 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
   }, [tab, profile, loadingBank]);
 
   const roleText = useMemo(() => {
-    if (globalRole === 'administrator') return 'Administrator';
-    if (globalRole === 'moderator') return 'Moderator';
-    return 'Spieler';
-  }, [globalRole]);
+    if (globalRole === 'administrator') return mm(UI_LABELS.roleAdmin);
+    if (globalRole === 'moderator') return mm(UI_LABELS.roleMod);
+    return mm(UI_LABELS.defaultPlayer);
+  }, [globalRole, m]);
 
   const TAB_BTN = 'px-3 py-1.5 text-sm rounded-md font-medium transition-colors';
   const ACTIVE = 'bg-slate-700 text-white';
@@ -502,24 +581,24 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
         <DialogHeader className="px-5 pt-5 pb-0 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <User className="w-5 h-5" />
-            User Panel
+            {mm(UI_LABELS.title)}
           </DialogTitle>
         </DialogHeader>
 
         {/* Tabs */}
         <div className="flex items-center gap-1 px-5 pt-3 pb-2 border-b border-slate-700 shrink-0 flex-wrap">
           <button className={`${TAB_BTN} ${tab === 'overview' ? ACTIVE : INACTIVE}`} onClick={() => setTab('overview')}>
-            Übersicht
+            {mm(UI_LABELS.tabOverview)}
           </button>
           <button className={`${TAB_BTN} ${tab === 'bank' ? ACTIVE : INACTIVE}`} onClick={() => setTab('bank')}>
-            Bank
+            {mm(UI_LABELS.tabBank)}
           </button>
           <button className={`${TAB_BTN} flex items-center gap-1.5 ${tab === 'badges' ? ACTIVE : INACTIVE}`} onClick={() => setTab('badges')}>
-            <Award className="w-3.5 h-3.5" />Badges
+            <Award className="w-3.5 h-3.5" />{mm(UI_LABELS.tabBadges)}
           </button>
           {municipalitySlug && (
             <button className={`${TAB_BTN} flex items-center gap-1.5 ${tab === 'villa' ? ACTIVE : INACTIVE}`} onClick={() => setTab('villa')}>
-              <Home className="w-3.5 h-3.5" />Mein Haus
+              <Home className="w-3.5 h-3.5" />{mm(UI_LABELS.tabVilla)}
             </button>
           )}
         </div>
@@ -530,16 +609,16 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
           {tab === 'overview' && (
             <div className="space-y-4">
               <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4">
-                <div className="text-slate-300 text-sm">Profil</div>
-                <div className="mt-2 text-lg font-semibold">{nickname || 'Spieler'}</div>
-                <div className="text-sm text-slate-400">Rolle: {roleText}</div>
+                <div className="text-slate-300 text-sm">{mm(UI_LABELS.profileHeading)}</div>
+                <div className="mt-2 text-lg font-semibold">{nickname || mm(UI_LABELS.defaultPlayer)}</div>
+                <div className="text-sm text-slate-400">{mm(UI_LABELS.roleLabel)} {roleText}</div>
                 <div className="flex items-center gap-4 mt-1 flex-wrap">
-                  <div className="text-sm text-slate-400">Level <span className="text-amber-300 font-semibold">{xpLevel}</span></div>
+                  <div className="text-sm text-slate-400">{mm(UI_LABELS.levelLabel)} <span className="text-amber-300 font-semibold">{xpLevel}</span></div>
                   <div className="text-sm text-slate-400">
-                    XP: <span className="text-emerald-300 font-semibold">{xpTotal.toLocaleString('de-CH')}</span>
+                    {mm(UI_LABELS.xpLabel)} <span className="text-emerald-300 font-semibold">{xpTotal.toLocaleString('de-CH')}</span>
                     {xpNextLevel != null && <span className="text-slate-500"> / {xpNextLevel.toLocaleString('de-CH')}</span>}
                   </div>
-                  {rank > 0 && <div className="text-sm text-slate-400">Rang <span className="text-blue-300 font-semibold">#{rank}</span></div>}
+                  {rank > 0 && <div className="text-sm text-slate-400">{mm(UI_LABELS.rankLabel)} <span className="text-blue-300 font-semibold">#{rank}</span></div>}
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
                   {IS_ELECTRON && (
@@ -547,18 +626,18 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-[#66c0f4]">
                         <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
                       </svg>
-                      Mit Steam angemeldet
+                      {mm(UI_LABELS.steamConnected)}
                     </div>
                   )}
                   {hasGoogle && (
                     <div className="flex items-center gap-1.5 text-xs text-slate-400">
                       <svg width="13" height="13" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                      Mit Google angemeldet
+                      {mm(UI_LABELS.googleConnected)}
                     </div>
                   )}
                   {referredByNickname && (
                     <div className="text-xs text-slate-400">
-                      Geworben von <span className="text-amber-300 font-medium">{referredByNickname}</span>
+                      {mm(UI_LABELS.referredBy)} <span className="text-amber-300 font-medium">{referredByNickname}</span>
                     </div>
                   )}
                 </div>
@@ -566,30 +645,30 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <Button variant="outline" className="justify-start border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" onClick={() => onOpenReports?.()}>
-                  <ClipboardList className="w-4 h-4 mr-2" />Meine Reports
+                  <ClipboardList className="w-4 h-4 mr-2" />{mm(UI_LABELS.myReports)}
                 </Button>
                 <Button variant="outline" className="justify-start border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" onClick={() => onOpenAdvisors?.()}>
-                  <AdvisorIcon size={16} className="mr-2" />Stadtberater
+                  <AdvisorIcon size={16} className="mr-2" />{mm(UI_LABELS.advisors)}
                 </Button>
                 <Button variant="outline" className="justify-start border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" onClick={() => onOpenSettings?.()}>
-                  <Settings className="w-4 h-4 mr-2" />Einstellungen
+                  <Settings className="w-4 h-4 mr-2" />{mm(UI_LABELS.settingsBtn)}
                 </Button>
                 <Button variant="outline" className="justify-start border-red-500/50 bg-red-500/10 text-red-200 hover:bg-red-500/20" onClick={() => onLogout?.()}>
-                  <LogOut className="w-4 h-4 mr-2" />Logout
+                  <LogOut className="w-4 h-4 mr-2" />{mm(UI_LABELS.logoutBtn)}
                 </Button>
               </div>
 
               {/* Freunde einladen */}
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">
-                  <UserPlus className="w-4 h-4" />Freunde einladen
+                  <UserPlus className="w-4 h-4" />{mm(UI_LABELS.referralTitle)}
                 </div>
                 <p className="text-xs text-slate-400">
-                  Dein Freund erhält <span className="text-amber-300 font-medium">800 Fr</span> Startguthaben, du bekommst <span className="text-emerald-400 font-medium">200 Fr + 100 XP</span>.
+                  Dein Freund erhält <span className="text-amber-300 font-medium">{mm(UI_LABELS.friendBonus)}</span> Startguthaben, du bekommst <span className="text-emerald-400 font-medium">{mm(UI_LABELS.referrerBonus)}</span>.
                   {municipalitySlug && <span className="text-slate-500"> Sie treten direkt <span className="text-white/60">{municipalitySlug}</span> bei.</span>}
                 </p>
                 {loadingReferral ? (
-                  <div className="text-xs text-slate-500 italic">Lade Einladungslink...</div>
+                  <div className="text-xs text-slate-500 italic">{mm(UI_LABELS.loadingLink)}</div>
                 ) : referralUrl ? (
                   IS_ELECTRON ? (
                     /* Steam-Variante: Overlay-Dialog + Kopieren als Fallback */
@@ -602,10 +681,10 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                         <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.718L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
                         </svg>
-                        Freunde über Steam einladen
+                        {mm(UI_LABELS.steamInvite)}
                       </Button>
                       {steamOverlayOpened && (
-                        <p className="text-[11px] text-[#66c0f4] text-center">Link kopiert — im Steam-Chat einfügen (Ctrl+V)</p>
+                        <p className="text-[11px] text-[#66c0f4] text-center">{mm(UI_LABELS.steamCopied)}</p>
                       )}
                       <Button
                         size="sm"
@@ -613,7 +692,7 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                         className="w-full text-slate-400 hover:text-slate-200 text-xs flex items-center gap-2 justify-center"
                         onClick={copyReferralLink}
                       >
-                        {referralCopied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> Link kopiert!</> : <><Copy className="w-3.5 h-3.5" /> Link kopieren</>}
+                        {referralCopied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> {mm(UI_LABELS.linkCopied)}</> : <><Copy className="w-3.5 h-3.5" /> {mm(UI_LABELS.copyLink)}</>}
                       </Button>
                     </div>
                   ) : (
@@ -625,11 +704,11 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
                           {referralCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </Button>
                       </div>
-                      {referralCopied && <p className="text-xs text-emerald-400">Link kopiert!</p>}
+                      {referralCopied && <p className="text-xs text-emerald-400">{mm(UI_LABELS.linkCopied)}</p>}
                     </>
                   )
                 ) : (
-                  <div className="text-xs text-slate-500">Link wird nach dem nächsten Login verfügbar.</div>
+                  <div className="text-xs text-slate-500">{mm(UI_LABELS.linkUnavailable)}</div>
                 )}
               </div>
             </div>
@@ -637,29 +716,29 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
 
           {tab === 'bank' && (
             <div className="space-y-3">
-              {loadingBank && <div className="rounded-md border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">Lade Bankdaten...</div>}
+              {loadingBank && <div className="rounded-md border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">{mm(UI_LABELS.bankLoading)}</div>}
               {bankError && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{bankError}</div>}
               {!loadingBank && !bankError && profile && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 space-y-1">
-                      <div className="flex items-center gap-2 text-slate-300 text-sm"><Landmark className="w-4 h-4" />Konto</div>
+                      <div className="flex items-center gap-2 text-slate-300 text-sm"><Landmark className="w-4 h-4" />{mm(UI_LABELS.accountHeading)}</div>
                       <div className="font-mono text-lg text-emerald-300">{formatMoney(profile.balance, profile.currency)}</div>
                       <div className="text-xs text-slate-400 font-mono">{profile.account_number}</div>
                       <div className="text-xs text-slate-400 font-mono">{profile.card_number_masked}</div>
                     </div>
                     <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 space-y-1">
-                      <div className="text-slate-300 text-sm">Identität</div>
-                      <div className="text-xs text-slate-400">AHV-ID</div>
+                      <div className="text-slate-300 text-sm">{mm(UI_LABELS.identityHeading)}</div>
+                      <div className="text-xs text-slate-400">{mm(UI_LABELS.ahvLabel)}</div>
                       <div className="font-mono text-sm text-slate-100">{profile.ahv_number}</div>
-                      <div className="text-xs text-slate-400">Steuernummer</div>
+                      <div className="text-xs text-slate-400">{mm(UI_LABELS.taxLabel)}</div>
                       <div className="font-mono text-sm text-slate-100">{profile.tax_number}</div>
                     </div>
                   </div>
                   <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
-                    <div className="flex items-center gap-2 text-slate-300 text-sm mb-2"><ReceiptText className="w-4 h-4" />Letzte Transaktionen</div>
+                    <div className="flex items-center gap-2 text-slate-300 text-sm mb-2"><ReceiptText className="w-4 h-4" />{mm(UI_LABELS.txHeading)}</div>
                     {transactions.length === 0 ? (
-                      <div className="text-sm text-slate-400">Noch keine Transaktionen vorhanden.</div>
+                      <div className="text-sm text-slate-400">{mm(UI_LABELS.noTx)}</div>
                     ) : (
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {transactions.map((tx) => (
