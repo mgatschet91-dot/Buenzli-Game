@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { msg, useMessages, useGT } from 'gt-next';
@@ -12,8 +12,9 @@ import { Button } from '@/components/ui/button';
 import {
   Handshake, MapPin, TrendingUp, Link2, CircleDashed, Coins, Clock, Calendar,
   Search, Send, Users, CheckCircle, XCircle, ArrowLeft, Loader2, Eye, ChevronsUp,
-  Factory, Zap, HeartHandshake, PartyPopper, PersonStanding, BarChart3
+  Factory, Zap, HeartHandshake, PartyPopper, PersonStanding, BarChart3, AlertTriangle
 } from 'lucide-react';
+import { findEdgeRoadInDirection } from '@/components/game/gridFinders';
 import * as partnershipApi from '@/lib/api/partnershipApi';
 import type { Partnership, ActionCooldowns, ExportCapacity } from '@/lib/api/partnershipApi';
 
@@ -24,121 +25,123 @@ const UI_LABELS = {
   searchMunicipalities:    msg('Search Municipalities'),
   // Tabs
   tabPartner:              msg('Partner'),
-  tabBilanz:               msg('Trade Balance'),
+  tabBilanz:               'Handelsbilanz',
   // Status
-  discovered:              msg('Discovered'),
-  connected:               msg('Connected'),
-  unknown:                 msg('Unknown'),
-  loading:                 msg('Loading...'),
+  discovered:              'Entdeckt',
+  connected:               'Verbunden',
+  unknown:                 'Unbekannt',
+  loading:                 'Laden...',
   // Stats cards
-  connectedDiscovered:     msg('Connected / Discovered'),
-  chfPerDay:               msg('CHF / day total'),
-  chfInvested:             msg('CHF invested'),
-  highestTier:             msg('Highest tier'),
-  totalEarned:             msg('Total earned since connection'),
+  connectedDiscovered:     'Verbunden / Entdeckt',
+  chfPerDay:               'CHF / Tag gesamt',
+  chfInvested:             'CHF investiert',
+  highestTier:             'Höchste Stufe',
+  totalEarned:             'Gesamt verdient seit Verbindung',
   // Incoming requests
-  incomingRequest:         msg('incoming request'),
-  incomingRequests:        msg('incoming requests'),
-  noOwner:                 msg('No owner yet'),
-  accept:                  msg('Accept'),
-  decline:                 msg('Decline'),
+  incomingRequest:         'eingehende Anfrage',
+  incomingRequests:        'eingehende Anfragen',
+  noOwner:                 'Noch kein Besitzer',
+  accept:                  'Annehmen',
+  decline:                 'Ablehnen',
   // Partner list
-  noPartnersYet:           msg('No trade partners yet'),
-  buildRoadsToDiscover:    msg('Build roads to the edge of your city to discover neighboring municipalities!'),
-  connectedDays:           msg('days connected'),
-  totalTradeIncome:        msg('Total Trade Income'),
-  perDay:                  msg('/day'),
+  noPartnersYet:           'Noch keine Handelspartner',
+  buildRoadsToDiscover:    'Baue Strassen bis zum Rand deiner Stadt, um Nachbargemeinden zu entdecken!',
+  connectedDays:           'Tage verbunden',
+  totalTradeIncome:        'Gesamtes Handelseinkommen',
+  perDay:                  '/Tag',
   // Tier names
-  tierKnown:               msg('Known'),
-  tierFriendly:            msg('Friendly'),
-  tierStrategic:           msg('Strategic'),
-  tierAllied:              msg('Allied'),
+  tierKnown:               'Bekannt',
+  tierFriendly:            'Freundschaftlich',
+  tierStrategic:           'Strategisch',
+  tierAllied:              'Alliiert',
   // Tier progress
-  tierReady:               msg('Ready!'),
+  tierReady:               'Bereit!',
   // Diplomatic actions
-  diplomaticActions:       msg('Diplomatic Actions'),
-  actionEmergencyAid:      msg('Emergency Aid'),
-  actionEmergencyAidDesc:  msg('+5k CHF to partner'),
-  actionCityFestival:      msg('City Festival'),
-  actionCityFestivalDesc:  msg('+Satisfaction 24h'),
-  actionLaborMigration:    msg('Labor Migration'),
-  actionLaborMigDesc:      msg('+50 Population'),
-  cooldownDaysLeft:        msg('cooldown remaining'),
-  loadingCooldowns:        msg('Loading cooldowns…'),
+  diplomaticActions:       'Diplomatische Aktionen',
+  actionEmergencyAid:      'Nothilfe',
+  actionEmergencyAidDesc:  '+5k CHF an Partner',
+  actionCityFestival:      'Stadtfest',
+  actionCityFestivalDesc:  '+Zufriedenheit 24h',
+  actionLaborMigration:    'Arbeitsmigration',
+  actionLaborMigDesc:      '+50 Einwohner',
+  cooldownDaysLeft:        'Abkühlung übrig',
+  loadingCooldowns:        'Abkühlzeiten laden…',
   // Export capacity
-  exportCapacity:          msg('Export Capacity'),
-  slots:                   msg('Slots'),
-  multiplier:              msg('Multiplier'),
-  noFactories:             msg('No factories'),
-  lowIndustry:             msg('Low industry'),
-  goodIndustry:            msg('Good industry'),
-  fullCapacity:            msg('Full capacity'),
-  noPartnerYet:            msg('No partner connected yet'),
-  perPartnership:          msg('Per Partnership'),
-  noConnectedPartners:     msg('No connected partners yet'),
-  totalEarnedLabel:        msg('total'),
-  investedLabel:           msg('invested'),
+  exportCapacity:          'Exportkapazität',
+  slots:                   'Stellplätze',
+  multiplier:              'Multiplikator',
+  noFactories:             'Keine Fabriken',
+  lowIndustry:             'Wenig Industrie',
+  goodIndustry:            'Gute Industrie',
+  fullCapacity:            'Volle Kapazität',
+  noPartnerYet:            'Noch kein Partner verbunden',
+  perPartnership:          'Pro Partnerschaft',
+  noConnectedPartners:     'Noch keine verbundenen Partner',
+  totalEarnedLabel:        'gesamt',
+  investedLabel:           'investiert',
   // Handelsbilanz
-  totalEarnedBilanz:       msg('CHF total earned'),
-  chfInvestedBilanz:       msg('CHF invested'),
+  totalEarnedBilanz:       'CHF gesamt verdient',
+  chfInvestedBilanz:       'CHF investiert',
   // Search
-  searchPlaceholder:       msg('Search by name...'),
-  sendRequest:             msg('Send Request'),
-  requestPending:          msg('Pending'),
-  alreadyPartner:          msg('Already Partner'),
-  noResults:               msg('No municipalities found'),
-  capital:                 msg('Capital'),
-  population:              msg('Population'),
+  searchPlaceholder:       'Nach Name suchen...',
+  sendRequest:             'Anfrage senden',
+  requestPending:          'Ausstehend',
+  alreadyPartner:          'Bereits Partner',
+  noResults:               'Keine Gemeinden gefunden',
+  capital:                 'Hauptort',
+  population:              'Einwohner',
   // Visit
-  visitTooltip:            msg('Visit this municipality as a guest'),
+  visitTooltip:            'Diese Gemeinde als Gast besuchen',
   // Notification strings (inside handlers)
-  notifRequestSent:        msg('Request sent'),
-  notifRequestSentDesc:    msg('Partnership request sent to {city}'),
-  notifRequestError:       msg('Error'),
-  notifRequestSendFailed:  msg('Request could not be sent: {reason}'),
-  notifInvestOk:           msg('Investment successful'),
-  notifInvestOkDesc:       msg('{amount} CHF invested in partnership with {city}'),
-  notifInvestFail:         msg('Investment failed'),
-  notifPartnershipAccepted: msg('Partnership accepted!'),
-  notifPartnershipActiveIncome: msg('+{income} CHF/day from now.'),
-  notifPartnershipActive:  msg('New partnership active.'),
-  notifRequestDeclined:    msg('Request declined'),
-  notifRequestDeclinedDesc: msg('The partnership request has been declined.'),
-  notifRespondFailed:      msg('Could not {action} the request.'),
+  notifRequestSent:        'Anfrage gesendet',
+  notifRequestSentDesc:    'Partnerschaftsanfrage an {city} gesendet',
+  notifRequestError:       'Fehler',
+  notifRequestSendFailed:  'Anfrage konnte nicht gesendet werden: {reason}',
+  notifInvestOk:           'Investition erfolgreich',
+  notifInvestOkDesc:       '{amount} CHF in Partnerschaft mit {city} investiert',
+  notifInvestFail:         'Investition fehlgeschlagen',
+  notifPartnershipAccepted: 'Partnerschaft angenommen!',
+  notifPartnershipActiveIncome: '+{income} CHF/Tag ab sofort.',
+  notifPartnershipActive:  'Neue Partnerschaft aktiv.',
+  notifRequestDeclined:    'Anfrage abgelehnt',
+  notifRequestDeclinedDesc: 'Die Partnerschaftsanfrage wurde abgelehnt.',
+  notifRespondFailed:      'Anfrage konnte nicht {action} werden.',
   // Directions
-  north:                   msg('North'),
-  south:                   msg('South'),
-  east:                    msg('East'),
-  west:                    msg('West'),
-  // Dynamic format strings (used with gt())
-  connectedDaysFormat:     msg('{days}d connected'),
-  multiplierFormat:        msg('Multiplier: ×{value}'),
-  cooldownFormat:          msg('{days}d cooldown remaining'),
-  chfDayPartner:           msg('+{income} CHF/day'),
+  north:                   'Norden',
+  south:                   'Süden',
+  east:                    'Osten',
+  west:                    'Westen',
+  // Dynamic format strings (verwendet mit .replace())
+  connectedDaysFormat:     '{days}T verbunden',
+  multiplierFormat:        'Multiplikator: ×{value}',
+  cooldownFormat:          '{days}T Abkühlung übrig',
+  chfDayPartner:           '+{income} CHF/Tag',
   // Accept / decline buttons
-  yes:                     msg('Yes'),
-  no:                      msg('No'),
+  yes:                     'Ja',
+  no:                      'Nein',
   // CHF/day unit
-  chfDayUnit:              msg('CHF/day'),
+  chfDayUnit:              'CHF/Tag',
   // Invest
-  investButton:            msg('Invest'),
-  investPlaceholder:       msg('CHF to invest'),
+  investButton:            'Investieren',
+  investPlaceholder:       'CHF investieren',
   // Notification labels for diplomatic actions
-  notifEmergencyAidSent:   msg('Emergency Aid sent'),
-  notifCityFestivalSent:   msg('City Festival started'),
-  notifLaborMigSent:       msg('Labor Migration initiated'),
-  notifActionDone:         msg('Action executed'),
-  notifActionFor:          msg('Action executed for {city}'),
+  notifEmergencyAidSent:   'Nothilfe gesendet',
+  notifCityFestivalSent:   'Stadtfest gestartet',
+  notifLaborMigSent:       'Arbeitsmigration eingeleitet',
+  notifActionDone:         'Aktion ausgeführt',
+  notifActionFor:          'Aktion ausgeführt für {city}',
   // "ready" check mark
-  tierReadyCheck:          msg('Ready! ✓'),
+  tierReadyCheck:          'Bereit! ✓',
   // Diplomatic action title tooltip
-  diplomaticActionsTooltip: msg('Diplomatic Actions'),
+  diplomaticActionsTooltip: 'Diplomatische Aktionen',
   // Bilanz
-  bilanzInvestedShort:     msg('inv.'),
+  bilanzInvestedShort:     'inv.',
   // Incoming owner
-  noOwnerShort:            msg('No owner'),
+  noOwnerShort:            'Kein Besitzer',
   // Capital badge
-  capitalBadge:            msg('Capital'),
+  capitalBadge:            'Hauptort',
+  // Road warning
+  noRoadWarning:           'Keine Strasse nach {dir} — Einkommen pausiert',
 };
 
 // Berechne die Dauer seit einem Datum (locale-aware via Intl)
@@ -219,23 +222,23 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
   // Lokalisierte Lookup-Maps (innerhalb der Komponente damit m() verfügbar ist)
   const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const TIER_NAMES: Record<number, string> = {
-    1: mm(UI_LABELS.tierKnown      as Parameters<typeof m>[0]),
-    2: mm(UI_LABELS.tierFriendly   as Parameters<typeof m>[0]),
-    3: mm(UI_LABELS.tierStrategic  as Parameters<typeof m>[0]),
-    4: mm(UI_LABELS.tierAllied     as Parameters<typeof m>[0]),
+    1: UI_LABELS.tierKnown,
+    2: UI_LABELS.tierFriendly,
+    3: UI_LABELS.tierStrategic,
+    4: UI_LABELS.tierAllied,
   };
   // Tier color classes (kein Emoji — pixel-font-safe)
   const TIER_COLORS: Record<number, string> = { 1: 'text-slate-300 bg-slate-700', 2: 'text-blue-300 bg-blue-900/40', 3: 'text-purple-300 bg-purple-900/40', 4: 'text-amber-300 bg-amber-900/40' };
   const DIR_LABELS: Record<string, string> = {
-    north: mm(UI_LABELS.north as Parameters<typeof m>[0]),
-    south: mm(UI_LABELS.south as Parameters<typeof m>[0]),
-    east:  mm(UI_LABELS.east  as Parameters<typeof m>[0]),
-    west:  mm(UI_LABELS.west  as Parameters<typeof m>[0]),
+    north: UI_LABELS.north,
+    south: UI_LABELS.south,
+    east:  UI_LABELS.east,
+    west:  UI_LABELS.west,
   };
   const DIPLOMATIC_LABELS: Record<string, { label: string; desc: string }> = {
-    emergency_aid:   { label: mm(UI_LABELS.actionEmergencyAid    as Parameters<typeof m>[0]), desc: mm(UI_LABELS.actionEmergencyAidDesc as Parameters<typeof m>[0]) },
-    city_festival:   { label: mm(UI_LABELS.actionCityFestival    as Parameters<typeof m>[0]), desc: mm(UI_LABELS.actionCityFestivalDesc as Parameters<typeof m>[0]) },
-    labor_migration: { label: mm(UI_LABELS.actionLaborMigration  as Parameters<typeof m>[0]), desc: mm(UI_LABELS.actionLaborMigDesc     as Parameters<typeof m>[0]) },
+    emergency_aid:   { label: UI_LABELS.actionEmergencyAid, desc: UI_LABELS.actionEmergencyAidDesc },
+    city_festival:   { label: UI_LABELS.actionCityFestival, desc: UI_LABELS.actionCityFestivalDesc },
+    labor_migration: { label: UI_LABELS.actionLaborMigration, desc: UI_LABELS.actionLaborMigDesc },
   };
   const [isLoading, setIsLoading] = useState(false);
   const [apiPartnerships, setApiPartnerships] = useState<partnershipApi.Partnership[]>([]);
@@ -263,7 +266,36 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
   const [actionCooldowns, setActionCooldowns] = useState<Record<string, ActionCooldowns>>({});
   const [executingAction, setExecutingAction] = useState<string | null>(null); // `${slug}_${actionType}`
   const [exportCapacity, setExportCapacity] = useState<ExportCapacity | null>(null);
-  
+
+  // ── Randstrassen-Prüfung ────────────────────────────────────────────────────
+  // Prüft für jede Himmelsrichtung ob eine Strasse am Kartenrand existiert.
+  const roadStatusMap = useMemo((): Record<string, boolean> => {
+    const grid = state.grid;
+    const gridSize = (state as { gridSize?: number }).gridSize;
+    if (!grid || !gridSize) return {};
+    return {
+      north: findEdgeRoadInDirection(grid, gridSize, 'north') !== null,
+      south: findEdgeRoadInDirection(grid, gridSize, 'south') !== null,
+      east:  findEdgeRoadInDirection(grid, gridSize, 'east')  !== null,
+      west:  findEdgeRoadInDirection(grid, gridSize, 'west')  !== null,
+    };
+  }, [state.grid, (state as { gridSize?: number }).gridSize]);
+
+  // Server-Sync: Strassenstatus bei Änderungen melden
+  const prevRoadSyncRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!municipalitySlug || isGuestMode) return;
+    const connectedPartners = apiPartnerships.filter(p => p.status === 'connected');
+    for (const p of connectedPartners) {
+      const dir = (p.direction || 'north') as string;
+      const hasRoad = roadStatusMap[dir] ?? true;
+      if (prevRoadSyncRef.current[p.partner.slug] !== hasRoad) {
+        prevRoadSyncRef.current[p.partner.slug] = hasRoad;
+        partnershipApi.updateRoadStatus(municipalitySlug, p.partner.slug, hasRoad).catch(() => {});
+      }
+    }
+  }, [roadStatusMap, apiPartnerships, municipalitySlug, isGuestMode]);
+
   // Hilfsfunktion um connected_at für eine Stadt zu finden
   const getConnectedAt = (cityName: string): string | null => {
     const partnership = apiPartnerships.find(
@@ -297,8 +329,8 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                 // Neue Partnerschaft wurde akzeptiert!
                 addMoney(5000); // Bonus gutschreiben
                 addNotification(
-                  mm(UI_LABELS.notifPartnershipAccepted as Parameters<typeof m>[0]),
-                  gt(UI_LABELS.notifRequestSentDesc, { city: p.partner.name }),
+                  UI_LABELS.notifPartnershipAccepted,
+                  UI_LABELS.notifRequestSentDesc.replace('{city}', p.partner.name ),
                   'partnership'
                 );
               }
@@ -360,18 +392,18 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
       if (res.success) {
         setActionCooldowns(prev => ({ ...prev, [partnerSlug]: res.data.cooldowns }));
         const notifLabels: Record<string, string> = {
-          emergency_aid:   String(mm(UI_LABELS.notifEmergencyAidSent as Parameters<typeof m>[0])),
-          city_festival:   String(mm(UI_LABELS.notifCityFestivalSent as Parameters<typeof m>[0])),
-          labor_migration: String(mm(UI_LABELS.notifLaborMigSent     as Parameters<typeof m>[0])),
+          emergency_aid:   String(UI_LABELS.notifEmergencyAidSent),
+          city_festival:   String(UI_LABELS.notifCityFestivalSent),
+          labor_migration: String(UI_LABELS.notifLaborMigSent),
         };
         addNotification(
-          notifLabels[actionType] || String(mm(UI_LABELS.notifActionDone as Parameters<typeof m>[0])),
-          gt(UI_LABELS.notifActionFor, { city: partnerName }),
+          notifLabels[actionType] || String(UI_LABELS.notifActionDone),
+          UI_LABELS.notifActionFor.replace('{city}', partnerName ),
           'city'
         );
       }
     } catch (err) {
-      addNotification(mm(UI_LABELS.notifRequestError as Parameters<typeof m>[0]), err instanceof Error ? err.message : mm(UI_LABELS.notifActionDone as Parameters<typeof m>[0]), 'default');
+      addNotification(UI_LABELS.notifRequestError, err instanceof Error ? err.message : UI_LABELS.notifActionDone, 'default');
     } finally {
       setExecutingAction(null);
     }
@@ -438,16 +470,16 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
       if (response.success) {
         setOutgoingRequests(prev => [...prev, response.data.request]);
         addNotification(
-          mm(UI_LABELS.notifRequestSent as Parameters<typeof m>[0]),
-          gt(UI_LABELS.notifRequestSentDesc, { city: targetName }),
+          UI_LABELS.notifRequestSent,
+          UI_LABELS.notifRequestSentDesc.replace('{city}', targetName ),
           'city'
         );
       }
     } catch (error) {
       console.error('Fehler beim Senden der Anfrage:', error);
       addNotification(
-        mm(UI_LABELS.notifRequestError as Parameters<typeof m>[0]),
-        gt(UI_LABELS.notifRequestSendFailed, { reason: error instanceof Error ? error.message : '?' }),
+        UI_LABELS.notifRequestError,
+        UI_LABELS.notifRequestSendFailed.replace('{reason}', error instanceof Error ? error.message : '?' ),
         'default'
       );
     } finally {
@@ -517,15 +549,15 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
         ));
         setInvestAmount(prev => ({ ...prev, [partnerSlug]: '' }));
         addNotification(
-          mm(UI_LABELS.notifInvestOk as Parameters<typeof m>[0]),
-          gt(UI_LABELS.notifInvestOkDesc, { amount: amount.toLocaleString(), city: partnerSlug }),
+          UI_LABELS.notifInvestOk,
+          UI_LABELS.notifInvestOkDesc.replace('{amount}', amount.toLocaleString()).replace('{city}', partnerSlug ),
           'city'
         );
       }
     } catch (err) {
       addNotification(
-        mm(UI_LABELS.notifRequestError as Parameters<typeof m>[0]),
-        err instanceof Error ? err.message : mm(UI_LABELS.notifInvestFail as Parameters<typeof m>[0]),
+        UI_LABELS.notifRequestError,
+        err instanceof Error ? err.message : UI_LABELS.notifInvestFail,
         'default'
       );
     } finally {
@@ -547,14 +579,14 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
         if (action === 'accept' && res.data.partnership) {
           setApiPartnerships(prev => [...prev, res.data.partnership!]);
           addNotification(
-            mm(UI_LABELS.notifPartnershipAccepted as Parameters<typeof m>[0]),
-            gt(UI_LABELS.notifPartnershipActiveIncome, { income: res.data.partnership.trade_income }),
+            UI_LABELS.notifPartnershipAccepted,
+            UI_LABELS.notifPartnershipActiveIncome.replace('{income}', String(res.data.partnership.trade_income )),
             'partnership'
           );
         } else if (action === 'decline') {
           addNotification(
-            mm(UI_LABELS.notifRequestDeclined     as Parameters<typeof m>[0]),
-            mm(UI_LABELS.notifRequestDeclinedDesc as Parameters<typeof m>[0]),
+            UI_LABELS.notifRequestDeclined,
+            UI_LABELS.notifRequestDeclinedDesc,
             'default'
           );
         }
@@ -568,16 +600,16 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
           if (action === 'accept' && res2.data.partnership) {
             setApiPartnerships(prev => [...prev, res2.data.partnership!]);
             addNotification(
-              mm(UI_LABELS.notifPartnershipAccepted as Parameters<typeof m>[0]),
-              mm(UI_LABELS.notifPartnershipActive   as Parameters<typeof m>[0]),
+              UI_LABELS.notifPartnershipAccepted,
+              UI_LABELS.notifPartnershipActive,
               'partnership'
             );
           }
         }
       } catch {
         addNotification(
-          mm(UI_LABELS.notifRequestError as Parameters<typeof m>[0]),
-          gt(UI_LABELS.notifRespondFailed, { action: action === 'accept' ? mm(UI_LABELS.accept as Parameters<typeof m>[0]) : mm(UI_LABELS.decline as Parameters<typeof m>[0]) }),
+          UI_LABELS.notifRequestError,
+          UI_LABELS.notifRespondFailed.replace('{action}', action === 'accept' ? UI_LABELS.accept : UI_LABELS.decline),
           'default'
         );
       }
@@ -609,15 +641,15 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
               )}
               <Handshake className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
               {viewMode === 'partners' 
-                ? mm(UI_LABELS.tradePartners as Parameters<typeof m>[0])
-                : mm(UI_LABELS.searchMunicipalities as Parameters<typeof m>[0])
+                ? UI_LABELS.tradePartners
+                : UI_LABELS.searchMunicipalities
               }
             </div>
             {viewMode === 'partners' && (
               <button
                 onClick={() => setViewMode('search')}
                 className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
-                title={String(mm(UI_LABELS.searchMunicipalities as Parameters<typeof m>[0]))}
+                title={String(UI_LABELS.searchMunicipalities)}
               >
                 <Search className="w-5 h-5 text-slate-400 hover:text-white" />
               </button>
@@ -633,7 +665,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 type="text"
-                placeholder={String(mm(UI_LABELS.searchPlaceholder as Parameters<typeof m>[0]))}
+                placeholder={String(UI_LABELS.searchPlaceholder)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500"
@@ -645,7 +677,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
               {isLoadingCanton ? (
                 <div className="text-center text-slate-400 py-8">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                  {mm(UI_LABELS.loading as Parameters<typeof m>[0])}
+                  {UI_LABELS.loading}
                 </div>
               ) : filteredMunicipalities.length > 0 ? (
                 filteredMunicipalities
@@ -672,7 +704,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                                 <span className="truncate">{muni.name}</span>
                                 {muni.is_capital && (
                                   <span className="text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded shrink-0">
-                                    {mm(UI_LABELS.capitalBadge as Parameters<typeof m>[0])}
+                                    {UI_LABELS.capitalBadge}
                                   </span>
                                 )}
                               </div>
@@ -687,7 +719,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                                   </span>
                                 ) : (
                                   <span className="text-slate-500">
-                                    {mm(UI_LABELS.noOwner as Parameters<typeof m>[0])}
+                                    {UI_LABELS.noOwner}
                                   </span>
                                 )}
                               </div>
@@ -699,12 +731,12 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                             {status === 'partner' ? (
                               <span className="flex items-center gap-1 text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded">
                                 <CheckCircle className="w-3 h-3" />
-                                {mm(UI_LABELS.alreadyPartner as Parameters<typeof m>[0])}
+                                {UI_LABELS.alreadyPartner}
                               </span>
                             ) : status === 'pending' ? (
                               <span className="flex items-center gap-1 text-xs px-2 py-1 bg-amber-500/20 text-amber-400 rounded">
                                 <Clock className="w-3 h-3" />
-                                {mm(UI_LABELS.requestPending as Parameters<typeof m>[0])}
+                                {UI_LABELS.requestPending}
                               </span>
                             ) : (
                               <Button
@@ -719,7 +751,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                                 ) : (
                                   <Send className="w-3 h-3" />
                                 )}
-                                {mm(UI_LABELS.sendRequest as Parameters<typeof m>[0])}
+                                {UI_LABELS.sendRequest}
                               </Button>
                             )}
                           </div>
@@ -730,7 +762,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
               ) : (
                 <div className="text-center text-slate-400 py-8">
                   <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="font-medium">{mm(UI_LABELS.noResults as Parameters<typeof m>[0])}</p>
+                  <p className="font-medium">{UI_LABELS.noResults}</p>
                 </div>
               )}
             </div>
@@ -746,13 +778,13 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                 onClick={() => setPartnerTab('list')}
                 className={`flex-1 text-xs py-1.5 rounded-md transition-colors flex items-center justify-center gap-1.5 ${partnerTab === 'list' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`}
               >
-                <Handshake className="w-3.5 h-3.5" /> {mm(UI_LABELS.tabPartner as Parameters<typeof m>[0])}
+                <Handshake className="w-3.5 h-3.5" /> {UI_LABELS.tabPartner}
               </button>
               <button
                 onClick={() => setPartnerTab('bilanz')}
                 className={`flex-1 text-xs py-1.5 rounded-md transition-colors flex items-center justify-center gap-1.5 ${partnerTab === 'bilanz' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'}`}
               >
-                <BarChart3 className="w-3.5 h-3.5" /> {mm(UI_LABELS.tabBilanz as Parameters<typeof m>[0])}
+                <BarChart3 className="w-3.5 h-3.5" /> {UI_LABELS.tabBilanz}
               </button>
             </div>
 
@@ -770,11 +802,11 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                   <div className="grid grid-cols-2 gap-2">
                     <Card className="bg-slate-800/50 border-slate-700 p-3 text-center">
                       <div className="text-lg font-bold text-emerald-400">+{totalEarned.toLocaleString()}</div>
-                      <div className="text-[10px] text-slate-400">{mm(UI_LABELS.totalEarnedBilanz as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400">{UI_LABELS.totalEarnedBilanz}</div>
                     </Card>
                     <Card className="bg-slate-800/50 border-slate-700 p-3 text-center">
                       <div className="text-lg font-bold text-purple-300">{totalInvested.toLocaleString()}</div>
-                      <div className="text-[10px] text-slate-400">{mm(UI_LABELS.chfInvestedBilanz as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400">{UI_LABELS.chfInvestedBilanz}</div>
                     </Card>
                   </div>
                   {/* Export-Kapazität */}
@@ -782,8 +814,8 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                     <Card className="bg-slate-800/60 border-slate-700 p-3">
                       <div className="flex items-center gap-2 mb-2">
                         <Factory className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-semibold text-slate-200">{mm(UI_LABELS.exportCapacity as Parameters<typeof m>[0])}</span>
-                        <span className="ml-auto text-xs text-amber-400 font-mono">{exportCapacity.slots} {mm(UI_LABELS.slots as Parameters<typeof m>[0])}</span>
+                        <span className="text-xs font-semibold text-slate-200">{UI_LABELS.exportCapacity}</span>
+                        <span className="ml-auto text-xs text-amber-400 font-mono">{exportCapacity.slots} {UI_LABELS.slots}</span>
                       </div>
                       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div
@@ -792,21 +824,21 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                         />
                       </div>
                       <div className="text-[10px] text-slate-400 mt-1 flex justify-between">
-                        <span>{gt(UI_LABELS.multiplierFormat, { value: exportCapacity.multiplier.toFixed(1) })}</span>
+                        <span>{UI_LABELS.multiplierFormat.replace('{value}', exportCapacity.multiplier.toFixed(1) )}</span>
                         <span>{
-                          exportCapacity.slots === 0 ? mm(UI_LABELS.noPartnerYet       as Parameters<typeof m>[0]) :
-                          exportCapacity.slots <= 2  ? mm(UI_LABELS.lowIndustry        as Parameters<typeof m>[0]) :
-                          exportCapacity.slots <= 5  ? mm(UI_LABELS.goodIndustry       as Parameters<typeof m>[0]) :
-                                                       mm(UI_LABELS.fullCapacity       as Parameters<typeof m>[0])
+                          exportCapacity.slots === 0 ? UI_LABELS.noPartnerYet :
+                          exportCapacity.slots <= 2  ? UI_LABELS.lowIndustry :
+                          exportCapacity.slots <= 5  ? UI_LABELS.goodIndustry :
+                                                       UI_LABELS.fullCapacity
                         }</span>
                       </div>
                     </Card>
                   )}
                   {/* Pro-Partner Bilanz */}
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1 font-semibold">{mm(UI_LABELS.perPartnership as Parameters<typeof m>[0])}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1 font-semibold">{UI_LABELS.perPartnership}</div>
                   <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
                     {connected.length === 0 && (
-                      <div className="text-center text-slate-500 py-6 text-sm">{mm(UI_LABELS.noConnectedPartners as Parameters<typeof m>[0])}</div>
+                      <div className="text-center text-slate-500 py-6 text-sm">{UI_LABELS.noConnectedPartners}</div>
                     )}
                     {connected
                       .sort((a, b) => (b.tier_progress?.connectedDays ?? 0) - (a.tier_progress?.connectedDays ?? 0))
@@ -826,14 +858,14 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                                   <span className="truncate">{p.partner.name}</span>
                                 </div>
                                 <div className="text-[10px] text-slate-400 mt-0.5">
-                                  {gt(UI_LABELS.connectedDaysFormat, { days })} · {gt(UI_LABELS.chfDayPartner, { income: p.trade_income })}
+                                  {UI_LABELS.connectedDaysFormat.replace('{days}', String(days))} · {UI_LABELS.chfDayPartner.replace('{income}', String(p.trade_income ))}
                                 </div>
                               </div>
                               <div className="text-right shrink-0">
                                 <div className="text-sm font-bold text-emerald-400">+{earned.toLocaleString()}</div>
-                                <div className="text-[10px] text-slate-500">{mm(UI_LABELS.totalEarnedLabel as Parameters<typeof m>[0])}</div>
+                                <div className="text-[10px] text-slate-500">{UI_LABELS.totalEarnedLabel}</div>
                                 {p.tier_invested > 0 && (
-                                  <div className="text-[10px] text-purple-300">−{p.tier_invested.toLocaleString()} {mm(UI_LABELS.bilanzInvestedShort as Parameters<typeof m>[0])}</div>
+                                  <div className="text-[10px] text-purple-300">−{p.tier_invested.toLocaleString()} {UI_LABELS.bilanzInvestedShort}</div>
                                 )}
                               </div>
                             </div>
@@ -867,7 +899,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                       <div className="text-base font-bold text-emerald-400 leading-tight">
                         {connectedCities.length}<span className="text-slate-500 text-xs font-normal"> / {discoveredCities.length}</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 leading-tight">{mm(UI_LABELS.connectedDiscovered as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400 leading-tight">{UI_LABELS.connectedDiscovered}</div>
                     </div>
                   </Card>
                   {/* CHF/Tag */}
@@ -875,7 +907,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                     <Coins className="w-5 h-5 text-amber-400 shrink-0" />
                     <div>
                       <div className="text-base font-bold text-amber-400 leading-tight">+{totalMonthlyIncome.toLocaleString()}</div>
-                      <div className="text-[10px] text-slate-400 leading-tight">{mm(UI_LABELS.chfPerDay as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400 leading-tight">{UI_LABELS.chfPerDay}</div>
                     </div>
                   </Card>
                   {/* Investiert */}
@@ -883,7 +915,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                     <TrendingUp className="w-5 h-5 text-purple-400 shrink-0" />
                     <div>
                       <div className="text-base font-bold text-purple-300 leading-tight">{totalInvested > 0 ? totalInvested.toLocaleString() : '0'}</div>
-                      <div className="text-[10px] text-slate-400 leading-tight">{mm(UI_LABELS.chfInvested as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400 leading-tight">{UI_LABELS.chfInvested}</div>
                     </div>
                   </Card>
                   {/* Höchste Stufe */}
@@ -891,9 +923,9 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                     <ChevronsUp className="w-5 h-5 text-slate-400 shrink-0" />
                     <div>
                       <div className={`text-sm font-bold leading-tight ${connectedCities.length > 0 ? (tierColorClass[highestTier] ?? 'text-slate-200') : 'text-slate-500'}`}>
-                        {connectedCities.length > 0 ? (TIER_NAMES[highestTier] ?? `Tier ${highestTier}`) : mm(UI_LABELS.unknown as Parameters<typeof m>[0])}
+                        {connectedCities.length > 0 ? (TIER_NAMES[highestTier] ?? `Tier ${highestTier}`) : UI_LABELS.unknown}
                       </div>
-                      <div className="text-[10px] text-slate-400 leading-tight">{mm(UI_LABELS.highestTier as Parameters<typeof m>[0])}</div>
+                      <div className="text-[10px] text-slate-400 leading-tight">{UI_LABELS.highestTier}</div>
                     </div>
                   </Card>
                   {/* Total verdient (optional) */}
@@ -902,7 +934,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                       <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
                       <div>
                         <div className="text-sm font-bold text-emerald-300">+{totalEarned.toLocaleString()} CHF</div>
-                        <div className="text-[10px] text-slate-400">{mm(UI_LABELS.totalEarned as Parameters<typeof m>[0])}</div>
+                        <div className="text-[10px] text-slate-400">{UI_LABELS.totalEarned}</div>
                       </div>
                     </Card>
                   )}
@@ -915,7 +947,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
               <div className="mb-3">
                 <div className="text-[10px] uppercase tracking-widest text-amber-400 mb-1.5 font-semibold flex items-center gap-1">
                   <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  {incomingRequests.length} {incomingRequests.length === 1 ? mm(UI_LABELS.incomingRequest as Parameters<typeof m>[0]) : mm(UI_LABELS.incomingRequests as Parameters<typeof m>[0])}
+                  {incomingRequests.length} {incomingRequests.length === 1 ? UI_LABELS.incomingRequest : UI_LABELS.incomingRequests}
                 </div>
                 <div className="space-y-1.5">
                   {incomingRequests.map(req => (
@@ -924,7 +956,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-white truncate">🤝 {req.from_municipality.name}</div>
                           <div className="text-[10px] text-slate-400">
-                            {req.from_municipality.owner ? `👤 ${req.from_municipality.owner.nickname}` : mm(UI_LABELS.noOwnerShort as Parameters<typeof m>[0])}
+                            {req.from_municipality.owner ? `👤 ${req.from_municipality.owner.nickname}` : UI_LABELS.noOwnerShort}
                             {req.message && <span className="ml-2 italic">· {req.message}</span>}
                           </div>
                         </div>
@@ -933,12 +965,12 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                             onClick={() => handleRespond(req.id, 'accept')}
                             className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white border-0">
                             {respondingRequest === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3 mr-1" />}
-                            {mm(UI_LABELS.yes as Parameters<typeof m>[0])}
+                            {UI_LABELS.yes}
                           </Button>
                           <Button size="sm" variant="outline" disabled={respondingRequest === req.id}
                             onClick={() => handleRespond(req.id, 'decline')}
                             className="h-7 text-xs border-red-700/50 text-red-400 hover:bg-red-900/30">
-                            <XCircle className="w-3 h-3 mr-1" />{mm(UI_LABELS.no as Parameters<typeof m>[0])}
+                            <XCircle className="w-3 h-3 mr-1" />{UI_LABELS.no}
                           </Button>
                         </div>
                       </div>
@@ -953,7 +985,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
           {isLoading ? (
             <div className="text-center text-slate-400 py-8">
               <CircleDashed className="w-8 h-8 animate-spin mx-auto mb-2" />
-              {mm(UI_LABELS.loading as Parameters<typeof m>[0])}
+              {UI_LABELS.loading}
             </div>
           ) : discoveredCities.length > 0 ? (
             [...discoveredCities]
@@ -1001,8 +1033,16 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                         <div className="text-[11px] text-slate-400 flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {DIR_LABELS[city.direction] ?? city.direction}
-                          {tp && <span className="ml-1 text-slate-500">· {gt(UI_LABELS.connectedDaysFormat, { days: tp.connectedDays })}</span>}
+                          {tp && <span className="ml-1 text-slate-500">· {UI_LABELS.connectedDaysFormat.replace('{days}', String(tp.connectedDays ))}</span>}
                         </div>
+
+                        {/* Warnung: keine Randstrasse in Partnerrichtung */}
+                        {city.connected && (roadStatusMap[city.direction] === false) && (
+                          <div className="flex items-center gap-1 mt-1 text-[11px] text-amber-400 font-medium">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>{UI_LABELS.noRoadWarning.replace('{dir}', DIR_LABELS[city.direction] ?? city.direction )}</span>
+                          </div>
+                        )}
 
                         {/* Fortschrittsbalken zur nächsten Stufe */}
                         {city.connected && tp?.next && (
@@ -1010,7 +1050,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                             <div className="text-[10px] text-slate-500 mb-0.5 flex justify-between">
                               <span>→ {tp.next.name}</span>
                               {tp.next.ready
-                                ? <span className="text-emerald-400 font-semibold">{mm(UI_LABELS.tierReadyCheck as Parameters<typeof m>[0])}</span>
+                                ? <span className="text-emerald-400 font-semibold">{UI_LABELS.tierReadyCheck}</span>
                                 : <span>{tp.next.daysLeft > 0 ? `${tp.next.daysLeft}d` : ''}{tp.next.daysLeft > 0 && tp.next.investLeft > 0 ? ' · ' : ''}{tp.next.investLeft > 0 ? `${tp.next.investLeft.toLocaleString()} CHF` : ''}</span>
                               }
                             </div>
@@ -1032,7 +1072,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                               type="number"
                               min={100}
                               step={100}
-                              placeholder={String(mm(UI_LABELS.investPlaceholder as Parameters<typeof m>[0]))}
+                              placeholder={String(UI_LABELS.investPlaceholder)}
                               value={investAmount[city.slug] ?? ''}
                               onChange={e => setInvestAmount(prev => ({ ...prev, [city.slug]: e.target.value }))}
                               className="w-28 text-xs px-2 py-1 rounded bg-slate-700 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500"
@@ -1046,7 +1086,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                             >
                               {investingSlug === city.slug
                                 ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <><ChevronsUp className="w-3 h-3 mr-1" />{mm(UI_LABELS.investButton as Parameters<typeof m>[0])}</>
+                                : <><ChevronsUp className="w-3 h-3 mr-1" />{UI_LABELS.investButton}</>
                               }
                             </Button>
                           </div>
@@ -1063,7 +1103,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                               <Coins className="w-3.5 h-3.5" />
                               <span className="font-semibold">+{apiP?.trade_income ?? 100}</span>
                             </div>
-                            <div className="text-[10px] text-slate-400">{mm(UI_LABELS.chfDayUnit as Parameters<typeof m>[0])}</div>
+                            <div className="text-[10px] text-slate-400">{UI_LABELS.chfDayUnit}</div>
                             <div className="flex items-center gap-1 text-[10px] text-slate-400">
                               <Clock className="w-3 h-3" />
                               <span>{getConnectionDuration(getConnectedAt(city.name))}</span>
@@ -1071,11 +1111,11 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                           </div>
                         ) : city.discovered ? (
                           <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-300 rounded">
-                            {mm(UI_LABELS.discovered as Parameters<typeof m>[0])}
+                            {UI_LABELS.discovered}
                           </span>
                         ) : (
                           <span className="text-xs px-2 py-1 bg-slate-600/50 text-slate-400 rounded">
-                            {mm(UI_LABELS.unknown as Parameters<typeof m>[0])}
+                            {UI_LABELS.unknown}
                           </span>
                         )}
                       </div>
@@ -1085,7 +1125,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                         <button
                           onClick={() => setExpandedPartner(expandedPartner === city.slug ? null : city.slug)}
                           className={`h-8 w-8 flex items-center justify-center rounded hover:bg-slate-700/50 transition-colors text-xs ${expandedPartner === city.slug ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
-                          title={String(mm(UI_LABELS.diplomaticActionsTooltip as Parameters<typeof m>[0]))}
+                          title={String(UI_LABELS.diplomaticActionsTooltip)}
                         >
                           <HeartHandshake className="w-4 h-4" />
                         </button>
@@ -1100,7 +1140,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                             if (onVisitMunicipality) onVisitMunicipality(city.slug);
                             else router.push(`/gemeinde/${city.slug}`);
                           }}
-                          title={String(mm(UI_LABELS.visitTooltip as Parameters<typeof m>[0]))}
+                          title={String(UI_LABELS.visitTooltip)}
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
@@ -1113,7 +1153,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                 {expandedPartner === city.slug && city.connected && (
                   <Card className="bg-amber-950/30 border-amber-800/40 p-3 -mt-1 rounded-t-none border-t-0">
                     <div className="text-[10px] uppercase tracking-widest text-amber-400 mb-2 font-semibold flex items-center gap-1">
-                      <HeartHandshake className="w-3 h-3" /> {mm(UI_LABELS.diplomaticActions as Parameters<typeof m>[0])}
+                      <HeartHandshake className="w-3 h-3" /> {UI_LABELS.diplomaticActions}
                     </div>
                     {(() => {
                       const cooldowns = actionCooldowns[city.slug];
@@ -1136,7 +1176,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                                     <span className="text-[10px] text-slate-500">· {DIPLOMATIC_LABELS[a.type]?.desc}</span>
                                   </div>
                                   {onCooldown && (
-                                    <div className="text-[10px] text-amber-600">⏳ {gt(UI_LABELS.cooldownFormat, { days: cd.daysLeft })}</div>
+                                    <div className="text-[10px] text-amber-600">⏳ {UI_LABELS.cooldownFormat.replace('{days}', String(cd.daysLeft ))}</div>
                                   )}
                                 </div>
                                 <Button
@@ -1153,7 +1193,7 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                           })}
                           {!cooldowns && (
                             <div className="text-[10px] text-slate-500 text-center py-1">
-                              <Loader2 className="w-3 h-3 animate-spin inline mr-1" />{mm(UI_LABELS.loadingCooldowns as Parameters<typeof m>[0])}
+                              <Loader2 className="w-3 h-3 animate-spin inline mr-1" />{UI_LABELS.loadingCooldowns}
                             </div>
                           )}
                         </div>
@@ -1167,8 +1207,8 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
           ) : (
             <div className="text-center text-slate-400 py-8">
               <MapPin className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="font-medium">{mm(UI_LABELS.noPartnersYet as Parameters<typeof m>[0])}</p>
-              <p className="text-sm mt-1">{mm(UI_LABELS.buildRoadsToDiscover as Parameters<typeof m>[0])}</p>
+              <p className="font-medium">{UI_LABELS.noPartnersYet}</p>
+              <p className="text-sm mt-1">{UI_LABELS.buildRoadsToDiscover}</p>
             </div>
           )}
         </div>
@@ -1179,10 +1219,10 @@ export function TradePanel({ onVisitMunicipality }: TradePanelProps) {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0" />
-                    <span className="text-xs sm:text-sm text-slate-300 truncate">{mm(UI_LABELS.totalTradeIncome as Parameters<typeof m>[0])}</span>
+                    <span className="text-xs sm:text-sm text-slate-300 truncate">{UI_LABELS.totalTradeIncome}</span>
                   </div>
                   <div className="text-base sm:text-xl font-bold text-emerald-400 shrink-0">
-                    +{totalMonthlyIncome} CHF{mm(UI_LABELS.perDay as Parameters<typeof m>[0])}
+                    +{totalMonthlyIncome} CHF{UI_LABELS.perDay}
                   </div>
                 </div>
               </Card>

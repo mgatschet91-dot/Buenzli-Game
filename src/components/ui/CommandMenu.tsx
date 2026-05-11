@@ -33,16 +33,16 @@ interface MenuItem {
 }
 
 const MENU_CATEGORIES = [
-  { key: 'tools', label: msg('Tools') },
-  { key: 'zones', label: msg('Zones') },
-  { key: 'zoning', label: msg('Zoning') },
+  { key: 'tools', label: msg('Werkzeuge') },
+  { key: 'zones', label: msg('Zonen') },
+  { key: 'zoning', label: msg('Zonierung') },
   { key: 'services', label: msg('Services') },
   { key: 'parks', label: msg('Parks') },
-  { key: 'sports', label: msg('Sports') },
-  { key: 'waterfront', label: msg('Waterfront') },
+  { key: 'sports', label: msg('Sport') },
+  { key: 'waterfront', label: msg('Ufer') },
   { key: 'community', label: msg('Community') },
-  { key: 'utilities', label: msg('Utilities') },
-  { key: 'special', label: msg('Special') },
+  { key: 'utilities', label: msg('Versorgung') },
+  { key: 'special', label: msg('Speziell') },
   { key: 'verwaltung', label: msg('Verwaltung') },
   { key: 'panels', label: msg('Panels') },
 ] as const;
@@ -284,12 +284,12 @@ function buildMenuItems(): MenuItem[] {
 
   // Panels
   const panels: { panel: 'gemeinde' | 'statistics' | 'advisors' | 'settings' | 'inventory' | 'navigator'; name: unknown; description: unknown; keywords: string[] }[] = [
-    { panel: 'gemeinde', name: msg('Gemeinde'), description: msg('Manage municipality budget, taxes and administration'), keywords: ['gemeinde', 'budget', 'money', 'finance', 'tax', 'funding', 'verwaltung'] },
-    { panel: 'statistics', name: msg('Statistics'), description: msg('View city statistics and charts'), keywords: ['statistics', 'stats', 'charts', 'data', 'info'] },
-    { panel: 'advisors', name: msg('Advisors'), description: msg('Get advice from city advisors'), keywords: ['advisors', 'advice', 'help', 'tips'] },
-    { panel: 'settings', name: msg('Settings'), description: msg('Game settings and preferences'), keywords: ['settings', 'options', 'preferences', 'config'] },
-    { panel: 'inventory', name: msg('Inventory'), description: msg('Browse your global item inventory'), keywords: ['inventory', 'inventar', 'items', 'storage', 'habbo'] },
-    { panel: 'navigator', name: msg('Community Navigator'), description: msg('Browse public maps and rooms'), keywords: ['community', 'navigator', 'public', 'maps', 'rooms'] },
+    { panel: 'gemeinde', name: msg('Gemeinde'), description: msg('Gemeindehaushalt, Steuern und Verwaltung verwalten'), keywords: ['gemeinde', 'budget', 'money', 'finance', 'tax', 'funding', 'verwaltung'] },
+    { panel: 'statistics', name: msg('Statistiken'), description: msg('Stadtstatistiken und Diagramme anzeigen'), keywords: ['statistics', 'stats', 'charts', 'data', 'info'] },
+    { panel: 'advisors', name: msg('Stadtberater'), description: msg('Rat von Stadtberatern erhalten'), keywords: ['advisors', 'advice', 'help', 'tips'] },
+    { panel: 'settings', name: msg('Einstellungen'), description: msg('Spieleinstellungen und Präferenzen'), keywords: ['settings', 'options', 'preferences', 'config'] },
+    { panel: 'inventory', name: msg('Inventar'), description: msg('Dein globales Item-Inventar durchsuchen'), keywords: ['inventory', 'inventar', 'items', 'storage', 'habbo'] },
+    { panel: 'navigator', name: msg('Community-Navigator'), description: msg('Öffentliche Karten und Räume durchsuchen'), keywords: ['community', 'navigator', 'public', 'maps', 'rooms'] },
   ];
 
   panels.forEach(({ panel, name, description, keywords }) => {

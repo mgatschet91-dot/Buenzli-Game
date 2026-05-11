@@ -16,7 +16,7 @@ interface BaseAction {
 
 // Game actions that get synced via Supabase Realtime
 export type GameAction =
-  | (BaseAction & { type: 'place'; x: number; y: number; tool: MultiplayerTool })
+  | (BaseAction & { type: 'place'; x: number; y: number; tool: MultiplayerTool; bauzoneType?: import('@/games/isocity/types/zones').ZoneType })
   | (BaseAction & { type: 'placeBatch'; placements: Array<{ x: number; y: number; tool: MultiplayerTool }> })
   | (BaseAction & { type: 'bulldoze'; x: number; y: number })
   | (BaseAction & { type: 'setTaxRate'; rate: number })
@@ -32,7 +32,7 @@ export type GameAction =
   | (BaseAction & { type: 'tick'; tickData: TickData });
 
 // Action input types (without timestamp and playerId, which are added automatically)
-export type PlaceAction = { type: 'place'; x: number; y: number; tool: MultiplayerTool };
+export type PlaceAction = { type: 'place'; x: number; y: number; tool: MultiplayerTool; bauzoneType?: import('@/games/isocity/types/zones').ZoneType };
 export type PlaceBatchAction = { type: 'placeBatch'; placements: Array<{ x: number; y: number; tool: MultiplayerTool }> };
 export type BulldozeAction = { type: 'bulldoze'; x: number; y: number };
 export type SetTaxRateAction = { type: 'setTaxRate'; rate: number };

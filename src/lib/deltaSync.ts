@@ -141,7 +141,7 @@ export type DeltaAction =
     }
   | { type: 'bulldoze'; x: number; y: number; timestamp: number; playerId?: string }
   | { type: 'zone'; zone: 'residential' | 'commercial' | 'industrial' | 'none'; x: number; y: number; timestamp: number; playerId?: string }
-  | { type: 'bauzone'; x: number; y: number; enabled: boolean; timestamp: number; playerId?: string }
+  | { type: 'bauzone'; x: number; y: number; enabled: boolean; zoneType?: string; timestamp: number; playerId?: string }
   | { type: 'metadata_update'; x: number; y: number; metadata: Record<string, unknown>; timestamp: number; playerId?: string }
   | { type: 'stats_update'; timestamp: number; playerId?: string } & Partial<GameStatsData>;
 
@@ -149,7 +149,7 @@ export type DeltaActionInput =
   | { type: 'place'; tool: Tool; x: number; y: number; metadata?: { footprintWidth?: number; footprintHeight?: number; [key: string]: unknown } }
   | { type: 'bulldoze'; x: number; y: number }
   | { type: 'zone'; zone: 'residential' | 'commercial' | 'industrial' | 'none'; x: number; y: number }
-  | { type: 'bauzone'; x: number; y: number; enabled: boolean }
+  | { type: 'bauzone'; x: number; y: number; enabled: boolean; zoneType?: string }
   | { type: 'metadata_update'; x: number; y: number; metadata: Record<string, unknown> }
   | ({ type: 'stats_update' } & Partial<GameStatsData>);
 
@@ -240,6 +240,8 @@ export interface BuildingStateUpdate {
   constructionProgress?: number;
   constructed?: boolean;
   zoneCleared?: boolean;
+  footprintWidth?: number;
+  footprintHeight?: number;
 }
 
 export interface CriminalNpcState {
@@ -638,9 +640,21 @@ class DeltaQueue {
       });
 
       // Autoritative Server-Stats empfangen (Server bestimmt den Stand)
-      this.wsSocket.on('stats-authoritative', (stats: GameStatsData & { revision?: number; serverTimestamp?: number }) => {
+      this.wsSocket.on('stats-authoritative', (stats: GameStatsData & { revision?: number; serverTimestamp?: number; cantonal_investigation_until?: string | null; cantonal_investigation_since?: string | null; cantonal_investigation_stage?: number }) => {
         if (this.onStatsUpdate) {
           this.onStatsUpdate(stats);
+        }
+        // Kantonal-Felder an GemeindePanel weiterleiten (eigenes Stats-Objekt per CustomEvent)
+        if ('cantonal_investigation_stage' in stats || 'cantonal_investigation_until' in stats) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('cantonal-investigation-update', {
+              detail: {
+                cantonal_investigation_until: stats.cantonal_investigation_until,
+                cantonal_investigation_since: stats.cantonal_investigation_since,
+                cantonal_investigation_stage: stats.cantonal_investigation_stage,
+              },
+            }));
+          }
         }
       });
 
@@ -828,6 +842,13 @@ class DeltaQueue {
       // Bus-Lines-Updated: Buslinie erstellt/geloescht/geaendert
       this.wsSocket.on('bus-lines-updated', () => {
         window.dispatchEvent(new Event('bus-lines-updated'));
+      });
+
+      // building-moved: anderer Client hat ein Gebäude verschoben
+      this.wsSocket.on('building-moved', (payload: { fromX: number; fromY: number; toX: number; toY: number; flipped: boolean; buildingType: string; level: number; footprintWidth: number; footprintHeight: number }) => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('building-moved', { detail: payload }));
+        }
       });
 
       // Admin-Nachricht (system-notice)
@@ -1537,7 +1558,7 @@ class DeltaQueue {
     });
   }
 
-  sendMoveBuilding(fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean): Promise<{ success: boolean; error?: string }> {
+  sendMoveBuilding(fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean, buildingType?: string, level?: number, footprintWidth?: number, footprintHeight?: number): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       if (!this.wsSocket?.connected) {
         resolve({ success: false, error: 'not_connected' });
@@ -1546,7 +1567,7 @@ class DeltaQueue {
       const timeout = setTimeout(() => {
         resolve({ success: false, error: 'timeout' });
       }, 8000);
-      this.wsSocket.emit('move-building', { fromX, fromY, toX, toY, flipped: !!flipped }, (response: unknown) => {
+      this.wsSocket.emit('move-building', { fromX, fromY, toX, toY, flipped: !!flipped, buildingType, level, footprintWidth, footprintHeight }, (response: unknown) => {
         clearTimeout(timeout);
         resolve(response as { success: boolean; error?: string });
       });

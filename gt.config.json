@@ -6,7 +6,7 @@
     "fr",
     "it"
   ],
-  "defaultLocale": "en",
+  "defaultLocale": "de",
   "files": {
     "gt": {
       "output": "public/_gt/[locale].json"

@@ -3,8 +3,8 @@ import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from
 import { GameState, Tile, Building, ZoneType, BuildingType } from '@/types/game';
 
 // Short key mappings for maximum compression
-const ZONE_MAP: Record<ZoneType, number> = { 'none': 0, 'residential': 1, 'commercial': 2, 'industrial': 3 };
-const ZONE_REVERSE: Record<number, ZoneType> = { 0: 'none', 1: 'residential', 2: 'commercial', 3: 'industrial' };
+const ZONE_MAP: Record<ZoneType, number> = { 'none': 0, 'residential': 1, 'commercial': 2, 'industrial': 3, 'mixed': 4, 'nature': 5, 'infrastructure': 6 };
+const ZONE_REVERSE: Record<number, ZoneType> = { 0: 'none', 1: 'residential', 2: 'commercial', 3: 'industrial', 4: 'mixed', 5: 'nature', 6: 'infrastructure' };
 
 // Building types mapped to numbers for compression
 const BUILDING_TYPES: BuildingType[] = [

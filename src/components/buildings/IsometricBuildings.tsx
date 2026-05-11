@@ -40,6 +40,9 @@ export const IsometricTile: React.FC<{
     residential: 'rgba(76, 175, 80, 0.4)',
     commercial: 'rgba(33, 150, 243, 0.4)',
     industrial: 'rgba(255, 193, 7, 0.4)',
+    mixed: 'rgba(168, 85, 247, 0.4)',
+    nature: 'rgba(5, 150, 105, 0.4)',
+    infrastructure: 'rgba(180, 120, 40, 0.4)',
     none: 'transparent'
   };
   

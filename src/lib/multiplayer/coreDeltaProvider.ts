@@ -266,6 +266,14 @@ export class CoreDeltaProvider implements IMultiplayerProvider {
           // Sofortigen Server-Sync auslösen damit der korrekte Tile-Zustand wiederhergestellt wird
           deltaQueue.triggerStateSync();
         }
+        const hasWrongZone = rejected.some(r => r.reason === 'wrong_zone_type' || r.reason === 'outside_bauzone' || r.reason === 'insufficient_permission');
+        if (hasWrongZone && typeof window !== 'undefined') {
+          const first = rejected.find(r => r.reason === 'wrong_zone_type' || r.reason === 'outside_bauzone' || r.reason === 'insufficient_permission');
+          window.dispatchEvent(new CustomEvent('isocity-bauzone-rejected', {
+            detail: { reason: first?.reason, zoneType: (first as Record<string, unknown>)?.zoneType },
+          }));
+          deltaQueue.triggerStateSync();
+        }
       });
       deltaQueue.setOnConnectionStatusChange((connected, reason) => {
         if (this.destroyed) return;
@@ -587,6 +595,7 @@ export class CoreDeltaProvider implements IMultiplayerProvider {
           x: delta.x,
           y: delta.y,
           tool: delta.enabled ? 'bauzone' : 'bauzone_remove',
+          bauzoneType: (delta as { zoneType?: import('@/games/isocity/types/zones').ZoneType }).zoneType,
           playerId: delta.playerId || 'unknown',
           timestamp: delta.timestamp,
         };
@@ -610,9 +619,10 @@ export class CoreDeltaProvider implements IMultiplayerProvider {
     console.log('[CoreDeltaProvider] 📤 dispatchAction:', action.type);
     
     // Konvertiere GameAction zu Delta
-    if (action.type === 'place' && 'tool' in action && (action.tool === 'bauzone' || action.tool === 'bauzone_remove')) {
-      deltaQueue.push({ type: 'bauzone', x: action.x, y: action.y, enabled: action.tool === 'bauzone' });
-      emitProviderLog('action', `⚡ BAUZONE: ${action.tool === 'bauzone' ? 'SET' : 'REMOVE'} @ (${action.x}, ${action.y})`);
+    if (action.type === 'place' && 'tool' in action && (action.tool === 'bauzone_remove' || action.tool === 'bauzone' || (action.tool as string).startsWith('bauzone_'))) {
+      const enabled = action.tool !== 'bauzone_remove';
+      deltaQueue.push({ type: 'bauzone', x: action.x, y: action.y, enabled, zoneType: action.bauzoneType });
+      emitProviderLog('action', `⚡ BAUZONE: ${enabled ? 'SET' : 'REMOVE'} (${action.bauzoneType ?? 'mixed'}) @ (${action.x}, ${action.y})`);
     } else if (action.type === 'place' && 'tool' in action) {
       const zoneMap: Record<string, 'residential' | 'commercial' | 'industrial' | 'none'> = {
         'zone_residential': 'residential',

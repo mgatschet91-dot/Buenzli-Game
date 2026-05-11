@@ -801,7 +801,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const [placementFlipped, setPlacementFlipped] = useState(false);
   const placementFlippedRef = useRef(false);
   placementFlippedRef.current = placementFlipped;
-  const [movingBuilding, setMovingBuilding] = useState<{ fromX: number; fromY: number; buildingType: Tool; flipped: boolean } | null>(null);
+  const [movingBuilding, setMovingBuilding] = useState<{ fromX: number; fromY: number; buildingType: BuildingType; flipped: boolean; level: number } | null>(null);
   const movingBuildingRef = useRef(movingBuilding);
   movingBuildingRef.current = movingBuilding;
   const selectedTileRef = useRef(selectedTile);
@@ -3297,11 +3297,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         const bt = cellData.building.type;
         const nonMovable = ['empty', 'grass', 'water', 'road', 'rail', 'subway', 'autobahn', 'furni'];
         if (nonMovable.includes(bt)) return;
-        // Nur explizit platzierte Gebäude verschieben (haben TOOL_INFO-Eintrag)
-        if (!(bt in TOOL_INFO)) return;
-        const bType = bt as Tool;
-        setMovingBuilding({ fromX: tile.x, fromY: tile.y, buildingType: bType, flipped: placementFlippedRef.current });
-        setTool(bType);
+        const bType = bt as BuildingType;
+        const bLevel = cellData.building.level ?? 1;
+        setMovingBuilding({ fromX: tile.x, fromY: tile.y, buildingType: bType, flipped: placementFlippedRef.current, level: bLevel });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setTool(bType as any);
       }
       // ESC: Verschieben abbrechen
       if (e.key === 'Escape' && movingBuildingRef.current) {
@@ -4291,21 +4291,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   // Bumper
                   ctx.fillStyle = '#111827';
                   ctx.fillRect(-10 * scale, -4 * scale, 2.4 * scale, 8 * scale);
-                  // Orange violation dot if this exact slot has an unpaid Schwarzparker
-                  const carSlot = pv.slot;
-                  const slotViolation = (parkingViolationsRef?.current ?? []).some(
-                    (v) => v.tileX === tile.x + dx && v.tileY === tile.y + dy && v.slot === carSlot && v.status === 'unpaid'
-                  );
-                  if (slotViolation) {
-                    ctx.fillStyle = 'rgba(249,115,22,0.9)';
-                    ctx.beginPath();
-                    ctx.arc(6 * scale, -6 * scale, 3 * scale, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.fillStyle = '#fff';
-                    ctx.font = `bold ${5 * scale}px sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.fillText('!', 6 * scale, -4.5 * scale);
-                  }
                   ctx.restore();
                 }
               }
@@ -4962,9 +4947,18 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             ctx.setLineDash([]);
           }
 
-          // Draw Bauzone overlay (semi-transparent cyan tint + dashed border)
+          // Draw Bauzone overlay — colored by zone type
           if (tile.bauzone) {
-            ctx.fillStyle = 'rgba(0, 200, 220, 0.12)';
+            const bzColors: Record<string, { fill: string; stroke: string }> = {
+              residential:    { fill: 'rgba(34, 197, 94, 0.15)',  stroke: 'rgba(34, 197, 94, 0.7)' },
+              commercial:     { fill: 'rgba(59, 130, 246, 0.15)', stroke: 'rgba(59, 130, 246, 0.7)' },
+              industrial:     { fill: 'rgba(249, 115, 22, 0.15)', stroke: 'rgba(249, 115, 22, 0.7)' },
+              mixed:          { fill: 'rgba(168, 85, 247, 0.15)', stroke: 'rgba(168, 85, 247, 0.7)' },
+              nature:         { fill: 'rgba(5, 150, 105, 0.15)',  stroke: 'rgba(5, 150, 105, 0.7)' },
+              infrastructure: { fill: 'rgba(180, 120, 40, 0.15)', stroke: 'rgba(180, 120, 40, 0.7)' },
+            };
+            const bzColor = bzColors[tile.bauzone] ?? { fill: 'rgba(0, 200, 220, 0.12)', stroke: 'rgba(0, 200, 220, 0.6)' };
+            ctx.fillStyle = bzColor.fill;
             ctx.beginPath();
             ctx.moveTo(x + w / 2, y);
             ctx.lineTo(x + w, y + h / 2);
@@ -4973,7 +4967,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             ctx.closePath();
             ctx.fill();
             if (currentZoom >= 0.7) {
-              ctx.strokeStyle = 'rgba(0, 200, 220, 0.6)';
+              ctx.strokeStyle = bzColor.stroke;
               ctx.lineWidth = 1.5;
               ctx.setLineDash([6, 3]);
               ctx.stroke();
@@ -6042,10 +6036,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           });
           if (!hasUnbuiltTile) continue;
 
-          // Pruefen ob der GESAMTE Cluster Strom/Wasser/Strasse hat (mindestens 1 Tile)
+          // Pruefen ob der GESAMTE Cluster Strom/Wasser hat (mindestens 1 Tile)
           let clusterHasPower = false;
           let clusterHasWater = false;
-          let clusterHasRoad = false;
           // Globales Wasser: wenn genug produziert → alle versorgt
           if (_effectiveWaterProd > 0 && (_effectiveWaterCons <= 0 || _effectiveWaterProd >= _effectiveWaterCons)) {
             clusterHasWater = true;
@@ -6057,17 +6050,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                 clusterHasWater = true;
               }
             }
-            if (!clusterHasRoad) {
-              if (hasRoad(p.x - 1, p.y) || hasRoad(p.x + 1, p.y) ||
-                hasRoad(p.x, p.y - 1) || hasRoad(p.x, p.y + 1)) clusterHasRoad = true;
-            }
-            if (clusterHasPower && clusterHasWater && clusterHasRoad) break;
+            if (clusterHasPower && clusterHasWater) break;
           }
 
           const missing: string[] = [];
           if (!clusterHasPower) missing.push('power');
           if (!clusterHasWater) missing.push('water');
-          if (!clusterHasRoad) missing.push('road');
           if (missing.length === 0) continue;
 
           // Mittelpunkt des Clusters berechnen
@@ -6136,16 +6124,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
               ctx.lineTo(cx2, iy + iconSize * 0.1);
               ctx.closePath();
               ctx.fill();
-            } else if (svc === 'road') {
-              // Strasse (grau + weisse Streifen)
-              ctx.fillStyle = '#a1a1aa';
-              const rx = ix + iconSize * 0.2, ry = iy + iconSize * 0.15;
-              const rw = iconSize * 0.6, rh = iconSize * 0.7;
-              ctx.fillRect(rx, ry, rw, rh);
-              ctx.fillStyle = '#fafafa';
-              const sw = rw * 0.15;
-              ctx.fillRect(rx + rw / 2 - sw / 2, ry + rh * 0.1, sw, rh * 0.25);
-              ctx.fillRect(rx + rw / 2 - sw / 2, ry + rh * 0.55, sw, rh * 0.25);
             }
           }
         }
@@ -6339,10 +6317,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           const w = TILE_WIDTH;
           const h = TILE_HEIGHT;
 
-          // Create a minimal fake building for sprite lookup (normal state, not under construction)
+          // Create a minimal fake building for sprite lookup — use actual level when in move mode
           const fakeBuilding: Building = {
             type: buildingType,
-            level: 1,
+            level: movingBuilding ? movingBuilding.level : 1,
             population: 0,
             jobs: 0,
             powered: false,
@@ -6421,7 +6399,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             ctx.stroke();
             ctx.restore();
           } else if (hasTileSprite) {
-            const spriteSourceInfo = selectSpriteSource(buildingType, fakeBuilding, hoveredTile.x, hoveredTile.y, activePack);
+            // In move mode: use original position for deterministic variant selection (keeps same sprite)
+            const spriteSeedX = movingBuilding ? movingBuilding.fromX : hoveredTile.x;
+            const spriteSeedY = movingBuilding ? movingBuilding.fromY : hoveredTile.y;
+            const spriteSourceInfo = selectSpriteSource(buildingType, fakeBuilding, spriteSeedX, spriteSeedY, activePack);
             const filteredSpriteSheet = getCachedImage(spriteSourceInfo.source, true) || getCachedImage(spriteSourceInfo.source);
 
             if (filteredSpriteSheet) {
@@ -6596,7 +6577,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
     // Draw move-mode origin overlay (orange pulsing to show "being moved")
     if (movingBuilding) {
-      const size = getBuildingSize(movingBuilding.buildingType as BuildingType);
+      const size = getBuildingSize(movingBuilding.buildingType);
       for (let dx = 0; dx < size.width; dx++) {
         for (let dy = 0; dy < size.height; dy++) {
           const tx = movingBuilding.fromX + dx;
@@ -8951,8 +8932,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       })()}
 
       {/* Move-Modus UI — zeigt immer wenn aktiv, unabhängig von hoveredTile */}
-      {movingBuilding && selectedTool === movingBuilding.buildingType && (() => {
-        const moveName = TOOL_INFO[movingBuilding.buildingType]?.name ? m(TOOL_INFO[movingBuilding.buildingType].name) : movingBuilding.buildingType;
+      {movingBuilding && (() => {
+        const _moveToolInfo = (TOOL_INFO as Record<string, { name: string } | undefined>)[movingBuilding.buildingType];
+        const moveName = _moveToolInfo?.name ? m(_moveToolInfo.name) : movingBuilding.buildingType;
         return (
           <div
             className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 text-sm pointer-events-auto rounded-md border bg-orange-500/20 border-orange-400/60 text-orange-100"

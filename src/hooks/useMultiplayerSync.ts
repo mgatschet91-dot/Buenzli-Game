@@ -667,6 +667,33 @@ export function useMultiplayerSync() {
     };
   }, [multiplayer, game]);
 
+  // Bauzone rejection notifications
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { reason?: string; zoneType?: string } | undefined;
+      const zoneLabels: Record<string, string> = {
+        residential: 'Wohngebiet',
+        commercial: 'Gewerbegebiet',
+        industrial: 'Industriezone',
+        nature: 'Naturzone',
+        infrastructure: 'Infrastruktur (reserviert)',
+      };
+      if (detail?.reason === 'wrong_zone_type') {
+        const zoneLabel = detail.zoneType ? (zoneLabels[detail.zoneType] ?? detail.zoneType) : 'diese Zone';
+        const msg = detail.zoneType === 'infrastructure'
+          ? 'Diese Fläche ist vom Bürgermeister reserviert'
+          : `Hier ist nur ${zoneLabel} erlaubt`;
+        game.addNotification('Falscher Zonen-Typ', msg, '🚫');
+      } else if (detail?.reason === 'outside_bauzone') {
+        game.addNotification('Ausserhalb Bauzone', 'Baue nur innerhalb der markierten Bauzonen', '🚫');
+      } else if (detail?.reason === 'insufficient_permission') {
+        game.addNotification('Keine Berechtigung', 'Nur Bürgermeister und Verwaltung können Bauzonen bearbeiten', '🚫');
+      }
+    };
+    window.addEventListener('isocity-bauzone-rejected', handler);
+    return () => window.removeEventListener('isocity-bauzone-rejected', handler);
+  }, [game]);
+
   // Register callbacks for Partnership events (discover/connect cities)
   useEffect(() => {
     if (!multiplayer || multiplayer.connectionState !== 'connected') return;
@@ -764,23 +791,23 @@ export function useMultiplayerSync() {
     
     console.log('[useMultiplayerSync] ✅ PlaceCallback registriert, Backend:', backendType);
     
-    game.setPlaceCallback(({ x, y, tool }: { x: number; y: number; tool: Tool }) => {
+    game.setPlaceCallback(({ x, y, tool, bauzoneType }: { x: number; y: number; tool: Tool; bauzoneType?: import('@/types/game').ZoneType }) => {
       console.log('[useMultiplayerSync] 📍 PlaceCallback aufgerufen:', { x, y, tool });
-      
+
       if (tool === 'bulldoze') {
         // Bulldoze is sent immediately (not batched)
         flushPlacements(); // Flush any pending placements first
         multiplayer.dispatchAction({ type: 'bulldoze', x, y });
-        
+
         // Bei Supabase-Modus: Auch separat an Delta-Sync senden
         if (!isCoreDelta && deltaSyncInitializedRef.current) {
           deltaQueue.push({ type: 'bulldoze', x, y });
         }
-      } else if (tool === 'bauzone' || tool === 'bauzone_remove') {
+      } else if (tool === 'bauzone_remove' || tool === 'bauzone' || tool.startsWith('bauzone_')) {
         flushPlacements();
-        multiplayer.dispatchAction({ type: 'place', tool, x, y });
+        multiplayer.dispatchAction({ type: 'place', tool, x, y, bauzoneType });
         if (!isCoreDelta && deltaSyncInitializedRef.current) {
-          deltaQueue.push({ type: 'bauzone', x, y, enabled: tool === 'bauzone' });
+          deltaQueue.push({ type: 'bauzone', x, y, enabled: tool !== 'bauzone_remove', zoneType: bauzoneType });
         }
       } else if (tool !== 'select') {
         // Add to batch for Realtime

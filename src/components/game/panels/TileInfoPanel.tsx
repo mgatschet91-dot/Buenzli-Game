@@ -5,7 +5,7 @@ import { msg } from 'gt-next';
 import { useMessages } from 'gt-next';
 import { useGT } from 'gt-next/client';
 import { BusStationSection } from './BusStationSection';
-import { Tile, BuildingType, TOOL_INFO, Tool, BUILDING_STATS } from '@/types/game';
+import { Tile, BuildingType, TOOL_INFO, Tool, BUILDING_STATS, ZoneType } from '@/types/game';
 import { getCondition, getHasWerkhofNpc } from '@/lib/werkhofConditionStore';
 import { getBuildingPollution } from '@/lib/simulation';
 import { useItemDetails } from '@/lib/hooks/useItemDetails';
@@ -20,7 +20,8 @@ import { Tag, Check, X, Home, User, Loader2, Sparkles, UserPlus, UserMinus } fro
 import { useResidences } from '@/lib/hooks/useResidences';
 import { VillaPickerModal } from './VillaPickerModal';
 import { getMyAuthProfile } from '@/lib/api/bankingApi';
-import { getAuthToken } from '@/lib/api/coreApi';
+import { getAuthToken, getApiBaseUrl } from '@/lib/api/coreApi';
+import { ParkingKontrollePanel } from './ParkingKontrollePanel';
 import {
   buildCoatOfArmsSvg,
   createRandomCoatOfArmsPreset,
@@ -84,6 +85,9 @@ interface TileInfoPanelProps {
 }
 
 const RESIDENTIAL_TYPES = new Set(['house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high', 'cabin_house']);
+const RESIDENCE_PRICES: Record<string, number> = {
+  house_small: 8000, cabin_house: 8000, house_medium: 10000,
+};
 
 export function TileInfoPanel({
   tile,
@@ -109,7 +113,7 @@ export function TileInfoPanel({
   const m = useMessages();
   const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
   const gt = useGT();
-  const { state, upgradeServiceBuilding, repairAtTile, flipBuildingAtTile, placeAtTile, setTool, setBuildingLabel, setAutobahnDirection, parkedVehiclesRef, parkingConfigRef, parkingViolationsRef, emitSetParkingConfig } = useGame();
+  const { state, upgradeServiceBuilding, repairAtTile, flipBuildingAtTile, placeAtTile, setTool, setBuildingLabel, setAutobahnDirection, parkedVehiclesRef, parkingConfigRef, parkingViolationsRef, emitSetParkingConfig, municipalityRole } = useGame();
   const serverItemDetails = useItemDetails();
   
   // Residence state
@@ -169,6 +173,8 @@ export function TileInfoPanel({
 
   const [parkingCfg, setParkingCfg] = React.useState(getConfigForTile);
   const [cfgDirty, setCfgDirty] = React.useState(false);
+  const [showKontrolle, setShowKontrolle] = React.useState(false);
+  const [showVersorgung, setShowVersorgung] = React.useState(false);
 
   React.useEffect(() => {
     if (!isParking) return;
@@ -181,6 +187,70 @@ export function TileInfoPanel({
 
 
   const { claim: claimResidence, release: releaseResidence, upgradeVilla } = useResidences(municipalitySlug || null);
+
+  // Drag + Resize + localStorage
+  const STORAGE_KEY = 'tile-info-panel-layout';
+  const getStoredLayout = () => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
+  };
+  const stored = !isMobile ? getStoredLayout() : null;
+  const DEFAULT_Y = 160;
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number }>(
+    stored?.x != null ? { x: stored.x, y: Math.max(64, stored.y) } : { x: window.innerWidth - 304, y: DEFAULT_Y }
+  );
+  const [panelSize, setPanelSize] = useState<{ w: number; h: number }>(
+    stored?.w != null ? { w: stored.w, h: stored.h } : { w: 288, h: 0 }
+  );
+  const dragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const resizing = useRef(false);
+  const resizeStart = useRef({ mx: 0, my: 0, w: 288, h: 0 });
+
+  const saveLayout = useCallback((pos: { x: number; y: number }, size: { w: number; h: number }) => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...pos, ...size })); } catch {}
+  }, []);
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return;
+    dragging.current = true;
+    dragOffset.current = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      const nx = Math.max(8, Math.min(window.innerWidth - panelSize.w - 8, ev.clientX - dragOffset.current.x));
+      const ny = Math.max(64, Math.min(window.innerHeight - 100, ev.clientY - dragOffset.current.y));
+      setPanelPos({ x: nx, y: ny });
+    };
+    const onUp = () => {
+      dragging.current = false;
+      setPanelPos(p => { saveLayout(p, panelSize); return p; });
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [isMobile, panelPos, panelSize, saveLayout]);
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return;
+    e.stopPropagation();
+    resizing.current = true;
+    resizeStart.current = { mx: e.clientX, my: e.clientY, w: panelSize.w, h: panelSize.h };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const nw = Math.max(240, Math.min(520, resizeStart.current.w + ev.clientX - resizeStart.current.mx));
+      const nh = Math.max(0, resizeStart.current.h + ev.clientY - resizeStart.current.my);
+      setPanelSize({ w: nw, h: nh });
+    };
+    const onUp = () => {
+      resizing.current = false;
+      setPanelSize(s => { saveLayout(panelPos, s); return s; });
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [isMobile, panelPos, panelSize, saveLayout]);
+
   const [residenceLoading, setResidenceLoading] = useState(false);
   const [residenceMsg, setResidenceMsg] = useState('');
   const myUserId = typeof window !== 'undefined' ? Number(localStorage.getItem('isocity_user_id') || 0) : 0;
@@ -389,6 +459,7 @@ export function TileInfoPanel({
     try {
       await claimResidence(x, y, currentRoomCode);
       setResidenceMsg(mm(UI_LABELS.residenceClaimed));
+      window.dispatchEvent(new CustomEvent('player-residences-updated'));
     } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : mm(UI_LABELS.error)); }
     finally { setResidenceLoading(false); }
   }
@@ -398,6 +469,7 @@ export function TileInfoPanel({
     try {
       await releaseResidence();
       setResidenceMsg(mm(UI_LABELS.residenceReleased));
+      window.dispatchEvent(new CustomEvent('player-residences-updated'));
     } catch (e: unknown) { setResidenceMsg(e instanceof Error ? e.message : mm(UI_LABELS.error)); }
     finally { setResidenceLoading(false); }
   }
@@ -611,17 +683,35 @@ export function TileInfoPanel({
 
   return (
     <>
-    <Card
-      className={`${isMobile ? 'fixed left-0 right-0 w-full rounded-none border-x-0 border-t border-b z-30' : 'absolute top-4 right-4 w-72 z-50'}${isLandmark ? ' border-amber-500/50 shadow-lg shadow-amber-500/10' : ''}`}
-      style={isMobile ? { top: 'calc(72px + env(safe-area-inset-top, 0px))' } : undefined}
-      onClick={handleCardClick}
-      onMouseDownCapture={blockPointerToGrid}
-      onPointerDownCapture={blockPointerToGrid}
-      onTouchStartCapture={blockPointerToGrid}
+    <div
+      className={isMobile ? '' : 'fixed z-50'}
+      style={isMobile ? undefined : {
+        left: panelPos.x,
+        top: panelPos.y,
+        width: panelSize.w,
+        height: panelSize.h > 0 ? panelSize.h : undefined,
+      }}
     >
-      <CardHeader className={`pb-2 flex flex-row items-center justify-between${isLandmark ? ' border-b border-amber-500/20' : ''}`}>
+    <Card
+      className={`${isMobile ? 'fixed left-0 right-0 w-full rounded-none border-x-0 border-t border-b z-30' : 'relative w-full rounded-xl border-white/10 bg-[hsl(220,20%,9%)] shadow-xl shadow-black/50 overflow-hidden'}${isLandmark ? ' border-amber-500/50 shadow-amber-500/10' : ''}`}
+      style={isMobile
+        ? { top: 'calc(72px + env(safe-area-inset-top, 0px))' }
+        : {
+            maxHeight: panelSize.h > 0 ? panelSize.h : 'calc(100vh - 80px)',
+            overflowY: 'auto',
+            scrollbarWidth: 'none',
+          }}
+      onClick={handleCardClick}
+      onMouseDown={blockPointerToGrid}
+      onPointerDown={blockPointerToGrid}
+      onTouchStart={blockPointerToGrid}
+    >
+      <CardHeader
+        className={`pb-2 flex flex-row items-center justify-between border-b border-white/5 sticky top-0 z-10 bg-[hsl(220,20%,9%)]${isLandmark ? ' border-amber-500/20' : ''} ${isMobile ? '' : 'cursor-grab active:cursor-grabbing select-none'}`}
+        onMouseDown={isMobile ? undefined : onDragStart}
+      >
         <CardTitle className="text-sm font-sans">Info</CardTitle>
-        <Button variant="ghost" size="icon-sm" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} onMouseDown={e => e.stopPropagation()}>
           <CloseIcon size={14} />
         </Button>
       </CardHeader>
@@ -669,18 +759,18 @@ export function TileInfoPanel({
       )}
 
       <CardContent className={`space-y-3 text-sm${isLandmark ? ' pt-3' : ''}`}>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Building</span>
-          <span className="capitalize">{TOOL_INFO[tile.building.type as keyof typeof TOOL_INFO]?.name ?? tile.building.type.replace(/_/g, ' ')}</span>
+        <div className="flex justify-between items-center">
+          <span className="text-muted-foreground text-xs uppercase tracking-wider">Gebäude</span>
+          <span className="font-semibold text-white">{TOOL_INFO[tile.building.type as keyof typeof TOOL_INFO]?.name ?? tile.building.type.replace(/_/g, ' ')}</span>
         </div>
         
         {/* Label-Sektion entfernt — Label-Werkzeug existiert bereits separat */}
 
-        {/* Residence section for residential buildings */}
-        {isResidential && (isMansion || residence) && (
+        {/* Residence section only when someone actually lives here */}
+        {!!residence && !isParking && tile.building.constructionProgress >= 100 && !tile.building.abandoned && (
           <>
             <Separator />
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">🏠 Bewohner</div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><span>🏠</span> Bewohner</div>
             {residence ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/10 px-2.5 py-2">
@@ -724,7 +814,7 @@ export function TileInfoPanel({
                   <div className="mt-2 pt-2 border-t border-white/10">
                     <div className="flex items-center gap-1.5 mb-2">
                       <span className="text-base">🎉</span>
-                      <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Mansion Party</span>
+                      <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Villa Party</span>
                     </div>
 
                     {/* ZUSTAND: Kein Countdown, keine aktive Party → Idle */}
@@ -973,6 +1063,21 @@ export function TileInfoPanel({
             ) : (
               <div className="space-y-1.5">
                 <div className="text-xs text-slate-500">Noch niemand wohnt hier.</div>
+                {tile.zone === 'none' && RESIDENCE_PRICES[tile.building.type as string] !== undefined && (() => {
+                  const price = RESIDENCE_PRICES[tile.building.type as string];
+                  return (
+                    <Button
+                      size="sm"
+                      className="w-full h-8 text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold"
+                      onClick={handleClaim}
+                      disabled={residenceLoading}
+                    >
+                      {residenceLoading
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : `🏠 Kaufen — CHF ${price.toLocaleString('de-CH')}`}
+                    </Button>
+                  );
+                })()}
               </div>
             )}
             {residenceMsg && (
@@ -1145,20 +1250,32 @@ export function TileInfoPanel({
         
         {!isNatureTile && (
         <>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Zone</span>
-          <Badge variant={
-            tile.zone === 'residential' ? 'default' :
-            tile.zone === 'commercial' ? 'secondary' :
-            tile.zone === 'industrial' ? 'outline' : 'secondary'
-          } className={
-            tile.zone === 'residential' ? 'bg-green-500/20 text-green-400' :
-            tile.zone === 'commercial' ? 'bg-blue-500/20 text-blue-400' :
-            tile.zone === 'industrial' ? 'bg-amber-500/20 text-amber-400' : ''
-          }>
-            {tile.zone === 'none' ? 'Unzoned' : tile.zone}
-          </Badge>
-        </div>
+        {(() => {
+          const bz = tile.bauzone;
+          const z  = tile.zone;
+          const bzMap: Record<string, { label: string; cls: string }> = {
+            residential:    { label: 'Wohngebiet',    cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
+            commercial:     { label: 'Gewerbe',       cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+            industrial:     { label: 'Industrie',     cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+            mixed:          { label: 'Mischzone',     cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+            nature:         { label: 'Naturzone',     cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+            infrastructure: { label: 'Infrastruktur', cls: 'bg-amber-600/20 text-amber-500 border-amber-600/30' },
+          };
+          const entry = bz ? bzMap[bz] : (
+            z === 'residential' ? bzMap.residential :
+            z === 'commercial'  ? bzMap.commercial :
+            z === 'industrial'  ? bzMap.industrial : null
+          );
+          return (
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground text-xs uppercase tracking-wider">Zone</span>
+              <Badge className={entry?.cls ?? 'bg-slate-700/40 text-slate-400 border-slate-600/30'}>
+                {entry?.label ?? 'Keine Zone'}
+              </Badge>
+            </div>
+          );
+        })()}
+
         {!isMansion && !isStandaloneBuilding && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Level</span>
@@ -1311,9 +1428,26 @@ export function TileInfoPanel({
           </div>
         )}
 
+        {/* ── Parkraum-Kontrolle ─────────────────────────────────────────── */}
+        {isParking && (
+          <button
+            onClick={() => {
+              const live = (parkedVehiclesRef?.current ?? []).filter(v =>
+                Number(v.tileX) >= tile.x && Number(v.tileX) < tile.x + parkingSize &&
+                Number(v.tileY) >= tile.y && Number(v.tileY) < tile.y + parkingSize
+              );
+              if (live.length > 0) setShowKontrolle(true);
+            }}
+            className="w-full rounded-lg border border-orange-700/50 bg-orange-900/20 hover:bg-orange-900/40 text-orange-300 text-sm font-semibold py-2 flex items-center justify-center gap-2 transition-colors"
+          >
+            <span>🚔</span> Parkplatz kontrollieren
+            {parkingInfo && parkingInfo.occupied > 0 ? ` (${parkingInfo.occupied} Fahrzeuge)` : ''}
+          </button>
+        )}
+
         {!isParking && (
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Population</span>
+          <span className="text-muted-foreground">Einwohner</span>
           <span>{isMansion ? 1 + tenants.length : tile.building.population}</span>
         </div>
         )}
@@ -1383,6 +1517,57 @@ export function TileInfoPanel({
         })()}
         </>
         )}
+
+        {/* Bauzone — nur anzeigen wenn eine Zone gesetzt ist, auch auf leeren Grids */}
+        {tile.bauzone && (() => {
+          const canManage = municipalityRole === 'owner' || municipalityRole === 'council';
+          const bzLabels: Record<string, { label: string; color: string; dot: string }> = {
+            residential:    { label: 'Wohngebiet',    color: 'text-green-400',  dot: 'bg-green-500' },
+            commercial:     { label: 'Gewerbegebiet', color: 'text-blue-400',   dot: 'bg-blue-500' },
+            industrial:     { label: 'Industriezone', color: 'text-orange-400', dot: 'bg-orange-500' },
+            mixed:          { label: 'Mischzone',     color: 'text-purple-400', dot: 'bg-purple-500' },
+            nature:         { label: 'Naturzone',     color: 'text-emerald-400',dot: 'bg-emerald-700' },
+            infrastructure: { label: 'Infrastruktur', color: 'text-amber-600',  dot: 'bg-amber-700' },
+          };
+          const current = bzLabels[tile.bauzone];
+          const bzTools: Array<{ type: ZoneType; tool: Tool; dot: string }> = [
+            { type: 'residential',    tool: 'bauzone_residential',    dot: 'bg-green-500' },
+            { type: 'commercial',     tool: 'bauzone_commercial',     dot: 'bg-blue-500' },
+            { type: 'industrial',     tool: 'bauzone_industrial',     dot: 'bg-orange-500' },
+            { type: 'mixed',          tool: 'bauzone_mixed',          dot: 'bg-purple-500' },
+            { type: 'infrastructure', tool: 'bauzone_infrastructure',  dot: 'bg-amber-700' },
+          ];
+          return (
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-muted-foreground shrink-0">Bauzone</span>
+              <div className="flex flex-col items-end gap-1">
+                {current && (
+                  <span className={`text-xs font-medium flex items-center gap-1 ${current.color}`}>
+                    <span className={`w-2 h-2 rounded-full ${current.dot}`} />
+                    {current.label}
+                  </span>
+                )}
+                {canManage && (
+                  <div className="flex gap-1 flex-wrap justify-end">
+                    {bzTools.map(({ type, tool, dot }) => (
+                      <button
+                        key={type}
+                        title={bzLabels[type]?.label}
+                        onClick={() => placeAtTile(tile.x, tile.y, false, tool)}
+                        className={`w-5 h-5 rounded-sm border-2 transition-all hover:scale-110 ${dot} ${tile.bauzone === type ? 'border-white' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                      />
+                    ))}
+                    <button
+                      title="Bauzone entfernen"
+                      onClick={() => placeAtTile(tile.x, tile.y, false, 'bauzone_remove')}
+                      className="w-5 h-5 rounded-sm border-2 border-transparent bg-slate-600 hover:bg-red-600 hover:scale-110 transition-all flex items-center justify-center text-[9px] text-white font-bold"
+                    >✕</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {!isNatureTile && (
         <>
@@ -1828,7 +2013,7 @@ export function TileInfoPanel({
         })()}
         <div className="flex justify-between">
           <span className="text-muted-foreground">Bodenwert</span>
-          <span>${tile.landValue}</span>
+          <span>CHF {tile.landValue}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Verschmutzung</span>
@@ -1838,7 +2023,7 @@ export function TileInfoPanel({
         </div>
         {(tile.elevation ?? 0) > 0 && (
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Elevation</span>
+            <span className="text-muted-foreground">Höhe</span>
             <Badge variant="outline" className="bg-amber-500/20 text-amber-400">
               {tile.elevation! <= 2 ? `⛰ ${tile.elevation}` : tile.elevation! <= 4 ? `🏔 ${tile.elevation}` : `🗻 ${tile.elevation}`}
             </Badge>
@@ -1940,7 +2125,7 @@ export function TileInfoPanel({
                     size="sm"
                     variant="outline"
                   >
-                    Arbeiter hinzufügen (${workerCost})
+                    Arbeiter hinzufügen (CHF {workerCost})
                   </Button>
                   {!canAffordWorker && (
                     <p className="text-[10px] text-muted-foreground text-center">Nicht genug Geld</p>
@@ -1957,26 +2142,38 @@ export function TileInfoPanel({
         {!isNatureTile && (
         <>
         <Separator />
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Service Coverage</div>
-
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Police</span>
-            <span>{Math.round(services.police[y][x])}%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Fire</span>
-            <span>{Math.round(services.fire[y][x])}%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Health</span>
-            <span>{Math.round(services.health[y][x])}%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Education</span>
-            <span>{Math.round(services.education[y][x])}%</span>
-          </div>
+        <button
+          onClick={() => setShowVersorgung(v => !v)}
+          className="w-full flex items-center justify-between group"
+        >
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Versorgung</span>
+          <svg
+            className={`w-3 h-3 text-muted-foreground/50 group-hover:text-muted-foreground transition-transform ${showVersorgung ? 'rotate-180' : ''}`}
+            viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"
+          >
+            <polyline points="2,4 6,8 10,4" />
+          </svg>
+        </button>
+        {showVersorgung && (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-2">
+          {([
+            { label: 'Polizei',    val: Math.round(services.police[y][x]),    color: 'bg-blue-500' },
+            { label: 'Feuerwehr',  val: Math.round(services.fire[y][x]),      color: 'bg-orange-500' },
+            { label: 'Gesundheit', val: Math.round(services.health[y][x]),    color: 'bg-green-500' },
+            { label: 'Bildung',    val: Math.round(services.education[y][x]), color: 'bg-purple-500' },
+          ] as const).map(({ label, val, color }) => (
+            <div key={label} className="space-y-1">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-400">{label}</span>
+                <span className={val >= 80 ? 'text-green-400' : val >= 50 ? 'text-yellow-400' : 'text-red-400'}>{val}%</span>
+              </div>
+              <div className="h-1 w-full rounded-full bg-slate-700/60 overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%`, opacity: 0.8 }} />
+              </div>
+            </div>
+          ))}
         </div>
+        )}
         </>
         )}
         
@@ -2094,6 +2291,24 @@ export function TileInfoPanel({
         )}
       </CardContent>
     </Card>
+    {!isMobile && (
+      <div
+        onMouseDown={onResizeStart}
+        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize opacity-30 hover:opacity-70 transition-opacity"
+        style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.4) 50%)' }}
+      />
+    )}
+    </div>
+
+    {showKontrolle && (
+      <ParkingKontrollePanel
+        tileX={tile.x}
+        tileY={tile.y}
+        parkingSize={parkingSize}
+        onClose={() => setShowKontrolle(false)}
+        parkedVehiclesRef={parkedVehiclesRef}
+      />
+    )}
 
     {showVillaPicker && municipalitySlug && (
       <VillaPickerModal

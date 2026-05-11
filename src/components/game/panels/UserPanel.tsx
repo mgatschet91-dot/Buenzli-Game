@@ -596,11 +596,9 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
           <button className={`${TAB_BTN} flex items-center gap-1.5 ${tab === 'badges' ? ACTIVE : INACTIVE}`} onClick={() => setTab('badges')}>
             <Award className="w-3.5 h-3.5" />{mm(UI_LABELS.tabBadges)}
           </button>
-          {municipalitySlug && (
-            <button className={`${TAB_BTN} flex items-center gap-1.5 ${tab === 'villa' ? ACTIVE : INACTIVE}`} onClick={() => setTab('villa')}>
-              <Home className="w-3.5 h-3.5" />{mm(UI_LABELS.tabVilla)}
-            </button>
-          )}
+          <button className={`${TAB_BTN} flex items-center gap-1.5 ${tab === 'villa' ? ACTIVE : INACTIVE}`} onClick={() => setTab('villa')}>
+            <Home className="w-3.5 h-3.5" />{mm(UI_LABELS.tabVilla)}
+          </button>
         </div>
 
         {/* Tab content */}
@@ -766,13 +764,17 @@ export function UserPanel({ onOpenSettings, onOpenReports, onOpenAdvisors, onLog
             <VillaTab
               municipalitySlug={municipalitySlug ?? null}
               userRank={rank}
-              municipalityRole={municipalityRole}
-              onStartPlacement={(row, col) => { setActivePanel('none'); startResidencePlacement(row, col); }}
+              municipalityRole={municipalityRole || ''}
+              onStartPlacement={(variantRow, variantCol) => {
+                startResidencePlacement(variantRow, variantCol);
+                setActivePanel('none');
+              }}
               purchase={villaPurchase}
               loadingPurchase={villaPurchaseLoading}
               onReloadPurchase={loadVillaPurchase}
             />
           )}
+
         </div>
       </DialogContent>
     </Dialog>

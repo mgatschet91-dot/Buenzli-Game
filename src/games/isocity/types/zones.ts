@@ -2,4 +2,4 @@
  * IsoCity Zone Types
  */
 
-export type ZoneType = 'none' | 'residential' | 'commercial' | 'industrial';
+export type ZoneType = 'none' | 'residential' | 'commercial' | 'industrial' | 'mixed' | 'nature' | 'infrastructure';

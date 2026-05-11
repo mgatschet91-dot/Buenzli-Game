@@ -248,7 +248,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
           isOpen && 'bg-slate-700/50',
           className
         )}
-        aria-label="Achievements"
+        aria-label="Erfolge"
       >
         <Trophy className={cn('w-5 h-5 transition-colors', claimableCount > 0 ? 'text-amber-400' : 'text-slate-400')} />
         {claimableCount > 0 && (
@@ -267,7 +267,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 bg-slate-800/50">
             <div className="flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-400" />
-              <span className="font-medium text-white text-sm">Achievements</span>
+              <span className="font-medium text-white text-sm">Erfolge</span>
               <span className="text-xs text-slate-400">({entries.length})</span>
             </div>
             <button
@@ -282,7 +282,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
             {isLoading ? (
               <div className="flex items-center justify-center gap-2 py-12 text-slate-300 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Lade Achievements...
+                Lade Erfolge...
               </div>
             ) : error ? (
               <div className="px-4 py-6 text-sm text-red-300">
@@ -294,7 +294,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
                 </div>
               </div>
             ) : entries.length <= 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-slate-400">Noch keine Achievements vorhanden.</div>
+              <div className="px-4 py-10 text-center text-sm text-slate-400">Noch keine Erfolge vorhanden.</div>
             ) : (
               <div className="divide-y divide-slate-700/50">
                 {entries.map((entry) => {
@@ -328,7 +328,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
 
                           <div className="mt-2 flex items-center justify-between">
                             <div className="text-[10px] text-amber-300">
-                              Reward: +{entry.reward_money.toLocaleString()} CHF, +{entry.reward_xp} XP
+                              Belohnung: +{entry.reward_money.toLocaleString()} CHF, +{entry.reward_xp} XP
                             </div>
                             {entry.achieved && !entry.claimed ? (
                               <Button
@@ -337,7 +337,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
                                 onClick={() => claimOne(entry.code)}
                                 disabled={isClaiming}
                               >
-                                {isClaiming ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Claim'}
+                                {isClaiming ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Einlösen'}
                               </Button>
                             ) : null}
                           </div>

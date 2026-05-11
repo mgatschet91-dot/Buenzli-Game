@@ -64,6 +64,7 @@ const UI_LABELS = {
   ledgerWerkhofRepair:     msg('🔧 Stadtpatrouille Reparatur'),
   ledgerParkingFee:        msg('🅿️ Parkgebühren'),
   ledgerParkingFine:       msg('🚔 Parkbusse (Gemeinde)'),
+  ledgerParkingFineManual: msg('🚔 Manuelle Kontrolle'),
   ledgerIncome:            msg('Gemeindeeinnahmen'),
   ledgerRepairCost:        msg('Reparaturkosten'),
   ledgerExpandCity:        msg('Stadterweiterung'),
@@ -98,7 +99,7 @@ import {
 import { TOOL_INFO } from '@/games/isocity/types/game';
 import {
   fetchVerwaltungMeldungen, beauftragen, selbstBeheben, notfallreparatur, kaufeSchutzschild,
-  externalResponse, polizeiSchicken,
+  externalResponse, polizeiSchicken, resolveCantonalInvestigation,
   type VerwaltungEvent, type VerwaltungCompany, type MunicipalityStats, type EventStatus,
 } from '@/lib/api/verwaltungsApi';
 import {
@@ -397,6 +398,7 @@ const LEDGER_TYPE_LABEL_KEYS: Record<string, { labelKey: keyof typeof UI_LABELS;
   werkhof_repair:        { labelKey: 'ledgerWerkhofRepair', color: 'text-amber-400' },
   parking_fee:           { labelKey: 'ledgerParkingFee', color: 'text-emerald-400' },
   parking_fine:          { labelKey: 'ledgerParkingFine', color: 'text-emerald-400' },
+  parking_fine_manual:   { labelKey: 'ledgerParkingFineManual', color: 'text-emerald-400' },
   income:                { labelKey: 'ledgerIncome', color: 'text-emerald-400' },
   repair_cost:           { labelKey: 'ledgerRepairCost', color: 'text-red-400' },
   expand_city:           { labelKey: 'ledgerExpandCity', color: 'text-red-400' },
@@ -406,12 +408,13 @@ const LEDGER_TYPE_LABEL_KEYS: Record<string, { labelKey: keyof typeof UI_LABELS;
 
 // ── Meldungen (Verwaltung) ─────────────────────────────────
 
-type StatusTab = 'offen' | 'extern' | 'in_bearbeitung' | 'erledigt';
+type StatusTab = 'offen' | 'extern' | 'in_bearbeitung' | 'abgelaufen' | 'erledigt';
 const STATUS_TAB_MAP: Record<StatusTab, string> = {
   offen: 'reported',
   extern: 'external_reported,disputed',
   in_bearbeitung: 'investigating,assigned',
-  erledigt: 'resolved,expired,failed,false_alarm',
+  abgelaufen: 'expired',
+  erledigt: 'resolved,failed,false_alarm',
 };
 
 function meldungStatusLabel(s: EventStatus | string, mm: (key: Parameters<ReturnType<typeof useMessages>>[0]) => string): string {
@@ -485,6 +488,7 @@ function MeldungenContent() {
   const [actionLoading, setActionLoading] = useState(false);
   const [shieldLoading, setShieldLoading] = useState<number | null>(null);
   const [externCount, setExternCount] = useState(0);
+  const [abgelaufenCount, setAbgelaufenCount] = useState(0);
 
   const loadData = useCallback(async (statusFilter: string) => {
     try {
@@ -503,6 +507,26 @@ function MeldungenContent() {
 
   useEffect(() => { loadData(STATUS_TAB_MAP[tab]); }, [tab, loadData]);
   useEffect(() => { fetchVerwaltungMeldungen('external_reported,disputed').then(d => setExternCount(d.events.length)).catch(() => {}); }, []);
+  useEffect(() => { fetchVerwaltungMeldungen('expired').then(d => setAbgelaufenCount(d.events.length)).catch(() => {}); }, []);
+
+  // Echtzeit-Update der Kantonal-Felder via Socket-Broadcast
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        cantonal_investigation_until?: string | null;
+        cantonal_investigation_since?: string | null;
+        cantonal_investigation_stage?: number;
+      };
+      setStats(prev => prev ? {
+        ...prev,
+        ...(detail.cantonal_investigation_until !== undefined ? { cantonal_investigation_until: detail.cantonal_investigation_until } : {}),
+        ...(detail.cantonal_investigation_since !== undefined ? { cantonal_investigation_since: detail.cantonal_investigation_since } : {}),
+        ...(detail.cantonal_investigation_stage !== undefined ? { cantonal_investigation_stage: detail.cantonal_investigation_stage as 0 | 1 | 2 | 3 } : {}),
+      } : prev);
+    };
+    window.addEventListener('cantonal-investigation-update', handler);
+    return () => window.removeEventListener('cantonal-investigation-update', handler);
+  }, []);
 
   const handleBeauftragen = async (eventId: number, companyId: number) => {
     try {
@@ -531,6 +555,7 @@ function MeldungenContent() {
       setSuccess(result.message);
       setSelectedEvent(null);
       await loadData(STATUS_TAB_MAP[tab]);
+      fetchVerwaltungMeldungen('expired').then(d => setAbgelaufenCount(d.events.length)).catch(() => {});
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler bei Notfallreparatur'); } finally { setActionLoading(false); }
   };
 
@@ -609,13 +634,58 @@ function MeldungenContent() {
         </div>
       )}
 
-      {/* Kantonale Untersuchung */}
-      {stats?.cantonal_investigation_until && new Date(stats.cantonal_investigation_until) > new Date() && (
-        <div className="p-2.5 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-xs">
-          <div className="flex items-center gap-2 font-bold mb-1"><Gavel className="w-4 h-4" /> Kantonale Untersuchung aktiv!</div>
-          <p>Event-Rate verdoppelt, Reputation sinkt. Endet in {timeRemaining(stats.cantonal_investigation_until, mm)}.</p>
-        </div>
-      )}
+      {/* Kantonale Untersuchung — 3 Stufen */}
+      {stats?.cantonal_investigation_until && new Date(stats.cantonal_investigation_until) > new Date() && (() => {
+        const stage = (stats.cantonal_investigation_stage || 1) as 1 | 2 | 3;
+        const STAGE_CONFIG = {
+          1: { label: 'Stufe 1 — Aktiv',      border: 'border-yellow-500/40', bg: 'bg-yellow-500/10', text: 'text-yellow-300', desc: 'Event-Rate x2, -1 Transp./-1 Attr. pro Stunde.' },
+          2: { label: 'Stufe 2 — Verschärft', border: 'border-orange-500/40', bg: 'bg-orange-500/10', text: 'text-orange-300', desc: 'Event-Rate x3, -2 Transp./-1 Attr./-1 Sicherheit pro Stunde.' },
+          3: { label: 'Stufe 3 — Kritisch',   border: 'border-red-500/40',    bg: 'bg-red-500/10',    text: 'text-red-300',    desc: 'Event-Rate x3, -3/-2/-2 pro Stunde + CHF 2000/Tag Busse!' },
+        } as const;
+        const RESOLUTION_COSTS = { 1: 5000, 2: 10000, 3: 20000 } as const;
+        const cfg = STAGE_CONFIG[stage];
+        const cost = RESOLUTION_COSTS[stage];
+        const canResolve = (stats.transparency ?? 0) >= 30 && (stats.treasury ?? 0) >= cost;
+
+        const handleResolve = async () => {
+          if (!window.confirm(`Untersuchung für CHF ${cost.toLocaleString('de-CH')} beilegen?`)) return;
+          setActionLoading(true);
+          try {
+            const res = await resolveCantonalInvestigation();
+            if (!res.ok) throw new Error(res.error || 'Fehler');
+            setSuccess(res.data?.message || 'Untersuchung beigelegt!');
+            await loadData(STATUS_TAB_MAP[tab]);
+          } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Fehler beim Beilegen');
+          } finally {
+            setActionLoading(false);
+          }
+        };
+
+        return (
+          <div className={`p-2.5 rounded-lg border ${cfg.border} ${cfg.bg} ${cfg.text} text-xs`}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 font-bold"><Gavel className="w-4 h-4" /> Kantonale Untersuchung — {cfg.label}</div>
+            </div>
+            <p className="mb-1.5">{cfg.desc}</p>
+            <p className="text-[10px] opacity-70 mb-2">Endet in {timeRemaining(stats.cantonal_investigation_until, mm)}.</p>
+            <button
+              onClick={handleResolve}
+              disabled={!canResolve || actionLoading}
+              className="w-full py-1 px-2 rounded text-[10px] font-medium bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed border border-white/20 transition-colors"
+            >
+              {actionLoading ? '...' : `Beilegen — CHF ${cost.toLocaleString('de-CH')}`}
+            </button>
+            {!canResolve && (
+              <p className="text-[10px] opacity-60 mt-1 text-center">
+                {(stats.transparency ?? 0) < 30
+                  ? `⚠ Transparenz zu niedrig (${stats.transparency}/100, min. 30)`
+                  : `⚠ Kasse zu leer (${cost.toLocaleString('de-CH')} CHF nötig)`}
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Schutzschild */}
       {stats && (() => {
@@ -687,11 +757,15 @@ function MeldungenContent() {
             <TabsTrigger value="in_bearbeitung" className="flex-1 data-[state=active]:bg-slate-700 data-[state=active]:text-white text-xs">
               <Wrench className="w-3.5 h-3.5 mr-1" />Arbeit
             </TabsTrigger>
+            <TabsTrigger value="abgelaufen" className="flex-1 data-[state=active]:bg-orange-700 data-[state=active]:text-white text-xs relative">
+              <Clock className="w-3.5 h-3.5 mr-1" />Abgelaufen
+              {abgelaufenCount > 0 && <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">{abgelaufenCount}</span>}
+            </TabsTrigger>
             <TabsTrigger value="erledigt" className="flex-1 data-[state=active]:bg-slate-700 data-[state=active]:text-white text-xs">
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Erledigt
             </TabsTrigger>
           </TabsList>
-          {(['offen', 'extern', 'in_bearbeitung', 'erledigt'] as StatusTab[]).map(tabKey => (
+          {(['offen', 'extern', 'in_bearbeitung', 'abgelaufen', 'erledigt'] as StatusTab[]).map(tabKey => (
             <TabsContent key={tabKey} value={tabKey}>
               {loading ? (
                 <div className="flex items-center justify-center py-12 text-slate-400"><CircleDashed className="w-8 h-8 animate-spin" /></div>
@@ -915,6 +989,8 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
   const [loanAmount, setLoanAmount] = useState('');
+  const [repayDialogOpen, setRepayDialogOpen] = useState(false);
+  const [repayAmount, setRepayAmount] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -1342,7 +1418,7 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
       {/* Loan Actions (only for Owner/Council) */}
       {canManage && (
         <div className="flex gap-2">
-          {!loanDialogOpen ? (
+          {!loanDialogOpen && !repayDialogOpen ? (
             <>
               <Button
                 size="sm"
@@ -1356,7 +1432,7 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
               {bankStatus.debt > 0 && (
                 <Button
                   size="sm"
-                  onClick={() => handleRepay('all')}
+                  onClick={() => setRepayDialogOpen(true)}
                   disabled={actionLoading || bankStatus.treasury <= 0}
                   className="flex-1 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-500/30 hover:border-cyan-500/50 disabled:opacity-50"
                 >
@@ -1365,7 +1441,7 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
                 </Button>
               )}
             </>
-          ) : (
+          ) : loanDialogOpen ? (
             <div className="flex-1 space-y-2">
               <div className="flex gap-2">
                 <Input
@@ -1401,6 +1477,50 @@ function FinanzenContent({ canManage }: { canManage: boolean }) {
                     {(v / 1000)}k
                   </button>
                 ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  value={repayAmount}
+                  onChange={e => setRepayAmount(e.target.value)}
+                  placeholder={`Max. ${Math.min(bankStatus.treasury, bankStatus.debt).toLocaleString('de-CH')} CHF`}
+                  className="h-9 text-sm bg-slate-800/60 border-slate-700/70 text-white placeholder:text-slate-600"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  onClick={() => { handleRepay(Number(repayAmount)); setRepayDialogOpen(false); setRepayAmount(''); }}
+                  disabled={actionLoading || !repayAmount || Number(repayAmount) <= 0 || Number(repayAmount) > Math.min(bankStatus.treasury, bankStatus.debt)}
+                  className="bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {actionLoading ? '...' : 'Einzahlen'}
+                </Button>
+                <button
+                  onClick={() => { setRepayDialogOpen(false); setRepayAmount(''); }}
+                  className="p-2 rounded-md hover:bg-slate-700/60 text-slate-500 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                {[10000, 25000, 50000].filter(v => v <= Math.min(bankStatus.treasury, bankStatus.debt)).map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setRepayAmount(String(v))}
+                    className="px-2.5 py-1 rounded-md text-[11px] bg-slate-700/60 text-slate-400 hover:bg-slate-600/80 hover:text-white border border-slate-600/40 transition-colors"
+                  >
+                    {(v / 1000)}k
+                  </button>
+                ))}
+                <button
+                  onClick={() => { handleRepay('all'); setRepayDialogOpen(false); setRepayAmount(''); }}
+                  className="px-2.5 py-1 rounded-md text-[11px] bg-cyan-700/40 text-cyan-300 hover:bg-cyan-600/60 border border-cyan-600/30 transition-colors ml-auto"
+                >
+                  Alles zahlen
+                </button>
               </div>
             </div>
           )}

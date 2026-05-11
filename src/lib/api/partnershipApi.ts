@@ -505,3 +505,25 @@ export async function declinePartnershipRequest(
 
   return response.json();
 }
+
+/**
+ * Aktualisiert den Strassenstatus für eine Partnerschaft.
+ * connected=true: Randstrasse in Partnerrichtung vorhanden → Income fliesst.
+ * connected=false: keine Randstrasse → Income pausiert.
+ */
+export async function updateRoadStatus(
+  municipalitySlug: string,
+  partnerSlug: string,
+  connected: boolean
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/municipality/${municipalitySlug}/partnerships/${partnerSlug}/road-status`, {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connected }),
+  });
+  // Fehler still ignorieren — nicht-kritisch
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    console.warn('[partnershipApi] road-status update failed:', err);
+  }
+}

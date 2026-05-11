@@ -228,9 +228,13 @@ function applyBuildingFootprint(
       const ty = anchorY + dy;
       if (tx < 0 || tx >= gridSize || ty < 0 || ty >= gridSize) continue;
       if (dx === 0 && dy === 0) continue;
+      const existing = grid[ty][tx].building.type;
+      // Don't overwrite real buildings — only clear grass, trees, and explicit 'empty' placeholders
+      const isClearing = existing === 'grass' || existing === 'empty' ||
+        (existing as string).startsWith('tree');
+      if (!isClearing) continue;
       grid[ty][tx].building = createBuilding('empty');
       grid[ty][tx].building.metadata = { originX: anchorX, originY: anchorY };
-      // Keep zone clear for service footprints (same behavior as runtime placement)
       grid[ty][tx].zone = 'none';
     }
   }
@@ -510,7 +514,10 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
   
   // WaterBodies für den GameState sammeln
   const waterTiles: Array<{ x: number; y: number }> = [];
-  
+  // Multi-Tile-Footprints werden NACH dem gesamten Loop angewendet,
+  // damit kein späteres Item einen 'empty'-Platzhalter überschreiben kann.
+  const pendingFootprints: Array<{ x: number; y: number; metadata: Record<string, unknown> | null }> = [];
+
   // Sortierung: zone-Actions zuerst, dann place, dann bulldoze.
   // So überschreiben place-Actions immer die Zone (zone='none'),
   // und Service-Buildings landen nie fälschlich in einer Zone.
@@ -530,6 +537,19 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
     
     if (item.action_type === 'place' && item.tool) {
       // Gebäude/Strasse/Wasser/Bäume/Infrastruktur platzieren
+      const placeMeta = (item.metadata as Record<string, unknown> | null) ?? null;
+
+      // Wenn der Server diesen Place-Item als Sekundär-Tile eines Multi-Tile-Gebäudes
+      // markiert hat (buildingType='empty'), tool ignorieren und als empty behandeln.
+      if (placeMeta?.buildingType === 'empty') {
+        grid[y][x].building = createBuilding('empty');
+        grid[y][x].building.metadata = {
+          originX: placeMeta.originX as number | undefined,
+          originY: placeMeta.originY as number | undefined,
+        };
+        continue;
+      }
+
       // Bau-Fortschritt aus metadata laden (0-100)
       const savedProgress = item.metadata?.constructionProgress as number | undefined
         ?? (item.metadata?.constructed === true ? 100 : undefined);
@@ -538,16 +558,10 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
       grid[y][x].zone = 'none';
       grid[y][x].building = applyBuildingRuntimeMetadata(
         createBuilding(item.tool as BuildingType, savedProgress, x, y),
-        (item.metadata as Record<string, unknown> | null) ?? null,
+        placeMeta,
         x, y
       );
-      applyBuildingFootprint(
-        grid,
-        gridSize,
-        x,
-        y,
-        (item.metadata as Record<string, unknown> | null) ?? null
-      );
+      pendingFootprints.push({ x, y, metadata: placeMeta });
       placedBuildings++;
 
       // Wasser-Tiles merken für waterBodies
@@ -565,23 +579,24 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
       if (evolvedType) {
         const savedProgress = item.metadata?.constructionProgress as number | undefined
           ?? (item.metadata?.constructed === true ? 100 : undefined);
+        const zoneMeta = (item.metadata as Record<string, unknown> | null) ?? null;
         grid[y][x].building = applyBuildingRuntimeMetadata(
           createBuilding(evolvedType as BuildingType, savedProgress, x, y),
-          (item.metadata as Record<string, unknown> | null) ?? null,
+          zoneMeta,
           x, y
         );
-        applyBuildingFootprint(
-          grid,
-          gridSize,
-          x,
-          y,
-          (item.metadata as Record<string, unknown> | null) ?? null
-        );
+        pendingFootprints.push({ x, y, metadata: zoneMeta });
         placedBuildings++;
       }
     } else if (item.action_type === 'bauzone') {
       const enabled = item.metadata?.enabled !== false;
-      grid[y][x].bauzone = enabled || undefined;
+      if (enabled) {
+        const validZoneTypes = ['residential', 'commercial', 'industrial', 'mixed', 'nature', 'infrastructure'] as const;
+        const zt = item.zone_type as typeof validZoneTypes[number] | null;
+        grid[y][x].bauzone = (zt && validZoneTypes.includes(zt)) ? zt : 'mixed';
+      } else {
+        grid[y][x].bauzone = undefined;
+      }
     } else if (item.action_type === 'bulldoze') {
       // Bulldoze = zurück zu Gras
       grid[y][x].building = createBuilding('grass');
@@ -606,6 +621,18 @@ export function buildStateFromItems(data: ItemsApiResponse): GameState {
     }
   }
   
+  // Zweiter Pass: Multi-Tile-Footprints setzen (nach allen Items, damit kein
+  // späteres Item einen 'empty'-Platzhalter überschreiben kann).
+  // Footprints mit größerem Footprint zuletzt anwenden (größere Gebäude haben Vorrang).
+  pendingFootprints.sort((a, b) => {
+    const wa = Math.max(1, Math.round((a.metadata?.footprintWidth as number | undefined) ?? 1));
+    const wb = Math.max(1, Math.round((b.metadata?.footprintWidth as number | undefined) ?? 1));
+    return wa - wb;
+  });
+  for (const fp of pendingFootprints) {
+    applyBuildingFootprint(grid, gridSize, fp.x, fp.y, fp.metadata);
+  }
+
   // WaterBodies aus den gesammelten Wasser-Tiles generieren
   const savedWaterBodies = data.stats?.water_bodies;
   const waterBodies = applySavedWaterBodyNames(
@@ -694,37 +721,55 @@ export function applyItemsToGrid(
     (a, b) => (actionOrder[a.action_type] ?? 9) - (actionOrder[b.action_type] ?? 9)
   );
 
+  const pendingFootprints: Array<{ x: number; y: number; metadata: Record<string, unknown> | null }> = [];
+
   for (const item of sortedItems) {
     const { x, y } = item;
     if (x < 0 || x >= gridSize || y < 0 || y >= gridSize) continue;
     if (!grid[y]?.[x]) continue;
 
     if (item.action_type === 'place' && item.tool) {
+      const placeMeta = (item.metadata as Record<string, unknown> | null) ?? null;
+      if (placeMeta?.buildingType === 'empty') {
+        grid[y][x].building = createBuilding('empty');
+        grid[y][x].building.metadata = {
+          originX: placeMeta.originX as number | undefined,
+          originY: placeMeta.originY as number | undefined,
+        };
+        continue;
+      }
       const savedProgress = item.metadata?.constructionProgress as number | undefined
         ?? (item.metadata?.constructed === true ? 100 : undefined);
       grid[y][x].zone = 'none';
       grid[y][x].building = applyBuildingRuntimeMetadata(
         createBuilding(item.tool as BuildingType, savedProgress, x, y),
-        (item.metadata as Record<string, unknown> | null) ?? null,
+        placeMeta,
         x, y
       );
-      applyBuildingFootprint(grid, gridSize, x, y, (item.metadata as Record<string, unknown> | null) ?? null);
+      pendingFootprints.push({ x, y, metadata: placeMeta });
     } else if (item.action_type === 'zone' && item.zone_type) {
       grid[y][x].zone = item.zone_type as ZoneType;
       const evolvedType = item.metadata?.buildingType as string | undefined;
       if (evolvedType) {
         const savedProgress = item.metadata?.constructionProgress as number | undefined
           ?? (item.metadata?.constructed === true ? 100 : undefined);
+        const zoneMeta = (item.metadata as Record<string, unknown> | null) ?? null;
         grid[y][x].building = applyBuildingRuntimeMetadata(
           createBuilding(evolvedType as BuildingType, savedProgress, x, y),
-          (item.metadata as Record<string, unknown> | null) ?? null,
+          zoneMeta,
           x, y
         );
-        applyBuildingFootprint(grid, gridSize, x, y, (item.metadata as Record<string, unknown> | null) ?? null);
+        pendingFootprints.push({ x, y, metadata: zoneMeta });
       }
     } else if (item.action_type === 'bauzone') {
       const enabled = item.metadata?.enabled !== false;
-      grid[y][x].bauzone = enabled || undefined;
+      if (enabled) {
+        const validZoneTypes = ['residential', 'commercial', 'industrial', 'mixed', 'nature', 'infrastructure'] as const;
+        const zt = item.zone_type as typeof validZoneTypes[number] | null;
+        grid[y][x].bauzone = (zt && validZoneTypes.includes(zt)) ? zt : 'mixed';
+      } else {
+        grid[y][x].bauzone = undefined;
+      }
     } else if (item.action_type === 'bulldoze') {
       grid[y][x].building = createBuilding('grass');
       grid[y][x].zone = 'none';
@@ -744,5 +789,15 @@ export function applyItemsToGrid(
         grid[y][x].hasRailOverlay = true;
       }
     }
+  }
+
+  // Zweiter Pass: Footprints nach allen Items setzen (größere Gebäude zuletzt = haben Vorrang)
+  pendingFootprints.sort((a, b) => {
+    const wa = Math.max(1, Math.round((a.metadata?.footprintWidth as number | undefined) ?? 1));
+    const wb = Math.max(1, Math.round((b.metadata?.footprintWidth as number | undefined) ?? 1));
+    return wa - wb;
+  });
+  for (const fp of pendingFootprints) {
+    applyBuildingFootprint(grid, gridSize, fp.x, fp.y, fp.metadata);
   }
 }

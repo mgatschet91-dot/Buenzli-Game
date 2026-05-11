@@ -3128,6 +3128,9 @@ const CONSOLIDATABLE_BUILDINGS: Record<ZoneType, Set<BuildingType>> = {
   residential: new Set(['house_small', 'house_medium']),
   commercial: new Set(['shop_small', 'shop_medium']),
   industrial: new Set(['factory_small']),
+  mixed: new Set(['house_small', 'shop_small']),
+  nature: new Set(),
+  infrastructure: new Set(),
   none: new Set(),
 };
 

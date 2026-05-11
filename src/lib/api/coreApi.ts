@@ -211,6 +211,7 @@ export interface BuildingType {
   name: string;
   icon: string;
   base_cost: number;
+  canton_code?: string | null;
 }
 
 export interface BuildingTypesCatalog {

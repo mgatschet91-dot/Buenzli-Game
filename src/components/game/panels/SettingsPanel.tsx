@@ -243,25 +243,25 @@ export function SettingsPanel({ onViewProfile }: SettingsPanelProps = {}) {
 // ── Tastatur-Tab ─────────────────────────────────────────────────────────────
 const SHORTCUT_GROUPS = [
   {
-    title: msg('Camera & Navigation'),
+    title: msg('Kamera & Navigation'),
     shortcuts: [
-      { keys: ['W', 'A', 'S', 'D'],     desc: msg('Move map') },
-      { keys: ['↑', '↓', '←', '→'],    desc: msg('Move map (arrow keys)') },
-      { keys: ['Scroll'],               desc: msg('Zoom in / out') },
+      { keys: ['W', 'A', 'S', 'D'],     desc: msg('Karte bewegen') },
+      { keys: ['↑', '↓', '←', '→'],    desc: msg('Karte bewegen (Pfeiltasten)') },
+      { keys: ['Scroll'],               desc: msg('Rein- / Rauszoomen') },
     ],
   },
   {
-    title: msg('Buildings & Tools'),
+    title: msg('Gebäude & Werkzeuge'),
     shortcuts: [
-      { keys: ['B'],              desc: msg('Activate bulldozer') },
-      { keys: ['M'],              desc: msg('Move building (select building first)') },
-      { keys: ['R'],              desc: msg('Rotate / mirror building (while placing or moving)') },
+      { keys: ['B'],              desc: msg('Bulldozer aktivieren') },
+      { keys: ['M'],              desc: msg('Gebäude verschieben (zuerst auswählen)') },
+      { keys: ['R'],              desc: msg('Gebäude drehen / spiegeln (beim Platzieren oder Bewegen)') },
     ],
   },
   {
-    title: msg('General'),
+    title: msg('Allgemein'),
     shortcuts: [
-      { keys: ['Esc'],            desc: msg('Deselect / cancel action / close panel') },
+      { keys: ['Esc'],            desc: msg('Abwählen / Aktion abbrechen / Panel schliessen') },
       { keys: ['Ctrl', 'K'],      desc: msg('Open command menu') },
     ],
   },

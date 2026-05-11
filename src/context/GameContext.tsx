@@ -74,6 +74,8 @@ type RemoteBuildingStateUpdate = {
   constructionProgress?: number;
   constructed?: boolean;
   zoneCleared?: boolean;
+  footprintWidth?: number;
+  footprintHeight?: number;
 };
 
 type RemoteCriminalNpc = {
@@ -125,7 +127,9 @@ type GameContextValue = {
   repairAtTile: (x: number, y: number) => boolean; // Repair abandoned building, returns true if succeeded
   flipBuildingAtTile: (x: number, y: number) => boolean; // Flip/rotate building, returns true if succeeded
   placeAtTile: (x: number, y: number, isRemote?: boolean, overrideTool?: Tool) => void;
-  setPlaceCallback: (callback: ((args: { x: number; y: number; tool: Tool }) => void) | null) => void;
+  setPlaceCallback: (callback: ((args: { x: number; y: number; tool: Tool; bauzoneType?: ZoneType }) => void) | null) => void;
+  selectedBauzoneType: ZoneType;
+  setSelectedBauzoneType: (type: ZoneType) => void;
   finishTrackDrag: (pathTiles: { x: number; y: number }[], trackType: 'road' | 'rail', isRemote?: boolean) => void; // Create bridges after road/rail drag
   setBridgeCallback: (callback: ((args: { pathTiles: { x: number; y: number }[]; trackType: 'road' | 'rail' }) => void) | null) => void;
   connectToCity: (cityId: string) => void;
@@ -1004,6 +1008,8 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
 
   // Bauzone mode loaded from server settings
   const [bauzoneMode, setBauzoneMode] = useState<'disabled' | 'members' | 'all'>('disabled');
+  const [selectedBauzoneType, setSelectedBauzoneType] = useState<ZoneType>('mixed');
+  const selectedBauzoneTypeRef = useRef<ZoneType>('mixed');
   // Transport company state (for bus_stop tool visibility + line creation)
   const [hasTransportCompany, setHasTransportCompany] = useState(false);
   const [hasBusStation, setHasBusStation] = useState(false);
@@ -1046,7 +1052,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
   const hasLoadedRef = useRef(false);
   
   // Callback for multiplayer action broadcast
-  const placeCallbackRef = useRef<((args: { x: number; y: number; tool: Tool }) => void) | null>(null);
+  const placeCallbackRef = useRef<((args: { x: number; y: number; tool: Tool; bauzoneType?: ZoneType }) => void) | null>(null);
   const bridgeCallbackRef = useRef<((args: { pathTiles: { x: number; y: number }[]; trackType: 'road' | 'rail' }) => void) | null>(null);
   
   // Partnership callbacks for WebSocket events
@@ -1218,6 +1224,11 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       .then(d => setBauzoneMode(d.bauzone_mode))
       .catch(() => {});
   }, [municipalitySlug]);
+
+  // Keep selectedBauzoneType ref in sync
+  useEffect(() => {
+    selectedBauzoneTypeRef.current = selectedBauzoneType;
+  }, [selectedBauzoneType]);
 
   // Load transport company status for bus_stop tool visibility
   const loadTransportCompanyStatus = useCallback(async () => {
@@ -1510,47 +1521,103 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     setState((prev) => ({ ...prev, selectedTool: tool, activePanel: 'none' }));
   }, []);
 
+  const applyBuildingMove = useCallback((
+    fromX: number, fromY: number, toX: number, toY: number,
+    flipped: boolean,
+    buildingType: import('@/types/game').BuildingType,
+    level: number,
+    footprintWidth: number,
+    footprintHeight: number,
+    extraBuildingData?: Record<string, unknown>
+  ) => {
+    setState((prev) => {
+      const fromTile = prev.grid[fromY]?.[fromX];
+      const bt = buildingType || fromTile?.building?.type;
+      if (!bt || bt === 'grass' || bt === 'empty') return prev;
+
+      const size = { width: footprintWidth, height: footprintHeight };
+      const newGrid = prev.grid.map((row) => row.map((t) => ({ ...t, building: { ...t.building } })));
+
+      // Clear old footprint (entire footprint based on same size)
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          const tx = fromX + dx, ty = fromY + dy;
+          if (newGrid[ty]?.[tx]) {
+            newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'grass', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false } };
+          }
+        }
+      }
+
+      // Place origin tile at new position — preserve full building state
+      const baseTile = fromTile?.building?.type === bt ? fromTile.building : null;
+      const movedBuilding = {
+        ...(baseTile || {}),
+        ...extraBuildingData,
+        type: bt,
+        level,
+        flipped,
+      };
+      if (newGrid[toY]?.[toX]) {
+        newGrid[toY][toX] = { ...newGrid[toY][toX], building: movedBuilding as import('@/types/game').Building };
+      }
+      // Mark secondary footprint tiles as empty placeholders (non-walkable via origin reference)
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const tx = toX + dx, ty = toY + dy;
+          if (newGrid[ty]?.[tx]) {
+            newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'empty', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false, metadata: { originX: toX, originY: toY } } };
+          }
+        }
+      }
+
+      return { ...prev, grid: newGrid, gameVersion: (prev.gameVersion || 0) + 1 };
+    });
+  }, []);
+
   const moveBuilding = useCallback(async (fromX: number, fromY: number, toX: number, toY: number, flipped?: boolean): Promise<{ success: boolean; error?: string }> => {
-    const result = await deltaQueue.sendMoveBuilding(fromX, fromY, toX, toY, flipped);
+    const fromTile = latestStateRef.current.grid[fromY]?.[fromX];
+    if (!fromTile || fromTile.building.type === 'grass' || fromTile.building.type === 'empty') {
+      return { success: false, error: 'building_not_found' };
+    }
+    const size = getBuildingSize(fromTile.building.type as import('@/types/game').BuildingType);
+    const result = await deltaQueue.sendMoveBuilding(
+      fromX, fromY, toX, toY, flipped,
+      fromTile.building.type,
+      fromTile.building.level,
+      size.width,
+      size.height
+    );
     if (result.success) {
-      setState((prev) => {
-        const fromTile = prev.grid[fromY]?.[fromX];
-        if (!fromTile || fromTile.building.type === 'grass' || fromTile.building.type === 'empty') return prev;
-
-        const size = getBuildingSize(fromTile.building.type as import('@/types/game').BuildingType);
-        const newGrid = prev.grid.map((row) => row.map((t) => ({ ...t, building: { ...t.building } })));
-
-        // Clear old footprint
-        for (let dy = 0; dy < size.height; dy++) {
-          for (let dx = 0; dx < size.width; dx++) {
-            const tx = fromX + dx, ty = fromY + dy;
-            if (newGrid[ty]?.[tx]) {
-              newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'grass', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false } };
-            }
-          }
-        }
-
-        // Place at new position
-        const movedBuilding = { ...fromTile.building, flipped: flipped ?? fromTile.building.flipped };
-        if (newGrid[toY]?.[toX]) {
-          newGrid[toY][toX] = { ...newGrid[toY][toX], building: movedBuilding };
-        }
-        // Mark remaining footprint tiles as empty placeholders
-        for (let dy = 0; dy < size.height; dy++) {
-          for (let dx = 0; dx < size.width; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            const tx = toX + dx, ty = toY + dy;
-            if (newGrid[ty]?.[tx]) {
-              newGrid[ty][tx] = { ...newGrid[ty][tx], building: { type: 'empty', level: 1, population: 0, jobs: 0, powered: false, watered: false, onFire: false, fireProgress: 0, age: 0, constructionProgress: 100, abandoned: false, metadata: { originX: toX, originY: toY } } };
-            }
-          }
-        }
-
-        return { ...prev, grid: newGrid, gameVersion: (prev.gameVersion || 0) + 1 };
-      });
+      applyBuildingMove(
+        fromX, fromY, toX, toY,
+        flipped ?? fromTile.building.flipped ?? false,
+        fromTile.building.type as import('@/types/game').BuildingType,
+        fromTile.building.level,
+        size.width,
+        size.height
+      );
     }
     return result;
-  }, []);
+  }, [applyBuildingMove]);
+
+  // building-moved: vom Server gebroadcastetes Event (andere Clients + eigene Bestätigung)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail as { fromX: number; fromY: number; toX: number; toY: number; flipped: boolean; buildingType: string; level: number; footprintWidth: number; footprintHeight: number };
+      if (!d) return;
+      applyBuildingMove(
+        d.fromX, d.fromY, d.toX, d.toY,
+        d.flipped,
+        d.buildingType as import('@/types/game').BuildingType,
+        d.level,
+        d.footprintWidth,
+        d.footprintHeight,
+      );
+    };
+    window.addEventListener('building-moved', handler);
+    return () => window.removeEventListener('building-moved', handler);
+  }, [applyBuildingMove]);
 
   const setSpeed = useCallback((speed: 0 | 1 | 2 | 3) => {
     setState((prev) => ({ ...prev, speed }));
@@ -1648,6 +1715,8 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     // before React batches the setState. We read from the latest state ref.
     const currentTool = latestStateRef.current.selectedTool;
     let placementSucceeded = false;
+    let resolvedBulldozeX = x;
+    let resolvedBulldozeY = y;
     let placedTool: Tool = currentTool;
 
     setState((prev) => {
@@ -1660,15 +1729,24 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       if (tool === 'inspect') return prev;
 
       // ── Bauzone tools (set/remove building zone markers) ──────────
-      if (tool === 'bauzone' || tool === 'bauzone_remove') {
+      const BAUZONE_TYPE_MAP: Partial<Record<Tool, ZoneType>> = {
+        bauzone: selectedBauzoneTypeRef.current,
+        bauzone_residential:   'residential',
+        bauzone_commercial:    'commercial',
+        bauzone_industrial:    'industrial',
+        bauzone_mixed:         'mixed',
+        bauzone_infrastructure:'infrastructure',
+      };
+      if (tool in BAUZONE_TYPE_MAP || tool === 'bauzone_remove') {
         const bTile = prev.grid[y]?.[x];
         if (!bTile) return prev;
-        const wantBauzone = tool === 'bauzone';
-        if (!!bTile.bauzone === wantBauzone) return prev;
+        const newBauzoneValue = tool === 'bauzone_remove' ? undefined : BAUZONE_TYPE_MAP[tool];
+        if (tool === 'bauzone_remove' && !bTile.bauzone) return prev;
+        if (tool !== 'bauzone_remove' && bTile.bauzone === newBauzoneValue) return prev;
         const newGrid = prev.grid.map((row, gy) =>
           gy === y
             ? row.map((t, gx) =>
-                gx === x ? { ...t, bauzone: wantBauzone || undefined } : t
+                gx === x ? { ...t, bauzone: newBauzoneValue } : t
               )
             : row
         );
@@ -1939,6 +2017,17 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
       let nextState: GameState;
 
       if (tool === 'bulldoze') {
+        // Resolve origin before mutation so the callback sends the right coordinate
+        const _clickedTile = prev.grid[y]?.[x];
+        if (_clickedTile?.building.type === 'empty') {
+          const _om = _clickedTile.building.metadata as Record<string, unknown> | undefined;
+          const _ox = _om?.originX as number | undefined;
+          const _oy = _om?.originY as number | undefined;
+          if (typeof _ox === 'number' && typeof _oy === 'number') {
+            resolvedBulldozeX = _ox;
+            resolvedBulldozeY = _oy;
+          }
+        }
         nextState = bulldozeTile(prev, x, y);
       } else if (zone) {
         nextState = placeBuilding(prev, x, y, null, zone);
@@ -2025,7 +2114,15 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     // Broadcast to multiplayer if this is a local action (not remote)
     // We use the tool captured before setState since React 18 batches async
     if (!isRemote && currentTool !== 'select' && placeCallbackRef.current) {
-      placeCallbackRef.current({ x, y, tool: currentTool });
+      const _bzTypeMap: Partial<Record<Tool, ZoneType>> = {
+        bauzone: selectedBauzoneTypeRef.current,
+        bauzone_residential: 'residential',
+        bauzone_commercial: 'commercial',
+        bauzone_industrial: 'industrial',
+        bauzone_mixed: 'mixed',
+        bauzone_infrastructure: 'infrastructure',
+      };
+      placeCallbackRef.current({ x: resolvedBulldozeX, y: resolvedBulldozeY, tool: currentTool, bauzoneType: _bzTypeMap[currentTool] });
     }
   }, []);
 
@@ -2219,7 +2316,7 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     }
   }, []);
   
-  const setPlaceCallback = useCallback((callback: ((args: { x: number; y: number; tool: Tool }) => void) | null) => {
+  const setPlaceCallback = useCallback((callback: ((args: { x: number; y: number; tool: Tool; bauzoneType?: ZoneType }) => void) | null) => {
     placeCallbackRef.current = callback;
   }, []);
 
@@ -3914,6 +4011,8 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     canton,
     bauzoneMode,
     setBauzoneMode,
+    selectedBauzoneType,
+    setSelectedBauzoneType,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

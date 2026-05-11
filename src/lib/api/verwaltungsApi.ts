@@ -88,6 +88,8 @@ export interface MunicipalityStats {
   max_population: number;
   shield_active_until: string | null;
   cantonal_investigation_until: string | null;
+  cantonal_investigation_since: string | null;
+  cantonal_investigation_stage: 0 | 1 | 2 | 3;
 }
 
 export interface StatsHistoryEntry {
@@ -153,6 +155,19 @@ export async function fetchVerwaltungMeldungen(status = 'reported,assigned'): Pr
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'Fehler beim Laden der Meldungen');
   return json.data;
+}
+
+/** Kantonale Untersuchung vorzeitig beilegen */
+export async function resolveCantonalInvestigation(): Promise<{
+  ok: boolean;
+  data?: { resolved: boolean; cost: number; stage: number; message: string };
+  error?: string;
+}> {
+  const res = await fetch(`${AUTH_API_BASE_URL}/api/verwaltung/cantonal-investigation/resolve`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  return res.json();
 }
 
 /** Firma mit Event beauftragen */

@@ -6,38 +6,67 @@ import { getAuthToken } from '@/lib/api/coreApi';
 
 // ─── i18n Labels ──────────────────────────────────────────
 const UI_LABELS = {
-  tabFriends:          'Freunde',
-  onlineFriends:       'Freunde',
-  offlineFriends:      'Offline',
-  showProfile:         'Profil anzeigen',
-  startChat:           'Chat starten',
-  writeMessage:        'Nachricht schreiben',
-  removeFriend:        'Freund entfernen',
-  openChat:            'Chat öffnen',
-  tabSearch:           'Suche',
-  sendFriendRequest:   'Freundschaftsanfrage senden',
-  searchPlaceholder:   'Suche...',
-  tabRequests:         'Anfragen',
-  noRequests:          'Keine Anfragen',
-  acceptAll:           'Alle annehmen',
-  denyAll:             'Alle ablehnen',
-  messengerSounds:     'Messenger-Sounds',
-  allowFriendRequests: 'Freundschaftsanfragen erlauben',
-  profileSearchable:   'Profil in Suche sichtbar',
-  accept:              'Annehmen',
-  deny:                'Ablehnen',
-  back:                'Zurück',
-  settings:            'Einstellungen',
-  closeChat:           'Chat schließen',
-  startConversation:   'Starte eine Unterhaltung...',
-  chatPlaceholder:     'Nachricht schreiben...',
-  otherPlayers:        'Andere Spieler',
-  blockUser:           'Blockieren',
-  unblockUser:         'Entblockieren',
-  blockedUsers:        'Blockierte Spieler',
-  noBlockedUsers:      'Keine blockierten Spieler',
-  blockedErrorMsg:     'Dieser Spieler hat dich blockiert oder du hast ihn blockiert.',
+  tabFriends:                  'Freunde',
+  onlineFriends:               'Online',
+  offlineFriends:              'Offline',
+  showProfile:                 'Profil anzeigen',
+  startChat:                   'Chat starten',
+  writeMessage:                'Nachricht schreiben',
+  removeFriend:                'Freund entfernen',
+  openChat:                    'Chat öffnen',
+  tabSearch:                   'Suche',
+  sendFriendRequest:           'Freundschaftsanfrage senden',
+  searchPlaceholder:           'Spieler suchen...',
+  tabRequests:                 'Anfragen',
+  noRequests:                  'Keine Anfragen',
+  acceptAll:                   'Alle annehmen',
+  denyAll:                     'Alle ablehnen',
+  messengerSounds:             'Messenger-Sounds',
+  allowFriendRequests:         'Freundschaftsanfragen erlauben',
+  profileSearchable:           'Profil in Suche sichtbar',
+  accept:                      'Annehmen',
+  deny:                        'Ablehnen',
+  back:                        'Zurück',
+  settings:                    'Einstellungen',
+  closeChat:                   'Chat schließen',
+  startConversation:           'Starte eine Unterhaltung...',
+  chatPlaceholder:             'Nachricht schreiben...',
+  otherPlayers:                'Andere Spieler',
+  blockUser:                   'Blockieren',
+  unblockUser:                 'Entblockieren',
+  blockedUsers:                'Blockierte Spieler',
+  noBlockedUsers:              'Keine blockierten Spieler',
+  blockedErrorMsg:             'Dieser Spieler hat dich blockiert oder du hast ihn blockiert.',
+  friendRequestMsgPlaceholder: 'Persönliche Nachricht (optional)...',
+  sendRequest:                 'Anfrage senden',
+  requestSent:                 'Gesendet!',
+  confirmBlock:                'wirklich blockieren?',
+  confirmBlockYes:             'Ja, blockieren',
+  confirmBlockCancel:          'Abbrechen',
+  onlineNow:                   'Online',
+  offlineNow:                  'Offline',
+  noFriendsYet:                'Noch keine Freunde.',
+  noFriendRequestMsg:          'Keine persönliche Nachricht.',
+  messenger:                   'Messenger',
 };
+
+// ─── Relative Zeitanzeige ──────────────────────────────────
+function formatRelativeTime(iso: string): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return '';
+  const diff = Date.now() - then;
+  const sec  = Math.floor(diff / 1000);
+  const min  = Math.floor(sec / 60);
+  const h    = Math.floor(min / 60);
+  const d    = Math.floor(h / 24);
+  if (sec < 60)  return 'Gerade eben';
+  if (min < 60)  return `vor ${min} Min`;
+  if (h < 24)    return `vor ${h} Std`;
+  if (d === 1)   return 'Gestern';
+  if (d < 7)     return `vor ${d} Tagen`;
+  return new Date(iso).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit' });
+}
 
 // ─── Sound-System ─────────────────────────────────────────
 let _sendSound: HTMLAudioElement | null = null;
@@ -175,15 +204,17 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [selectedFriendId, setSelectedFriendId] = useState(-1);
-  const [friendsExpanded, setFriendsExpanded] = useState(true);
-  const [offlineExpanded, setOfflineExpanded] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [messengerSounds, setMessengerSounds] = useState(true);
   const [allowFriendRequests, setAllowFriendRequests] = useState(true);
   const [profileSearchable, setProfileSearchable] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [blocks, setBlocks] = useState<Array<{ userId: number; name: string }>>([]);
+  // Neue States für verbesserte UX
+  const [friendRequestMsg, setFriendRequestMsg] = useState('');
+  const [sentRequestIds, setSentRequestIds] = useState<Set<number>>(new Set());
+  const [expandedRequestId, setExpandedRequestId] = useState<number | null>(null);
+  const [composingForId, setComposingForId] = useState<number | null>(null);
 
   // Lade Freundesliste beim Öffnen + periodischer Refresh
   useEffect(() => {
@@ -201,7 +232,6 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     const onFriendsList = (e: Event) => {
       const data = (e as CustomEvent).detail;
       if (data?.friends) {
-        // Merge mit globalem Online-Status-Cache (fängt verpasste Events ab)
         const merged = data.friends.map((f: Friend) => {
           const cachedOnline = _friendOnlineCache.get(f.id);
           return cachedOnline !== undefined ? { ...f, online: cachedOnline } : f;
@@ -284,7 +314,7 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     };
   }, []);
 
-  const onlineFriends = friends.filter(f => f.online);
+  const onlineFriends  = friends.filter(f => f.online);
   const offlineFriends = friends.filter(f => !f.online);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -297,224 +327,40 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
   const handleAcceptRequest = (senderId: number) => {
     deltaQueue.messengerAcceptFriend(senderId);
     setRequests(prev => prev.filter(r => r.senderId !== senderId));
+    if (expandedRequestId === senderId) setExpandedRequestId(null);
     playReceiveSound();
   };
 
   const handleDenyRequest = (senderId: number) => {
     deltaQueue.messengerDenyFriend(senderId);
     setRequests(prev => prev.filter(r => r.senderId !== senderId));
+    if (expandedRequestId === senderId) setExpandedRequestId(null);
   };
 
   const handleAcceptAll = () => {
     requests.forEach(r => deltaQueue.messengerAcceptFriend(r.senderId));
     setRequests([]);
+    setExpandedRequestId(null);
     playReceiveSound();
   };
 
   const handleDenyAll = () => {
     requests.forEach(r => deltaQueue.messengerDenyFriend(r.senderId));
     setRequests([]);
+    setExpandedRequestId(null);
   };
 
-  const handleRemoveFriend = () => {
-    if (selectedFriendId > 0) {
-      deltaQueue.messengerRemoveFriend(selectedFriendId);
-      setFriends(prev => prev.filter(f => f.id !== selectedFriendId));
-      setSelectedFriendId(-1);
-    }
-  };
-
-  const handleStartChat = (friendId?: number) => {
-    const fid = friendId || selectedFriendId;
-    if (fid <= 0) return;
-    const friend = friends.find(f => f.id === fid);
+  const handleStartChat = (friendId: number) => {
+    const friend = friends.find(f => f.id === friendId);
     if (friend) onOpenChat(friend.id, friend.name);
   };
 
-  const handleAddFriend = (userId: number) => {
-    deltaQueue.messengerSendFriendRequest(userId);
+  const handleSendFriendRequest = (userId: number) => {
+    deltaQueue.messengerSendFriendRequest(userId, friendRequestMsg.trim() || undefined);
     playSentSound();
-  };
-
-  // ─── Render Tabs ─────────────────────────────────────
-  const renderFriendsTab = () => {
-    if (currentTab !== Tab.Friends) return (
-      <div onClick={() => setCurrentTab(Tab.Friends)} className="msg-main-tab msg-selected">
-        <span>{UI_LABELS.tabFriends}</span>
-        <button className="msg-open-arrow" />
-      </div>
-    );
-    return (
-      <>
-        <div onClick={() => setCurrentTab(Tab.Friends)} className="msg-main-tab msg-selected">
-          <span>{UI_LABELS.tabFriends}</span>
-          <button className="msg-close-arrow" />
-        </div>
-        <div className="msg-wrapper">
-          <div className="msg-friends-container">
-            <button onClick={() => setFriendsExpanded(!friendsExpanded)} className="msg-second-tab">
-              {UI_LABELS.onlineFriends} ({onlineFriends.length})
-            </button>
-            {friendsExpanded && (
-              <div className="msg-friend-list">
-                {onlineFriends.map(f => (
-                  <div key={f.id} className={`msg-friend ${selectedFriendId === f.id ? 'selected' : ''}`} onClick={() => setSelectedFriendId(f.id)}>
-                    <span className="msg-friend-status online" />
-                    <span className="msg-friend-name">{f.name}</span>
-                    <div className="msg-icons">
-                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title={UI_LABELS.showProfile}>
-                        <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title={UI_LABELS.startChat}>
-                        <img src="/images/messenger/start_chat.png" alt={UI_LABELS.startChat} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button onClick={() => setOfflineExpanded(!offlineExpanded)} className="msg-second-tab">
-              {UI_LABELS.offlineFriends} ({offlineFriends.length})
-            </button>
-            {offlineExpanded && (
-              <div className="msg-friend-list">
-                {offlineFriends.map(f => (
-                  <div key={f.id} className={`msg-friend ${selectedFriendId === f.id ? 'selected' : ''}`} onClick={() => setSelectedFriendId(f.id)}>
-                    <span className="msg-friend-status offline" />
-                    <span className="msg-friend-name">{f.name}</span>
-                    <div className="msg-icons">
-                      <button onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }} className="msg-icon-btn" title={UI_LABELS.showProfile}>
-                        <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }} className="msg-icon-btn" title={UI_LABELS.writeMessage}>
-                        <img src="/images/messenger/start_chat.png" alt={UI_LABELS.writeMessage} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="msg-actions">
-            <button onClick={handleRemoveFriend} title={UI_LABELS.removeFriend}>
-              <img src="/images/messenger/remove_friend.png" alt={UI_LABELS.removeFriend} />
-            </button>
-            <button onClick={() => handleStartChat()} title={UI_LABELS.openChat}>
-              <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.openChat} />
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  };
-
-  const renderSearchTab = () => {
-    const filteredFriends = friends.filter(f => f.name.toLowerCase().includes(searchText.toLowerCase()));
-
-    if (currentTab !== Tab.Search) return (
-      <div onClick={() => setCurrentTab(Tab.Search)} className="msg-main-tab">
-        <span>{UI_LABELS.tabSearch}</span>
-        <button className="msg-open-arrow" />
-      </div>
-    );
-    return (
-      <>
-        <div onClick={() => setCurrentTab(Tab.Search)} className="msg-main-tab">
-          <span>{UI_LABELS.tabSearch}</span>
-          <button className="msg-close-arrow" />
-        </div>
-        <div className="msg-wrapper msg-search">
-          <div className="msg-friends-container">
-            <button className="msg-second-tab">{UI_LABELS.onlineFriends} ({filteredFriends.length})</button>
-            <div className="msg-friend-list">
-              {filteredFriends.map(f => (
-                <div key={f.id} className="msg-friend">
-                  <span className={`msg-friend-status ${f.online ? 'online' : 'offline'}`} />
-                  <span className="msg-friend-name">{f.name}</span>
-                </div>
-              ))}
-            </div>
-            <button className="msg-second-tab">{UI_LABELS.otherPlayers} ({searchResults.length})</button>
-            <div className="msg-friend-list">
-              {searchResults.map(r => (
-                <div key={r.id} className="msg-friend">
-                  <span className="msg-friend-name">{r.name}</span>
-                  <div className="msg-icons">
-                    <button onClick={() => handleAddFriend(r.id)} className="msg-icon-btn" title={UI_LABELS.sendFriendRequest}>
-                      <img src="/images/messenger/ask_for_friend.png" alt={UI_LABELS.sendFriendRequest} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="msg-actions">
-            <form onSubmit={handleSearch} style={{ display: 'flex', width: '100%', margin: 'auto' }}>
-              <input
-                type="text"
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                placeholder={UI_LABELS.searchPlaceholder}
-                autoComplete="off"
-              />
-              <button type="submit">{UI_LABELS.tabSearch}</button>
-            </form>
-          </div>
-        </div>
-      </>
-    );
-  };
-
-  const renderRequestsTab = () => {
-    const hasRequests = requests.length > 0;
-    const tabClass = `msg-main-tab ${hasRequests ? 'msg-active' : ''}`;
-
-    if (currentTab !== Tab.Requests) return (
-      <div onClick={() => setCurrentTab(Tab.Requests)} className={tabClass}>
-        <span>{UI_LABELS.tabRequests} {hasRequests ? `(${requests.length})` : ''}</span>
-        <button className="msg-open-arrow" />
-      </div>
-    );
-    return (
-      <>
-        <div onClick={() => setCurrentTab(Tab.Requests)} className={tabClass}>
-          <span>{UI_LABELS.tabRequests} ({requests.length})</span>
-          <button className="msg-close-arrow" />
-        </div>
-        <div className="msg-wrapper">
-          <div className="msg-friends-container">
-            <div className="msg-friend-list">
-              {requests.map(r => (
-                <div key={r.senderId} className="msg-friend">
-                  <span className="msg-friend-name">{r.senderName}</span>
-                  <div className="msg-icons">
-                    <button onClick={() => handleAcceptRequest(r.senderId)} className="msg-icon-btn" title={UI_LABELS.accept}>
-                      <img src="/images/messenger/accept.png" alt={UI_LABELS.accept} />
-                    </button>
-                    <button onClick={() => handleDenyRequest(r.senderId)} className="msg-icon-btn" title={UI_LABELS.deny}>
-                      <img src="/images/messenger/decline.png" alt={UI_LABELS.deny} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {requests.length === 0 && (
-                <div style={{ padding: '10px', color: '#888', textAlign: 'center' }}>{UI_LABELS.noRequests}</div>
-              )}
-            </div>
-          </div>
-          <div className="msg-actions msg-requests-actions">
-            <button onClick={handleAcceptAll}>
-              <img src="/images/messenger/accept.png" alt={UI_LABELS.acceptAll} />
-              <span>{UI_LABELS.acceptAll}</span>
-            </button>
-            <button onClick={handleDenyAll}>
-              <img src="/images/messenger/decline.png" alt={UI_LABELS.denyAll} />
-              <span>{UI_LABELS.denyAll}</span>
-            </button>
-          </div>
-        </div>
-      </>
-    );
+    setSentRequestIds(prev => new Set(prev).add(userId));
+    setFriendRequestMsg('');
+    setComposingForId(null);
   };
 
   const loadSettings = useCallback(() => {
@@ -548,15 +394,210 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     }).catch(() => {});
   }, []);
 
-  const renderSettingsTab = () => {
-    if (currentTab !== Tab.Settings) return null;
+  // ─── Tab Content Render Funktionen ───────────────────────
 
+  const renderFriendsContent = () => (
+    <div className="msg-content-scroll">
+      {friends.length === 0 && (
+        <div className="msg-empty-hint">{UI_LABELS.noFriendsYet}</div>
+      )}
+
+      {onlineFriends.length > 0 && (
+        <>
+          <div className="msg-group-header">{UI_LABELS.onlineFriends} ({onlineFriends.length})</div>
+          {onlineFriends.map(f => (
+            <div key={f.id} className="msg-friend" onClick={() => handleStartChat(f.id)}>
+              <span className="msg-friend-status online" />
+              <span className="msg-friend-name">{f.name}</span>
+              <div className="msg-icons">
+                <button
+                  onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }}
+                  className="msg-icon-btn"
+                  title={UI_LABELS.showProfile}
+                >
+                  <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }}
+                  className="msg-icon-btn"
+                  title={UI_LABELS.startChat}
+                >
+                  <img src="/images/messenger/start_chat.png" alt={UI_LABELS.startChat} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {offlineFriends.length > 0 && (
+        <>
+          <div className="msg-group-header">{UI_LABELS.offlineFriends} ({offlineFriends.length})</div>
+          {offlineFriends.map(f => (
+            <div key={f.id} className="msg-friend" onClick={() => handleStartChat(f.id)}>
+              <span className="msg-friend-status offline" />
+              <span className="msg-friend-name">{f.name}</span>
+              <div className="msg-icons">
+                <button
+                  onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('open-player-profile', { detail: { userId: f.id } })); }}
+                  className="msg-icon-btn"
+                  title={UI_LABELS.showProfile}
+                >
+                  <img src="/images/messenger/open_inbox.png" alt={UI_LABELS.showProfile} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleStartChat(f.id); }}
+                  className="msg-icon-btn"
+                  title={UI_LABELS.writeMessage}
+                >
+                  <img src="/images/messenger/start_chat.png" alt={UI_LABELS.writeMessage} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+
+  const renderSearchContent = () => {
+    const filteredFriends = friends.filter(f => f.name.toLowerCase().includes(searchText.toLowerCase()));
+
+    return (
+      <div className="msg-search-content">
+        <form onSubmit={handleSearch} className="msg-search-form">
+          <input
+            type="text"
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            placeholder={UI_LABELS.searchPlaceholder}
+            autoComplete="off"
+          />
+          <button type="submit">{UI_LABELS.tabSearch}</button>
+        </form>
+
+        <div className="msg-content-scroll">
+          {filteredFriends.length > 0 && (
+            <>
+              <div className="msg-group-header">{UI_LABELS.onlineFriends} ({filteredFriends.length})</div>
+              {filteredFriends.map(f => (
+                <div key={f.id} className="msg-friend" onClick={() => handleStartChat(f.id)}>
+                  <span className={`msg-friend-status ${f.online ? 'online' : 'offline'}`} />
+                  <span className="msg-friend-name">{f.name}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {searchResults.length > 0 && (
+            <>
+              <div className="msg-group-header">{UI_LABELS.otherPlayers} ({searchResults.length})</div>
+              {searchResults.map(r => (
+                <div key={r.id} className="msg-search-result-wrap">
+                  <div className="msg-friend">
+                    <span className="msg-friend-name">{r.name}</span>
+                    <div className="msg-icons">
+                      {sentRequestIds.has(r.id) ? (
+                        <span className="msg-request-sent-badge">{UI_LABELS.requestSent}</span>
+                      ) : (
+                        <button
+                          onClick={() => setComposingForId(composingForId === r.id ? null : r.id)}
+                          className="msg-icon-btn"
+                          title={UI_LABELS.sendFriendRequest}
+                        >
+                          <img src="/images/messenger/ask_for_friend.png" alt={UI_LABELS.sendFriendRequest} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {composingForId === r.id && !sentRequestIds.has(r.id) && (
+                    <div className="msg-compose-request">
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={friendRequestMsg}
+                        onChange={e => setFriendRequestMsg(e.target.value)}
+                        placeholder={UI_LABELS.friendRequestMsgPlaceholder}
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSendFriendRequest(r.id); } }}
+                      />
+                      <button
+                        onClick={() => handleSendFriendRequest(r.id)}
+                        className="msg-compose-send-btn"
+                      >
+                        {UI_LABELS.sendRequest}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRequestsContent = () => (
+    <div className="msg-requests-list">
+      {requests.length === 0 && (
+        <div className="msg-empty-hint">{UI_LABELS.noRequests}</div>
+      )}
+
+      {requests.map(r => (
+        <div key={r.senderId} className="msg-request-card">
+          <div
+            className="msg-request-header"
+            onClick={() => setExpandedRequestId(expandedRequestId === r.senderId ? null : r.senderId)}
+          >
+            <span className="msg-friend-name">{r.senderName}</span>
+            <span className="msg-request-time">{formatRelativeTime(r.createdAt)}</span>
+            <span className="msg-request-chevron">{expandedRequestId === r.senderId ? '▲' : '▼'}</span>
+          </div>
+
+          {expandedRequestId === r.senderId && (
+            <div className="msg-request-body">
+              {r.message ? (
+                <p className="msg-request-msg-text">„{r.message}"</p>
+              ) : (
+                <p className="msg-request-msg-empty">{UI_LABELS.noFriendRequestMsg}</p>
+              )}
+              <div className="msg-request-actions">
+                <button className="msg-request-accept-btn" onClick={() => handleAcceptRequest(r.senderId)}>
+                  <img src="/images/messenger/accept.png" alt="" />
+                  {UI_LABELS.accept}
+                </button>
+                <button className="msg-request-deny-btn" onClick={() => handleDenyRequest(r.senderId)}>
+                  <img src="/images/messenger/decline.png" alt="" />
+                  {UI_LABELS.deny}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {requests.length >= 2 && (
+        <div className="msg-requests-bulk">
+          <button onClick={handleAcceptAll}>{UI_LABELS.acceptAll}</button>
+          <button onClick={handleDenyAll}>{UI_LABELS.denyAll}</button>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSettingsContent = () => {
     const toggleItem = (label: string, value: boolean, onChange: (v: boolean) => void, key: string) => (
       <div className="msg-setting-row" key={key}>
         <span>{label}</span>
         <button
           className={`msg-setting-toggle ${value ? 'on' : ''}`}
-          onClick={() => { const nv = !value; onChange(nv); saveSettingKey(key, nv); if (key === 'messenger_sounds') localStorage.setItem('meinort-messenger-sounds', String(nv)); }}
+          onClick={() => {
+            const nv = !value;
+            onChange(nv);
+            saveSettingKey(key, nv);
+            if (key === 'messenger_sounds') localStorage.setItem('meinort-messenger-sounds', String(nv));
+          }}
         >
           <div className="msg-setting-knob" />
         </button>
@@ -564,14 +605,14 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     );
 
     return (
-      <div className="msg-wrapper msg-settings-wrapper">
+      <div className="msg-settings-wrapper">
         <div className="msg-settings-list">
           {toggleItem(UI_LABELS.messengerSounds, messengerSounds, setMessengerSounds, 'messenger_sounds')}
           {toggleItem(UI_LABELS.allowFriendRequests, allowFriendRequests, setAllowFriendRequests, 'allow_friend_requests')}
           {toggleItem(UI_LABELS.profileSearchable, profileSearchable, setProfileSearchable, 'profile_searchable')}
         </div>
         <div className="msg-settings-section-title">{UI_LABELS.blockedUsers}</div>
-        <div className="msg-friends-container msg-blocklist">
+        <div className="msg-blocklist">
           {blocks.length === 0 ? (
             <div className="msg-blocklist-empty">{UI_LABELS.noBlockedUsers}</div>
           ) : (
@@ -595,6 +636,11 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
     );
   };
 
+  const handleSidebarTabClick = (tab: Tab) => {
+    if (tab === Tab.Settings) loadSettings();
+    setCurrentTab(tab);
+  };
+
   return (
     <>
       <style>{messengerCSS}</style>
@@ -604,24 +650,60 @@ export function MessengerPanel({ onClose, onOpenChat }: MessengerPanelProps) {
         style={{ zIndex, transform: `translate(${pos.x}px, ${pos.y}px)` }}
         onMouseDown={bringToFront}
       >
-        <button className="msg-close-btn" onClick={onClose}>X</button>
-        <h2 className="msg-title">{UI_LABELS.tabFriends}</h2>
-        {currentTab !== Tab.Settings && renderFriendsTab()}
-        {currentTab !== Tab.Settings && renderSearchTab()}
-        {currentTab !== Tab.Settings && renderRequestsTab()}
-        {renderSettingsTab()}
+        {/* Header */}
+        <div className="msg-header">
+          <h2 className="msg-title">{UI_LABELS.messenger}</h2>
+          <button className="msg-close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Body: Sidebar + Content */}
+        <div className="msg-body">
+          <div className="msg-sidebar">
+            <button
+              className={`msg-sidebar-btn ${currentTab === Tab.Friends ? 'active' : ''}`}
+              onClick={() => handleSidebarTabClick(Tab.Friends)}
+              title={UI_LABELS.tabFriends}
+            >
+              <img src="/images/messenger/start_chat.png" alt="" />
+            </button>
+            <button
+              className={`msg-sidebar-btn ${currentTab === Tab.Search ? 'active' : ''}`}
+              onClick={() => handleSidebarTabClick(Tab.Search)}
+              title={UI_LABELS.tabSearch}
+            >
+              <img src="/images/messenger/open_inbox.png" alt="" />
+            </button>
+            <button
+              className={`msg-sidebar-btn ${currentTab === Tab.Requests ? 'active' : ''}`}
+              onClick={() => handleSidebarTabClick(Tab.Requests)}
+              title={UI_LABELS.tabRequests}
+            >
+              <img src="/images/messenger/ask_for_friend.png" alt="" />
+              {requests.length > 0 && (
+                <span className="msg-sidebar-badge">{requests.length > 9 ? '9+' : requests.length}</span>
+              )}
+            </button>
+            <button
+              className={`msg-sidebar-btn ${currentTab === Tab.Settings ? 'active' : ''}`}
+              onClick={() => handleSidebarTabClick(Tab.Settings)}
+              title={UI_LABELS.settings}
+            >
+              <img src="/images/messenger/open_edit_ctgs.png" alt="" />
+            </button>
+          </div>
+
+          <div className="msg-content-area">
+            {currentTab === Tab.Friends   && renderFriendsContent()}
+            {currentTab === Tab.Search    && renderSearchContent()}
+            {currentTab === Tab.Requests  && renderRequestsContent()}
+            {currentTab === Tab.Settings  && renderSettingsContent()}
+          </div>
+        </div>
+
+        {/* Fehler-Bar */}
         {errorMsg && (
           <div className="msg-error">{errorMsg}</div>
         )}
-        <div className="msg-footer">
-          <button onClick={() => {
-            if (currentTab === Tab.Settings) { setCurrentTab(Tab.Friends); }
-            else { loadSettings(); setCurrentTab(Tab.Settings); }
-          }}>
-            <img src="/images/messenger/open_edit_ctgs.png" alt={UI_LABELS.settings} />
-            <span>{currentTab === Tab.Settings ? UI_LABELS.back : UI_LABELS.settings}</span>
-          </button>
-        </div>
       </div>
     </>
   );
@@ -643,13 +725,15 @@ interface MessengerChatPanelProps {
   initialFriendId: number;
   initialFriendName: string;
   onClose: () => void;
+  friendsOnlineMap: Map<number, boolean>;
 }
 
-export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose }: MessengerChatPanelProps) {
+export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose, friendsOnlineMap }: MessengerChatPanelProps) {
   const { ref, pos, zIndex, bringToFront } = useDraggable('.msgchat-title');
   const [activeChats, setActiveChats] = useState<ActiveChat[]>([]);
   const [currentChatFriendId, setCurrentChatFriendId] = useState(initialFriendId);
   const [text, setText] = useState('');
+  const [blockConfirmFriendId, setBlockConfirmFriendId] = useState<number | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const currentChatFriendIdRef = useRef(initialFriendId);
 
@@ -697,7 +781,6 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
         const chat = prev.find(c => c.conversationId === msg.conversationId);
         if (!chat) return prev;
         const isCurrentChat = chat.friendId === currentChatFriendId;
-        // Sound abspielen wenn Nachricht von anderem User
         const myUserId = Number(localStorage.getItem('isocity_user_id') || '0');
         if (msg.senderId !== myUserId) {
           playReceiveSound();
@@ -741,6 +824,7 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
 
   const currentChat = activeChats.find(c => c.friendId === currentChatFriendId);
   const myUserId = typeof window !== 'undefined' ? Number(localStorage.getItem('isocity_user_id') || '0') : 0;
+  const isOnline = friendsOnlineMap.get(currentChatFriendId) ?? false;
 
   const handleSend = () => {
     if (!text.trim() || !currentChat?.conversationId) return;
@@ -759,6 +843,7 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
   useEffect(() => { currentChatFriendIdRef.current = currentChatFriendId; }, [currentChatFriendId]);
 
   const handleTabChange = (friendId: number) => {
+    setBlockConfirmFriendId(null);
     setCurrentChatFriendId(friendId);
     setActiveChats(prev => prev.map(c => c.friendId === friendId ? { ...c, unread: false } : c));
     const chat = activeChats.find(c => c.friendId === friendId);
@@ -776,9 +861,10 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
     }
     setActiveChats(remaining);
     setCurrentChatFriendId(remaining[0].friendId);
+    setBlockConfirmFriendId(null);
   };
 
-  // Externe Chat-Öffnung erlauben
+  // Externe Chat-Öffnung
   useEffect(() => {
     const openNewChat = (e: Event) => {
       const data = (e as CustomEvent).detail;
@@ -801,53 +887,101 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
         style={{ zIndex, transform: `translate(${pos.x}px, ${pos.y}px)` }}
         onMouseDown={bringToFront}
       >
-        <button className="msgchat-close-btn" onClick={onClose}>X</button>
-        <h2 className="msgchat-title">{title}</h2>
+        <button className="msgchat-close-btn" onClick={onClose}>✕</button>
+
+        {/* Header mit Online-Status — msgchat-title MUSS für useDraggable bleiben */}
+        <div className="msgchat-header msgchat-title">
+          <span className={`msgchat-online-dot ${isOnline ? 'online' : 'offline'}`} />
+          <span className="msgchat-header-name">{title}</span>
+          <span className="msgchat-header-status">{isOnline ? UI_LABELS.onlineNow : UI_LABELS.offlineNow}</span>
+        </div>
+
+        {/* Chat-Tabs */}
         <div className="msgchat-tabs">
           {activeChats.map(c => (
             <button
               key={c.friendId}
-              className={`${c.friendId === currentChatFriendId ? 'selected' : ''} ${c.unread ? 'alert' : ''}`}
+              className={`msgchat-tab ${c.friendId === currentChatFriendId ? 'selected' : ''} ${c.unread ? 'alert' : ''}`}
               onClick={() => handleTabChange(c.friendId)}
               title={c.friendName}
             >
-              <span className="msgchat-tab-initial">{c.friendName.charAt(0).toUpperCase()}</span>
+              <span className="msgchat-tab-name">
+                {c.friendName.length > 8 ? c.friendName.slice(0, 7) + '…' : c.friendName}
+              </span>
+              {c.unread && <span className="msgchat-tab-badge">!</span>}
             </button>
           ))}
         </div>
+
+        {/* Actions Bar */}
         <div className="msgchat-actions-bar">
-          <button
-            onClick={() => {
-              const name = currentChat?.friendName || 'diesen Spieler';
-              if (window.confirm(`${name} blockieren? Du kannst ihn danach keine PN mehr schicken.`)) {
-                deltaQueue.messengerBlock(currentChatFriendId);
-              }
-            }}
-            className="msgchat-block-btn"
-            title={UI_LABELS.blockUser}
-          >
-            {UI_LABELS.blockUser}
-          </button>
-          <button onClick={handleCloseChat} className="msgchat-close-chat" title={UI_LABELS.closeChat}>
-            <img src="/images/messenger/close.png" alt={UI_LABELS.closeChat} />
-          </button>
+          {blockConfirmFriendId === currentChatFriendId ? (
+            <div className="msgchat-block-confirm">
+              <span className="msgchat-block-confirm-text">
+                {currentChat?.friendName} {UI_LABELS.confirmBlock}
+              </span>
+              <button
+                className="msgchat-block-confirm-yes"
+                onClick={() => {
+                  deltaQueue.messengerBlock(currentChatFriendId);
+                  setBlockConfirmFriendId(null);
+                }}
+              >
+                {UI_LABELS.confirmBlockYes}
+              </button>
+              <button
+                className="msgchat-block-confirm-cancel"
+                onClick={() => setBlockConfirmFriendId(null)}
+              >
+                {UI_LABELS.confirmBlockCancel}
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => setBlockConfirmFriendId(currentChatFriendId)}
+                className="msgchat-block-btn"
+                title={UI_LABELS.blockUser}
+              >
+                {UI_LABELS.blockUser}
+              </button>
+              <button onClick={handleCloseChat} className="msgchat-close-chat" title={UI_LABELS.closeChat}>
+                <img src="/images/messenger/close.png" alt={UI_LABELS.closeChat} />
+              </button>
+            </>
+          )}
         </div>
+
+        {/* Nachrichten */}
         <div className="msgchat-messages" ref={chatRef}>
           {currentChat?.messages.map((msg, i) => {
-            let className = 'msgchat-msg';
-            if (msg.type === 'system') className += ' info';
-            else if (msg.senderId === myUserId) className += ' me';
+            let extraClass = '';
+            if (msg.type === 'system') extraClass = 'info';
+            else if (msg.senderId === myUserId) extraClass = 'me';
             return (
-              <p key={msg.id || i} className={className}>
-                {msg.type !== 'system' && <strong>{msg.senderName}: </strong>}
-                {msg.text}
-              </p>
+              <div key={msg.id || i} className={`msgchat-msg ${extraClass}`}>
+                <div className="msgchat-msg-row">
+                  {msg.type !== 'system' && (
+                    <strong className="msgchat-msg-sender">{msg.senderName}</strong>
+                  )}
+                  <span className="msgchat-msg-text">{msg.text}</span>
+                </div>
+                {msg.createdAt && (
+                  <span className="msgchat-msg-time">{formatRelativeTime(msg.createdAt)}</span>
+                )}
+              </div>
             );
           })}
           {(!currentChat || currentChat.messages.length === 0) && (
-            <p className="msgchat-msg info">{UI_LABELS.startConversation}</p>
+            <div className="msgchat-msg info">
+              <div className="msgchat-msg-row">
+                <span className="msgchat-msg-text">{UI_LABELS.startConversation}</span>
+              </div>
+            </div>
           )}
         </div>
+
+        {/* Input Area mit Send-Button */}
         <div className="msgchat-input-area">
           <textarea
             value={text}
@@ -856,6 +990,14 @@ export function MessengerChatPanel({ initialFriendId, initialFriendName, onClose
             rows={2}
             placeholder={UI_LABELS.chatPlaceholder}
           />
+          <button
+            className="msgchat-send-btn"
+            onClick={handleSend}
+            disabled={!text.trim() || !currentChat?.conversationId}
+            title="Senden (Enter)"
+          >
+            <img src="/images/messenger/start_chat.png" alt="Senden" />
+          </button>
         </div>
       </div>
     </>
@@ -877,9 +1019,9 @@ const _friendOnlineCache = new Map<number, boolean>();
 export function MessengerContainer({ visible, onClose }: MessengerContainerProps) {
   const [chatTarget, setChatTarget] = useState<{ friendId: number; friendName: string } | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [friendsOnlineMap, setFriendsOnlineMap] = useState<Map<number, boolean>>(new Map(_friendOnlineCache));
 
   // Globaler Listener: Sound + Notification + Online-Status-Tracking
-  // Läuft IMMER, egal ob Messenger offen oder geschlossen
   useEffect(() => {
     const onIncomingRequest = () => {
       playReceiveSound();
@@ -900,6 +1042,7 @@ export function MessengerContainer({ visible, onClose }: MessengerContainerProps
       const data = (e as CustomEvent).detail;
       if (data?.userId != null) {
         _friendOnlineCache.set(Number(data.userId), Boolean(data.online));
+        setFriendsOnlineMap(new Map(_friendOnlineCache));
       }
     };
     const onFriendsList = (e: Event) => {
@@ -908,6 +1051,7 @@ export function MessengerContainer({ visible, onClose }: MessengerContainerProps
         for (const f of data.friends) {
           _friendOnlineCache.set(Number(f.id), Boolean(f.online));
         }
+        setFriendsOnlineMap(new Map(_friendOnlineCache));
       }
     };
     window.addEventListener('messenger-friend-request-received', onIncomingRequest);
@@ -944,6 +1088,7 @@ export function MessengerContainer({ visible, onClose }: MessengerContainerProps
           initialFriendId={chatTarget.friendId}
           initialFriendName={chatTarget.friendName}
           onClose={handleCloseChat}
+          friendsOnlineMap={friendsOnlineMap}
         />
       )}
     </>
@@ -951,7 +1096,7 @@ export function MessengerContainer({ visible, onClose }: MessengerContainerProps
 }
 
 // ═══════════════════════════════════════════════════════════
-// ══ CSS (Habbo-Original Style) ═════════════════════════════
+// ══ CSS ════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════
 
 const messengerCSS = `
@@ -960,151 +1105,170 @@ const messengerCSS = `
   position: fixed;
   left: 260px;
   top: 80px;
-  width: 280px;
-  background: rgba(15, 23, 42, 0.96);
+  width: 300px;
+  background: rgba(15, 23, 42, 0.97);
   color: #e2e8f0;
   border: 1px solid #334155;
-  box-sizing: content-box;
   border-radius: 10px;
-  text-align: center;
-  padding: 0;
-  padding-top: 8px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   font-size: 12px;
   user-select: none;
-  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.55);
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.6);
+  overflow: hidden;
 }
 
-.msg-close-btn {
-  position: absolute;
-  top: 5px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: #94a3b8;
-  font-weight: bold;
-  font-size: 12px;
-  cursor: pointer;
+/* Header */
+.msg-header {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  background: #0f172a;
+  border-bottom: 1px solid #334155;
 }
-.msg-close-btn:hover { color: #f1f5f9; }
-
 .msg-title {
+  flex: 1;
   font-size: 13px;
   font-weight: bold;
-  margin: 0 0 8px;
   color: #f8fafc;
   cursor: grab;
   user-select: none;
-  padding: 2px 0;
+  margin: 0;
+  padding: 0;
 }
 .msg-title:active { cursor: grabbing; }
 
-/* Tabs */
-.msg-main-tab {
-  cursor: pointer;
-  width: 100%;
-  background: #1e293b;
-  height: 26px;
-  box-sizing: border-box;
-  border-top: 1px solid rgba(51, 65, 85, 0.8);
-  border-bottom: 1px solid rgba(51, 65, 85, 0.8);
-  color: #cbd5e1;
-  display: flex;
-  align-items: center;
-  font-size: 12px;
-}
-.msg-main-tab.msg-selected {
-  background: #0f172a;
-  color: #f8fafc;
-}
-.msg-main-tab.msg-active {
-  background: #7c2d12;
-  color: #ffedd5;
-}
-.msg-main-tab span { margin: auto 10px; }
-
-.msg-main-tab button {
-  border: none;
+.msg-close-btn {
   background: none;
-  margin: auto 0;
-  padding: 0;
-}
-.msg-open-arrow {
-  width: 9px;
-  height: 5px;
-  background-image: url('/images/messenger/arrow_down_white.png');
-  background-repeat: no-repeat;
-  background-size: contain;
-}
-.msg-close-arrow {
-  width: 5px;
-  height: 9px;
-  background-image: url('/images/messenger/arrow_right_white.png');
-  background-repeat: no-repeat;
-  background-size: contain;
-}
-.msg-main-tab.msg-selected .msg-open-arrow { background-image: url('/images/messenger/arrow_down_white.png'); }
-.msg-main-tab.msg-selected .msg-close-arrow { background-image: url('/images/messenger/arrow_right_white.png'); }
-
-/* Wrapper */
-.msg-wrapper {
-  background: #0f172a;
-  height: 240px;
-  padding: 5px;
-  box-sizing: border-box;
-}
-.msg-wrapper.msg-search { background: #0b1220; }
-
-.msg-second-tab {
-  background: #1e293b;
-  color: #e2e8f0;
-  width: 100%;
-  text-align: left;
-  font-size: 12px;
-  height: 24px;
-  border: 1px solid #334155;
+  border: none;
+  color: #64748b;
+  font-size: 13px;
   font-weight: bold;
   cursor: pointer;
-  padding: 0 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
 }
-.msg-wrapper.msg-search .msg-second-tab { background: #172033; }
+.msg-close-btn:hover { color: #f1f5f9; background: rgba(148, 163, 184, 0.15); }
 
-.msg-friends-container {
-  overflow-y: auto;
-  height: 192px;
+/* Body: Sidebar + Content */
+.msg-body {
+  display: flex;
+  height: 290px;
 }
 
-.msg-friend-list {
+/* Sidebar */
+.msg-sidebar {
+  width: 40px;
+  background: #0b1220;
+  border-right: 1px solid #1e293b;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 4px;
+  flex-shrink: 0;
 }
+.msg-sidebar-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+}
+.msg-sidebar-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: #334155;
+}
+.msg-sidebar-btn.active {
+  background: #1e293b;
+  border-color: #475569;
+}
+.msg-sidebar-btn img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  opacity: 0.7;
+}
+.msg-sidebar-btn.active img,
+.msg-sidebar-btn:hover img { opacity: 1; }
+
+.msg-sidebar-badge {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+/* Content Area */
+.msg-content-area {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+}
+
+/* Scrollbare Liste */
+.msg-content-scroll {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.msg-group-header {
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  border-bottom: 1px solid #334155;
+}
+
+/* Friend Row */
 .msg-friend {
   width: 100%;
-  height: 28px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   color: #e2e8f0;
   overflow: hidden;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 6px;
   box-sizing: border-box;
-  gap: 3px;
+  gap: 4px;
+  transition: background 0.1s;
 }
-.msg-friend:nth-child(even) { background: rgba(30, 41, 59, 0.45); }
-.msg-friend:hover, .msg-friend.selected { background: #1d4ed8; color: #eff6ff; }
+.msg-friend:nth-child(even) { background: rgba(30, 41, 59, 0.35); }
+.msg-friend:hover { background: #1d4ed8; color: #eff6ff; }
 
 .msg-friend-status {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  margin-right: 6px;
   flex-shrink: 0;
 }
-.msg-friend-status.online { background: #3c3; border: 1px solid #2a2; }
-.msg-friend-status.offline { background: #64748b; border: 1px solid #475569; }
+.msg-friend-status.online  { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }
+.msg-friend-status.offline { background: #475569; }
 
 .msg-friend-name {
   flex: 1;
@@ -1117,81 +1281,234 @@ const messengerCSS = `
 
 .msg-icons {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   margin-left: auto;
   flex-shrink: 0;
 }
 .msg-icon-btn {
   border: none;
   background: none;
-  padding: 1px;
+  padding: 2px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
-  transition: background 0.15s;
+  border-radius: 3px;
+  transition: background 0.12s;
 }
-.msg-icon-btn:hover {
-  background: rgba(148, 163, 184, 0.22);
-}
+.msg-icon-btn:hover { background: rgba(148, 163, 184, 0.25); }
 .msg-icon-btn img {
-  width: 16px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   display: block;
   image-rendering: pixelated;
 }
 
-/* Actions Bar */
-.msg-actions {
-  margin-top: 4px;
-  background: rgba(15, 23, 42, 0.92);
-  height: 36px;
-  border-radius: 4px;
-  border: 1px solid #334155;
-  display: flex;
-  padding: 3px 5px;
-  box-sizing: border-box;
-  gap: 4px;
-}
-.msg-actions button {
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #e2e8f0;
-  min-width: 28px;
-  height: 24px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+/* Empty hint */
+.msg-empty-hint {
+  padding: 20px 16px;
+  color: #64748b;
   font-size: 11px;
+  text-align: center;
+}
+
+/* ─── Search Content ──────────────────────────── */
+.msg-search-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.msg-search-form {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: #0b1220;
+  border-bottom: 1px solid #1e293b;
+  flex-shrink: 0;
+}
+.msg-search-form input {
+  flex: 1;
+  height: 24px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+.msg-search-form input::placeholder { color: #64748b; }
+.msg-search-form button {
+  height: 24px;
+  padding: 0 8px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.msg-search-form button:hover { background: #334155; }
+
+/* Search result wrapper for compose row */
+.msg-search-result-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Compose Friend Request */
+.msg-compose-request {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px 4px 18px;
+  background: #0b1220;
+  border-top: 1px solid #1e293b;
+}
+.msg-compose-request input {
+  flex: 1;
+  height: 22px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+.msg-compose-request input::placeholder { color: #64748b; }
+.msg-compose-send-btn {
+  height: 22px;
+  padding: 0 8px;
+  background: #1d4ed8;
+  border: 1px solid #1e40af;
+  color: #eff6ff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.msg-compose-send-btn:hover { background: #1e40af; }
+
+.msg-request-sent-badge {
+  color: #86efac;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* ─── Requests Content ────────────────────────── */
+.msg-requests-list {
+  overflow-y: auto;
+  height: 100%;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
   gap: 3px;
 }
-.msg-actions button:hover { background: #334155; }
-.msg-actions img { width: 14px; height: 14px; }
 
-.msg-actions input {
-  height: 22px;
-  flex: 1;
-  border: 1px solid #475569;
-  border-radius: 3px;
-  font-size: 12px;
-  padding: 0 5px;
-  color: #e2e8f0;
+.msg-request-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.msg-request-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  gap: 6px;
+  transition: background 0.1s;
+}
+.msg-request-header:hover { background: #263347; }
+
+.msg-request-time {
+  color: #64748b;
+  font-size: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.msg-request-chevron {
+  color: #64748b;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.msg-request-body {
+  padding: 6px 8px 8px;
   background: #0f172a;
+  border-top: 1px solid #334155;
 }
-.msg-actions input::placeholder { color: #94a3b8; }
-.msg-actions form { display: flex; width: 100%; gap: 4px; }
-
-.msg-requests-actions button {
-  margin: auto;
-  width: 45%;
+.msg-request-msg-text {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: italic;
+  margin: 0 0 7px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.msg-request-msg-empty {
+  color: #475569;
+  font-size: 10px;
+  margin: 0 0 7px;
 }
 
-/* Settings */
+.msg-request-actions {
+  display: flex;
+  gap: 6px;
+}
+.msg-request-accept-btn,
+.msg-request-deny-btn {
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px;
+}
+.msg-request-accept-btn {
+  background: #14532d;
+  border-color: #166534;
+  color: #86efac;
+}
+.msg-request-accept-btn:hover { background: #166534; }
+.msg-request-deny-btn {
+  background: #450a0a;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+.msg-request-deny-btn:hover { background: #7f1d1d; }
+.msg-request-accept-btn img,
+.msg-request-deny-btn img { width: 11px; height: 11px; image-rendering: pixelated; }
+
+.msg-requests-bulk {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-top: 1px solid #334155;
+  flex-shrink: 0;
+  margin-top: auto;
+}
+.msg-requests-bulk button {
+  flex: 1;
+  height: 22px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.msg-requests-bulk button:hover { background: #334155; color: #e2e8f0; }
+
+/* ─── Settings Content ────────────────────────── */
 .msg-settings-wrapper {
-  height: 240px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1205,14 +1522,15 @@ const messengerCSS = `
   letter-spacing: 0.06em;
   padding: 5px 8px 3px;
   border-top: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
 }
 .msg-blocklist {
-  height: auto;
-  max-height: 100px;
   overflow-y: auto;
+  flex: 1;
 }
 .msg-blocklist-empty {
-  padding: 8px;
+  padding: 10px;
   color: #64748b;
   font-size: 11px;
   text-align: center;
@@ -1220,16 +1538,17 @@ const messengerCSS = `
 .msg-settings-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  flex-shrink: 0;
 }
 .msg-setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 8px;
+  padding: 8px 10px;
   background: #1e293b;
   font-size: 12px;
   color: #e2e8f0;
+  border-bottom: 1px solid #334155;
 }
 .msg-setting-row:nth-child(even) { background: #172033; }
 .msg-setting-toggle {
@@ -1244,162 +1563,189 @@ const messengerCSS = `
   padding: 0;
   flex-shrink: 0;
 }
-.msg-setting-toggle.on {
-  background: #3c3;
-  border-color: #2a2;
-}
+.msg-setting-toggle.on { background: #22c55e; border-color: #16a34a; }
 .msg-setting-knob {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
   position: absolute;
   top: 1px;
   left: 1px;
   transition: transform 0.2s;
 }
-.msg-setting-toggle.on .msg-setting-knob {
-  transform: translateX(16px);
-}
+.msg-setting-toggle.on .msg-setting-knob { transform: translateX(16px); }
 
-/* Error */
+/* ─── Error Bar ───────────────────────────────── */
 .msg-error {
   background: #b91c1c;
   color: #fff;
   font-size: 11px;
-  padding: 4px 8px;
+  padding: 5px 10px;
   text-align: center;
   font-weight: 600;
-  animation: msg-error-fade 0.3s ease-out;
+  animation: msg-error-fade 0.25s ease-out;
 }
 @keyframes msg-error-fade {
   from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-
-/* Footer */
-.msg-footer {
-  display: flex;
-  height: 42px;
-}
-.msg-footer button {
-  background: #1e293b;
-  color: #e2e8f0;
-  font-size: 11px;
-  width: 100px;
-  height: 28px;
-  border: 1px solid #334155;
-  border-radius: 3px;
-  margin: auto 10px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  cursor: pointer;
-}
-.msg-footer button:hover { background: #334155; }
-.msg-footer button img { width: 12px; height: 12px; }
 `;
 
 const chatCSS = `
 /* ─── Chat Panel ──────────────────────────────── */
 .msgchat-panel {
   position: fixed;
-  left: 510px;
+  left: 520px;
   top: 80px;
-  width: 280px;
-  background: rgba(15, 23, 42, 0.96);
+  width: 290px;
+  background: rgba(15, 23, 42, 0.97);
   color: #e2e8f0;
   border: 1px solid #334155;
-  box-sizing: content-box;
   border-radius: 10px;
-  text-align: center;
-  padding: 0;
-  padding-top: 8px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   font-size: 12px;
   user-select: none;
-  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.55);
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.6);
+  overflow: hidden;
 }
 
 .msgchat-close-btn {
   position: absolute;
-  top: 5px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
-  padding: 0;
+  top: 6px;
+  right: 6px;
   background: none;
   border: none;
-  color: #94a3b8;
-  font-weight: bold;
+  color: #64748b;
   font-size: 12px;
+  font-weight: bold;
   cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  z-index: 1;
+  line-height: 1;
 }
-.msgchat-close-btn:hover { color: #f8fafc; }
+.msgchat-close-btn:hover { color: #f1f5f9; background: rgba(148,163,184,0.15); }
 
-.msgchat-title {
+/* Header mit Online-Status */
+.msgchat-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 32px 0 10px;
+  background: #0f172a;
+  border-bottom: 1px solid #334155;
+  min-height: 36px;
+  cursor: grab;
+}
+.msgchat-header:active { cursor: grabbing; }
+
+.msgchat-online-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.msgchat-online-dot.online  { background: #22c55e; box-shadow: 0 0 5px #22c55e99; }
+.msgchat-online-dot.offline { background: #475569; }
+
+.msgchat-header-name {
   font-size: 13px;
   font-weight: bold;
-  margin: 0 0 5px;
   color: #f8fafc;
-  cursor: grab;
-  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
-.msgchat-title:active { cursor: grabbing; }
+.msgchat-header-status {
+  font-size: 10px;
+  color: #64748b;
+  flex-shrink: 0;
+}
 
 /* Chat-Tabs */
 .msgchat-tabs {
-  height: 32px;
+  height: 30px;
   background: #1e293b;
   display: flex;
   border-bottom: 1px solid #334155;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
-.msgchat-tabs button {
-  height: 32px;
-  width: 30px;
-  padding: 0;
-  border: 1px solid #334155;
-  border-left: none;
+.msgchat-tabs::-webkit-scrollbar { display: none; }
+
+.msgchat-tab {
+  height: 30px;
+  min-width: 54px;
+  max-width: 90px;
+  padding: 0 7px;
+  border: none;
+  border-right: 1px solid #334155;
   background: inherit;
-  color: #cbd5e1;
+  color: #94a3b8;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 3px;
+  flex-shrink: 1;
+  overflow: hidden;
+  transition: background 0.1s, color 0.1s;
 }
-.msgchat-tabs button.alert {
-  background: #1d4ed8;
-}
-.msgchat-tabs button.selected,
-.msgchat-tabs button:hover {
+.msgchat-tab.selected,
+.msgchat-tab:hover {
   background: #0f172a;
-  border-bottom-color: #0f172a;
+  color: #f8fafc;
 }
-.msgchat-tab-initial {
-  font-weight: bold;
-  font-size: 12px;
-  color: #e2e8f0;
-}
+.msgchat-tab.alert { color: #93c5fd; }
+.msgchat-tab.alert.selected { color: #f8fafc; }
 
-/* Actions */
-.msgchat-actions-bar {
-  background: #0f172a;
-  height: 28px;
+.msgchat-tab-name {
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.msgchat-tab-badge {
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  padding: 3px 5px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Actions Bar */
+.msgchat-actions-bar {
+  background: #0b1220;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
   justify-content: flex-end;
   gap: 6px;
+  border-bottom: 1px solid #1e293b;
 }
 .msgchat-close-chat {
   border: none !important;
   background: none !important;
   cursor: pointer;
-  padding: 0;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
 }
-.msgchat-close-chat img { width: 14px; height: 14px; }
+.msgchat-close-chat:hover { background: rgba(148,163,184,0.15) !important; }
+.msgchat-close-chat img { width: 13px; height: 13px; image-rendering: pixelated; }
 .msgchat-block-btn {
   border: 1px solid #7f1d1d;
   background: #450a0a;
@@ -1407,51 +1753,150 @@ const chatCSS = `
   font-size: 10px;
   font-weight: 600;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 7px;
   border-radius: 3px;
   cursor: pointer;
   transition: background 0.15s;
 }
 .msgchat-block-btn:hover { background: #7f1d1d; }
 
+/* Inline Block Confirm */
+.msgchat-block-confirm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+}
+.msgchat-block-confirm-text {
+  font-size: 10px;
+  color: #fca5a5;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msgchat-block-confirm-yes {
+  background: #7f1d1d;
+  border: 1px solid #991b1b;
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 700;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.msgchat-block-confirm-yes:hover { background: #991b1b; }
+.msgchat-block-confirm-cancel {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 10px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.msgchat-block-confirm-cancel:hover { background: #334155; }
+
 /* Messages */
 .msgchat-messages {
-  height: 240px;
+  height: 230px;
   background: #0f172a;
-  color: #e2e8f0;
   overflow-y: auto;
-  padding: 0 5px;
-  text-align: left;
+  padding: 2px 0;
 }
+
 .msgchat-msg {
   word-break: break-word;
-  margin: 0;
-  padding: 4px 6px;
+  padding: 4px 8px 2px;
   background: #1e293b;
-  font-size: 12px;
-  line-height: 1.4;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.45);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.4);
 }
-.msgchat-msg.me { background: #1d4ed8; color: #eff6ff; }
-.msgchat-msg.info { background: #172033; color: #94a3b8; }
-.msgchat-msg strong { font-weight: 600; }
+.msgchat-msg.me   { background: #1e3a8a; }
+.msgchat-msg.info { background: #0f172a; }
 
-/* Input */
+.msgchat-msg-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.msgchat-msg-sender {
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+  color: #93c5fd;
+}
+.msgchat-msg.me .msgchat-msg-sender { color: #bfdbfe; }
+.msgchat-msg.info .msgchat-msg-sender { color: #64748b; }
+.msgchat-msg-text {
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+.msgchat-msg-time {
+  font-size: 9px;
+  color: #475569;
+  text-align: right;
+  display: block;
+  padding-top: 1px;
+  padding-bottom: 2px;
+  user-select: none;
+}
+.msgchat-msg.me   .msgchat-msg-time { color: #6b9fdb; }
+.msgchat-msg.info .msgchat-msg-time { color: #334155; }
+
+/* Input + Send */
 .msgchat-input-area {
-  padding: 8px;
+  padding: 6px 8px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  background: #0b1220;
+  border-top: 1px solid #1e293b;
 }
 .msgchat-input-area textarea {
-  background: #0b1220;
+  background: #0f172a;
   color: #e2e8f0;
-  border: 1px solid #475569;
+  border: 1px solid #334155;
   resize: none;
-  width: 100%;
+  flex: 1;
   height: 44px;
   font-size: 12px;
-  padding: 4px;
+  padding: 5px 6px;
   box-sizing: border-box;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: inherit;
+  line-height: 1.4;
+  transition: border-color 0.15s;
 }
-.msgchat-input-area textarea::placeholder { color: #94a3b8; }
+.msgchat-input-area textarea:focus {
+  outline: none;
+  border-color: #475569;
+}
+.msgchat-input-area textarea::placeholder { color: #64748b; }
+
+.msgchat-send-btn {
+  width: 34px;
+  height: 34px;
+  background: #1d4ed8;
+  border: 1px solid #1e40af;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  margin-bottom: 5px;
+}
+.msgchat-send-btn:hover:not(:disabled) { background: #1e40af; }
+.msgchat-send-btn:disabled { opacity: 0.35; cursor: default; }
+.msgchat-send-btn img { width: 15px; height: 15px; image-rendering: pixelated; }
 `;

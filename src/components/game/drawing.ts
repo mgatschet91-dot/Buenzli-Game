@@ -59,6 +59,24 @@ export const ZONE_COLORS: Record<ZoneType, TileColorScheme> = {
     right: '#7a5a3a',
     stroke: '#f59e0b',
   },
+  mixed: {
+    top: '#4a2a6a',
+    left: '#3a1a5a',
+    right: '#5a3a7a',
+    stroke: '#a855f7',
+  },
+  nature: {
+    top: '#1a4a2a',
+    left: '#0a3a1a',
+    right: '#2a5a3a',
+    stroke: '#059669',
+  },
+  infrastructure: {
+    top: '#5a3a1a',
+    left: '#4a2a0a',
+    right: '#6a4a2a',
+    stroke: '#b45309',
+  },
 };
 
 /** Zone border colors (dashed lines) */
@@ -67,6 +85,9 @@ export const ZONE_BORDER_COLORS: Record<ZoneType, string> = {
   residential: '#22c55e',
   commercial: '#3b82f6',
   industrial: '#f59e0b',
+  mixed: '#a855f7',
+  nature: '#059669',
+  infrastructure: '#b45309',
 };
 
 /** Bauzone overlay colors */

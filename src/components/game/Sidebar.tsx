@@ -10,31 +10,31 @@ import { BuildingPreview } from '@/components/game/BuildingPreview';
 
 // Translatable category labels
 const CATEGORY_LABELS: Record<string, unknown> = {
-  TOOLS: msg('Tools'),
-  ZONES: msg('Zones'),
-  tools: msg('Tools'),
-  zones: msg('Zones'),
-  zoning: msg('Zoning'),
-  expandCity: msg('Expand City'),
-  terrain: msg('Terrain'),
+  TOOLS: msg('Werkzeuge'),
+  ZONES: msg('Zonen'),
+  tools: msg('Werkzeuge'),
+  zones: msg('Zonen'),
+  zoning: msg('Zonierung'),
+  expandCity: msg('Stadt erweitern'),
+  terrain: msg('Gelände'),
   painting: msg('Farbe'),
   services: msg('Services'),
   parks: msg('Parks'),
-  sports: msg('Sports'),
-  waterfront: msg('Waterfront'),
+  sports: msg('Sport'),
+  waterfront: msg('Ufer'),
   community: msg('Community'),
-  utilities: msg('Utilities'),
+  utilities: msg('Versorgung'),
   energie: '⚡ Energie',
-  special: msg('Special'),
+  special: msg('Speziell'),
   bauzone: msg('Bauzonen'),
   roads: msg('Strassen'),
 };
 
 // UI labels for translation
 const UI_LABELS = {
-  statistics: msg('Statistics'),
-  settings: msg('Settings'),
-  trade: msg('Trade'),
+  statistics: msg('Statistiken'),
+  settings: msg('Einstellungen'),
+  trade: msg('Handel'),
   navigator: msg('Community'),
   chat: msg('Chat'),
   debug: msg('Debug'),
@@ -654,7 +654,12 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
     'npc_buenzli': <Glasses className="w-4 h-4 text-yellow-400" />,
     'inspect': <Search className="w-4 h-4 text-amber-400" />,
     'bauzone': <SquareDashedBottom className="w-4 h-4 text-cyan-400" />,
-    'bauzone_remove': <Trash2 className="w-4 h-4 text-cyan-400" />,
+    'bauzone_remove': <Trash2 className="w-4 h-4 text-red-400" />,
+    'bauzone_residential': <SquareDashedBottom className="w-4 h-4 text-green-400" />,
+    'bauzone_commercial': <SquareDashedBottom className="w-4 h-4 text-blue-400" />,
+    'bauzone_industrial': <SquareDashedBottom className="w-4 h-4 text-orange-400" />,
+    'bauzone_mixed': <SquareDashedBottom className="w-4 h-4 text-purple-400" />,
+    'bauzone_infrastructure': <SquareDashedBottom className="w-4 h-4 text-amber-600" />,
     'solar_panel': <Zap className="w-4 h-4 text-yellow-400" />,
     'wind_turbine': <Zap className="w-4 h-4 text-sky-400" />,
     'power_plant': <Zap className="w-4 h-4 text-orange-400" />,
@@ -696,12 +701,6 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
     tools: ['road', 'autobahn', 'parking_spot'] as Tool[]
   }), []);
 
-  // Zoning submenu (shown under ZONES section, before BUILDINGS)
-  const zoningSubmenu = useMemo(() => ({
-    key: 'zoning',
-    label: CATEGORY_LABELS.zoning,
-    tools: ['zone_dezone'] as Tool[]
-  }), []);
 
   // Expand City submenu (shown under TOOLS section)
   const expandCityActions = useMemo(() => [
@@ -770,13 +769,13 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
       tools: ['stadium', 'fcbasel_stadium', 'st_ursen_kathedrale', 'disco_solothurn', 'primetower', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
       forceOpenUpward: true
     },
-    {
+    ...(municipalityRole === 'owner' || municipalityRole === 'council' ? [{
       key: 'bauzone',
       label: CATEGORY_LABELS.bauzone,
-      tools: ['bauzone', 'bauzone_remove'] as Tool[],
+      tools: ['bauzone_residential', 'bauzone_commercial', 'bauzone_industrial', 'bauzone_mixed', 'bauzone_infrastructure', 'bauzone_remove'] as Tool[],
       forceOpenUpward: true
-    },
-  ], [hasTransportCompany]);
+    }] : []),
+  ], [hasTransportCompany, municipalityRole]);
 
   const bottomPanelActions = useMemo(() => [
     { panel: 'statistics' as const, icon: <ChartIcon size={18} />, labelKey: 'statistics' as const },
@@ -1046,18 +1045,6 @@ export const Sidebar: React.ComponentType<SidebarProps> = React.memo(function Si
                     icon={categoryIcons.expandCity}
                     actions={expandCityActions}
                     money={stats.money}
-                  />
-                )}
-                {/* Zoning submenu - appears after ZONES category */}
-                {category === 'ZONES' && (
-                  <HoverSubmenu
-                    key={zoningSubmenu.key}
-                    label={zoningSubmenu.label}
-                    icon={categoryIcons.zoning}
-                    tools={zoningSubmenu.tools}
-                    selectedTool={selectedTool}
-                    money={stats.money}
-                    onSelectTool={handleSetTool}
                   />
                 )}
               </div>
