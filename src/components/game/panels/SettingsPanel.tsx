@@ -336,7 +336,11 @@ function ElectronDisplaySection() {
   const applyResolution = async (label: string, w: number, h: number) => {
     setResolution(label);
     await window.electronStore?.set(RESOLUTION_STORE_KEY, label);
-    if (!fullscreen) await window.electronWindow?.setResolution(w, h);
+    if (!fullscreen) {
+      await window.electronWindow?.setResolution(w, h);
+      // Canvas + Layout nach Resize neu berechnen lassen
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+    }
   };
 
   return (

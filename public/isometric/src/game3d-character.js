@@ -406,6 +406,7 @@ function buildCharacter(cfg = AVATAR) {
 // Avatar wird via ROOM_INIT postMessage vom Parent geladen (users.avatar_code aus SQL)
 
 let charGroup = buildCharacter(AVATAR)
+charGroup.visible = false  // versteckt bis Raum geladen (ROOM_INIT verarbeitet)
 scene.add(charGroup)
 
 function rebuildCharacter() {
@@ -580,22 +581,89 @@ Object.assign(chatBubble.style, {
 })
 document.body.appendChild(chatBubble)
 
-const chatInput = document.createElement('input')
-chatInput.placeholder = '💬 Nachricht eingeben…'
-Object.assign(chatInput.style, {
-  position: 'fixed', bottom: '14px', left: '50%', transform: 'translateX(-50%)',
-  background: 'rgba(10,10,30,0.82)', border: '1px solid rgba(255,255,255,0.20)',
-  borderRadius: '22px', padding: '8px 18px', color: '#fff', fontSize: '13px',
-  fontFamily: "'Segoe UI', sans-serif", width: '280px', outline: 'none',
-  zIndex: '20', backdropFilter: 'blur(4px)'
+// ── Unified Bottom Bar: Chat + Emote-Buttons ──────────────────────────────────
+const bottomBar = document.createElement('div')
+Object.assign(bottomBar.style, {
+  position: 'fixed', bottom: '12px', left: '50%', transform: 'translateX(-50%)',
+  display: 'flex', alignItems: 'center', gap: '6px',
+  background: 'rgba(10,10,30,0.82)', border: '1px solid rgba(255,255,255,0.15)',
+  borderRadius: '26px', padding: '5px 8px 5px 14px',
+  zIndex: '20', backdropFilter: 'blur(4px)',
 })
-document.body.appendChild(chatInput)
+document.body.appendChild(bottomBar)
+
+const chatInput = document.createElement('input')
+chatInput.placeholder = '💬 Nachricht…'
+Object.assign(chatInput.style, {
+  background: 'transparent', border: 'none', outline: 'none',
+  color: '#fff', fontSize: '13px', fontFamily: "'Segoe UI', sans-serif",
+  width: '200px', padding: '3px 4px',
+})
+bottomBar.appendChild(chatInput)
+
+// Emote-Buttons
+const EMOTES = [
+  { emoji: '👋', state: 'wave',  title: 'Winken' },
+  { emoji: '💃', state: 'dance', title: 'Tanzen' },
+  { emoji: '💤', state: 'sleep', title: 'Schlafen' },
+  { emoji: '🧍', state: 'idle',  title: 'Stehen' },
+]
+for (const em of EMOTES) {
+  const btn = document.createElement('button')
+  btn.textContent = em.emoji
+  btn.title = em.title
+  Object.assign(btn.style, {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontSize: '20px', lineHeight: '1', padding: '2px 3px', borderRadius: '6px',
+    transition: 'transform 0.1s, background 0.1s', flexShrink: '0',
+  })
+  btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(255,255,255,0.12)'; btn.style.transform = 'scale(1.2)' })
+  btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; btn.style.transform = 'scale(1)' })
+  btn.addEventListener('click', () => {
+    if (em.state === 'idle' || (char.state !== 'sit' && char.state !== 'jacuzzi_undress')) {
+      char.state = em.state
+    }
+  })
+  bottomBar.appendChild(btn)
+}
 
 chatInput.addEventListener('keydown', e => {
   e.stopPropagation()
   if (e.code === 'Enter') {
     const text = chatInput.value.trim()
     if (text) {
+      // ── Chat-Commands (/wave, /dance, /sleep, /sit, /idle, /shout) ──────────
+      if (text.startsWith('/')) {
+        const [cmd, ...rest] = text.slice(1).split(' ')
+        const command = cmd.toLowerCase()
+        const EMOTE_CMDS = { wave: 'wave', dance: 'dance', sleep: 'sleep', idle: 'idle', stehen: 'idle', sit: 'sit' }
+        if (EMOTE_CMDS[command]) {
+          const state = EMOTE_CMDS[command]
+          if (state === 'idle' || (char.state !== 'sit' && char.state !== 'jacuzzi_undress')) {
+            char.state = state === 'idle' ? 'idle' : state
+          }
+          chatInput.value = ''
+          chatInput.blur()
+          return
+        }
+        if (command === 'shout' && rest.length > 0) {
+          const shoutText = rest.join(' ').toUpperCase()
+          char.chatText  = '📢 ' + shoutText
+          char.chatting  = true
+          char.chatTimer = 7.0
+          chatBubble.textContent = '📢 ' + shoutText
+          chatBubble.style.background = 'rgba(254,200,50,0.97)'
+          chatBubble.style.border     = '2px solid #c8910a'
+          chatBubble.style.color      = '#3d2000'
+          chatBubble.style.boxShadow  = '0 2px 16px rgba(200,145,10,0.6)'
+          chatBubble.style.display = 'block'
+          window.parent?.postMessage({ type: 'CHAR_CHAT', message: '📢 ' + shoutText }, '*')
+          chatInput.value = ''
+          chatInput.blur()
+          return
+        }
+        // Unbekannter Command → als normalen Text senden
+      }
       char.chatText  = text
       char.chatting  = true
       char.chatTimer = 5.0

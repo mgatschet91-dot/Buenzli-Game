@@ -160,14 +160,13 @@ function BadgesTab({ myUserId }: { myUserId: number }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!myUserId) return;
     setLoading(true);
-    fetch(`${AUTH_API_BASE_URL}/api/admin/users/${myUserId}/badges`, { headers: getAuthHeaders() })
+    fetch(`${AUTH_API_BASE_URL}/api/users/me/badges`, { headers: getAuthHeaders() })
       .then(r => r.json())
       .then(d => setBadges(d.data?.badges || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [myUserId]);
+  }, []);
 
   if (loading) return <div className="text-slate-400 text-sm py-6 text-center">{mm(UI_LABELS.loading)}</div>;
   if (!badges.length) return (

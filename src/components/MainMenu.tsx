@@ -208,7 +208,7 @@ function LoadingScreen({ message, municipalityName, progress, t }: { message: st
     <main className="min-h-screen hero-gradient geo-pattern flex flex-col items-center justify-center relative overflow-hidden">
       <Particles />
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[150px] animate-pulseGlow" />
+        <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 md:blur-[150px] md:animate-pulseGlow" />
       </div>
 
       <div className="relative z-10 flex flex-col items-center gap-6 animate-fadeIn">
@@ -1233,12 +1233,12 @@ export default function MainMenu() {
   // ==========================================
   if (view === 'menu') {
     return (
-      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden flex flex-col">
+      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden flex flex-col touch-auto overscroll-contain">
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
           <Particles />
-          <div className="absolute top-[8%] left-[4%] w-80 h-80 rounded-full bg-emerald-400/12 blur-[120px] animate-float" />
-          <div className="absolute bottom-[8%] right-[4%] w-[28rem] h-[28rem] rounded-full bg-amber-300/12 blur-[140px] animate-float" style={{ animationDelay: '2s' }} />
-          <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[46rem] h-[46rem] rounded-full bg-black/25 blur-[180px]" />
+          <div className="absolute top-[8%] left-[4%] w-80 h-80 rounded-full bg-emerald-400/12 md:blur-[120px] md:animate-float" />
+          <div className="absolute bottom-[8%] right-[4%] w-[28rem] h-[28rem] rounded-full bg-amber-300/12 md:blur-[140px] md:animate-float" style={{ animationDelay: '2s' }} />
+          <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[46rem] h-[46rem] rounded-full bg-black/25 md:blur-[180px]" />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/35 to-black/55" />
         </div>
         <div className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden z-10">
@@ -1250,7 +1250,7 @@ export default function MainMenu() {
           <SwissLanguageSelector locale={locale} onLocaleChange={setLocale} />
         </div>
 
-        <section className="relative z-10 flex-1 flex items-center px-4 md:px-8 py-6 md:py-16">
+        <section className="relative z-10 flex-1 flex items-start md:items-center px-4 md:px-8 py-8 md:py-16">
           <div className="w-full max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12 items-center">
             <div className={`transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
               <span className="inline-flex items-center px-3 py-1 rounded-full border border-amber-300/40 bg-black/25 text-[11px] tracking-[0.18em] uppercase text-amber-200/95">
@@ -1380,11 +1380,11 @@ export default function MainMenu() {
   // ==========================================
   if (view === 'login') {
     return (
-      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden">
+      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden touch-auto overscroll-contain">
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
           <Particles />
-          <div className="absolute top-[20%] left-[10%] w-64 h-64 rounded-full bg-emerald-400/12 blur-[100px] animate-float" />
-          <div className="absolute bottom-[20%] right-[10%] w-64 h-64 rounded-full bg-amber-300/12 blur-[100px] animate-float" style={{ animationDelay: '2s' }} />
+          <div className="absolute top-[20%] left-[10%] w-64 h-64 rounded-full bg-emerald-400/12 md:blur-[100px] md:animate-float" />
+          <div className="absolute bottom-[20%] right-[10%] w-64 h-64 rounded-full bg-amber-300/12 md:blur-[100px] md:animate-float" />
         </div>
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent z-10" />
 
@@ -1489,11 +1489,11 @@ export default function MainMenu() {
   // ==========================================
   if (view === 'forgot') {
     return (
-      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden">
+      <main className="fixed inset-0 hero-gradient overflow-y-auto overflow-x-hidden touch-auto overscroll-contain">
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
           <Particles />
-          <div className="absolute top-[20%] left-[10%] w-64 h-64 rounded-full bg-emerald-400/12 blur-[100px] animate-float" />
-          <div className="absolute bottom-[20%] right-[10%] w-64 h-64 rounded-full bg-amber-300/12 blur-[100px] animate-float" style={{ animationDelay: '2s' }} />
+          <div className="absolute top-[20%] left-[10%] w-64 h-64 rounded-full bg-emerald-400/12 md:blur-[100px] md:animate-float" />
+          <div className="absolute bottom-[20%] right-[10%] w-64 h-64 rounded-full bg-amber-300/12 md:blur-[100px] md:animate-float" />
         </div>
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent z-10" />
 
@@ -1591,8 +1591,8 @@ export default function MainMenu() {
 
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <Particles />
-        <div className="absolute top-[15%] right-[5%] w-64 h-64 rounded-full bg-emerald-400/12 blur-[100px] animate-float" />
-        <div className="absolute bottom-[10%] left-[10%] w-72 h-72 rounded-full bg-amber-300/12 blur-[100px] animate-float" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-[15%] right-[5%] w-64 h-64 rounded-full bg-emerald-400/12 md:blur-[100px] md:animate-float" />
+        <div className="absolute bottom-[10%] left-[10%] w-72 h-72 rounded-full bg-amber-300/12 md:blur-[100px] md:animate-float" style={{ animationDelay: '2s' }} />
       </div>
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent z-10" />
 

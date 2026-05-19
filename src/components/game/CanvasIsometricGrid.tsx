@@ -3,7 +3,7 @@
 'use no memo';
 
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
-import { useMessages, T, Var, useGT } from 'gt-next';
+import { useMessages, T, Var, useGT, msg } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { TOOL_INFO, Tile, Building, BuildingType, AdjacentCity, Tool } from '@/types/game';
 import { getBuildingSize, requiresWaterAdjacency, getWaterAdjacency } from '@/lib/simulation';
@@ -13,6 +13,22 @@ import { getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HO
 import { spawnCarFromParkingRef } from '@/lib/parkingSpawnBridge';
 import { selectSpriteSource, calculateSpriteCoords, calculateSpriteScale, calculateSpriteOffsets, getSpriteRenderInfo } from '@/components/game/buildingSprite';
 import { getAuthToken } from '@/lib/api/coreApi';
+
+// NPC Tooltip Labels (static translations via msg/useMessages)
+const NPC_TOOLTIP_LABELS = {
+  drugDealTitle:      msg('Drogenhandel'),
+  drugDealDesc:       msg('Verdächtiger Drogenhandel. Dealer in Gebiet mit geringer Polizeidichte aktiv.'),
+  suspiciousTitle:    msg('Verdächtige Aktivität'),
+  breakIn:            msg('Einbruch festgestellt. Verdächtiger operiert unter dem Deckmantel der Nacht.'),
+  loitering:          msg('Verdächtige Person in der Nähe von Gebäuden. Geringe Polizeidichte.'),
+  pursuitTitle:       msg('Polizeiverfolgung'),
+  pursuitDesc:        msg('Verdächtiger flüchtet vor der Polizei. Beamte in Verfolgung.'),
+  homelessTitle:      msg('Obdachlose Person'),
+  homelessDesc:       msg('Person ohne Unterkunft. Wohnungsmangel in der Gegend.'),
+  buenzliTitle:       msg('Büenzli-Inspektor'),
+  buenzliParking:     msg('Überprüft Falschparkierungen.'),
+  buenzliInspect:     msg('Inspiziert Gebäude auf Einhaltung der Vorschriften.'),
+};
 
 // Import shadcn components
 import { Button } from '@/components/ui/button';
@@ -98,7 +114,7 @@ import { InspectionPanel } from '@/components/game/panels/InspectionPanel';
 import { RoomViewerOverlay } from '@/components/game/RoomViewerOverlay';
 import BuenzliQuizDialog from './BuenzliQuizDialog';
 import { drawTradePartnerPreviews, type TradePartnerPreviewData } from '@/components/game/drawTradePartnerPreview';
-import { findNearestTree as findNearestTreeUtil, createWoodcutterNpc as createWoodcutterNpcUtil, buildDirectGridPath as buildDirectGridPathUtil, findNearestGrass as findNearestGrassUtil, createGardenerNpc as createGardenerNpcUtil, createPoliceNpc as createPoliceNpcUtil, createGangsterNpc as createGangsterNpcUtil, findFleePoint as findFleePointUtil, findNearestInspectableBuilding as findNearestInspectableBuildingUtil, createBuenzliNpc as createBuenzliNpcUtil, createPlantationWoodcutterNpc as createPlantationWoodcutterNpcUtil, createHomelessNpc as createHomelessNpcUtil, WOODCUTTER_LEVEL_CONFIG, updatePartyGuests as updatePartyGuestsUtil, createPartyGuestNpc as createPartyGuestNpcUtil, partyGuestMap } from '@/components/game/pedestrianSystem';
+import { findNearestTree as findNearestTreeUtil, createWoodcutterNpc as createWoodcutterNpcUtil, buildDirectGridPath as buildDirectGridPathUtil, findNearestGrass as findNearestGrassUtil, createGardenerNpc as createGardenerNpcUtil, createPoliceNpc as createPoliceNpcUtil, createGangsterNpc as createGangsterNpcUtil, findFleePoint as findFleePointUtil, findNearestInspectableBuilding as findNearestInspectableBuildingUtil, createBuenzliNpc as createBuenzliNpcUtil, createKontrolleurNpc as createKontrolleurNpcUtil, createPlantationWoodcutterNpc as createPlantationWoodcutterNpcUtil, createHomelessNpc as createHomelessNpcUtil, WOODCUTTER_LEVEL_CONFIG, WOODCUTTER_GROWTH_MS, updatePartyGuests as updatePartyGuestsUtil, createPartyGuestNpc as createPartyGuestNpcUtil, partyGuestMap } from '@/components/game/pedestrianSystem';
 import { avatarDebugLog } from '@/components/game/drawPedestrians';
 import { findPathOnRoads as findPathOnRoadsUtil, findNearestRoadToBuilding as findNearestRoadToBuildingUtil } from '@/components/game/utils';
 import {
@@ -740,6 +756,56 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
   }, [isFullyViewOnly, originalPlaceAtTile, flipBuildingAtTile, latestStateRef, showPublicRoomWalls]);
 
+  // === HOLZFÄLLER NPC RESPAWN ===
+  // Läuft bei jedem Grid-Update: Wenn ein woodcutter_house nicht genug plantation NPCs hat
+  // (z.B. nach Reload oder nach Worker-Upgrade), werden die fehlenden NPCs gespawnt.
+  const wcNpcLastLevelRef = useRef<Map<string, number>>(new Map()); // key="x,y" → letzte bekannte Level
+  useEffect(() => {
+    if (!grid || gridSize === 0) return;
+    const dirs: ('north' | 'east' | 'south' | 'west')[] = ['south', 'east', 'west', 'north'];
+    for (let ty = 0; ty < gridSize; ty++) {
+      for (let tx = 0; tx < gridSize; tx++) {
+        const tile = grid[ty]?.[tx];
+        if (!tile || tile.building.type !== 'woodcutter_house') continue;
+
+        const level = tile.building.level || 1;
+        const config = WOODCUTTER_LEVEL_CONFIG[Math.min(level, 4)] || WOODCUTTER_LEVEL_CONFIG[1];
+        const key = `${tx},${ty}`;
+        const lastLevel = wcNpcLastLevelRef.current.get(key) ?? -1;
+
+        // Sicherstellen dass plantationPhase/customName gesetzt sind (für geladene Häuser)
+        if (!tile.building.plantationPhase) tile.building.plantationPhase = 'planting';
+        if (!tile.building.customName) tile.building.customName = 'Holzfäller';
+
+        // Zähle bestehende NPCs für dieses Haus
+        const existingCount = pedestriansRef.current.filter(
+          p => p.npcPlantationMode && p.homeX === tx && p.homeY === ty
+        ).length;
+
+        const needed = config.npcCount - existingCount;
+        if (needed <= 0) {
+          wcNpcLastLevelRef.current.set(key, level);
+          continue;
+        }
+
+        // Nur spawnen wenn sich Level geändert hat oder Haus neu ist
+        if (level === lastLevel && existingCount > 0) continue;
+
+        // Fehlende NPCs spawnen
+        for (let i = 0; i < needed; i++) {
+          pedestrianIdRef.current++;
+          const npc = createPlantationWoodcutterNpcUtil(
+            pedestrianIdRef.current,
+            tx, ty,
+            dirs[(existingCount + i) % dirs.length]
+          );
+          pedestriansRef.current = [...pedestriansRef.current, npc];
+        }
+        wcNpcLastLevelRef.current.set(key, level);
+      }
+    }
+  }, [grid, gridSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Trade Partner Wegweiser - Hitboxen für Klick-Navigation
   const partnerHitboxesRef = useRef<Array<{ slug: string; name: string; x: number; y: number; w: number; h: number }>>([]);
   const [hoveringPartner, setHoveringPartner] = useState(false);
@@ -1354,6 +1420,42 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
     window.addEventListener('buenzli-npc-authoritative-update', handleBuenzliUpdate);
     return () => window.removeEventListener('buenzli-npc-authoritative-update', handleBuenzliUpdate);
+  }, []);
+
+  // === KONTROLLEUR NPC SYSTEM: Server-autoritative Parkraum-Kontrolleure ===
+  useEffect(() => {
+    const handleKontrolleurUpdate = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !Array.isArray(detail.npcs)) return;
+      const { npcs } = detail as { npcs: Array<{ id: number; x: number; y: number; state: 'driving' | 'inspecting'; targetX: number; targetY: number }> };
+
+      const activeIds = new Set(npcs.map(n => n.id));
+
+      // Nicht mehr aktive Kontrolleur-NPCs entfernen
+      pedestriansRef.current = pedestriansRef.current.filter(p =>
+        !(p.npcType === 'kontrolleur' && !activeIds.has((p as any).npcKontrolleurServerId))
+      );
+
+      // Neue/aktualisierte Kontrolleur-NPCs
+      for (const npc of npcs) {
+        const existing = pedestriansRef.current.find(
+          p => p.npcType === 'kontrolleur' && (p as any).npcKontrolleurServerId === npc.id
+        );
+        if (existing) {
+          existing.tileX = npc.x;
+          existing.tileY = npc.y;
+          existing.state = npc.state === 'inspecting' ? 'npc_working' : 'walking';
+          existing.activity = npc.state === 'inspecting' ? 'inspecting' : 'none';
+        } else {
+          const ped = createKontrolleurNpcUtil(npc.id, npc.x, npc.y, npc.state);
+          (ped as any).npcKontrolleurServerId = npc.id;
+          pedestriansRef.current = [...pedestriansRef.current, ped];
+        }
+      }
+    };
+
+    window.addEventListener('kontrolleur-npc-authoritative-update', handleKontrolleurUpdate);
+    return () => window.removeEventListener('kontrolleur-npc-authoritative-update', handleKontrolleurUpdate);
   }, []);
 
   const findPedestrianByAvatarId = useCallback((avatarId: string): Pedestrian | null => {
@@ -4630,6 +4732,21 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
                 const isTree = TREE_BUILDING_TYPES.has(buildingType);
 
+                // Wachstums-Animation für frisch gepflanzte Plantagen-Bäume
+                let gDrawX = rDrawX, gDrawY = rDrawY, gDestW = rDestW, gDestH = rDestH;
+                if (isTree && tile.building.plantedAt) {
+                  const fraction = Math.min(1, (Date.now() - (tile.building.plantedAt as number)) / WOODCUTTER_GROWTH_MS);
+                  if (fraction < 1) {
+                    const growthScale = 0.04 + 0.96 * Math.pow(fraction, 0.35);
+                    const treeAnchorX = rDrawX + rDestW / 2;
+                    const treeAnchorY = rDrawY + rDestH;
+                    gDestW = Math.max(2, Math.round(rDestW * growthScale));
+                    gDestH = Math.max(2, Math.round(rDestH * growthScale));
+                    gDrawX = Math.round(treeAnchorX - gDestW / 2);
+                    gDrawY = Math.round(treeAnchorY - gDestH);
+                  }
+                }
+
                 // Haus-Varianten: subtile Farbtöne für Wohnhäuser (Dach/Wand-Variation)
                 const HOUSE_TINTS = [0xFFFFFF, 0xFFF0E0, 0xE8EEFF, 0xF5FFE8, 0xFFE8EE, 0xFFF8E0];
                 const houseTint = (buildingType === 'house_small' || buildingType === 'house_medium')
@@ -4654,7 +4771,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   pixiBuildings!.addSprite(
                     filteredSpriteSheet,
                     coords.sx, coords.sy, coords.sw, coords.sh,
-                    rDrawX, rDrawY, rDestW, rDestH,
+                    gDrawX, gDrawY, gDestW, gDestH,
                     isFlipped,
                     1,
                     treeSway,
@@ -4662,6 +4779,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   );
                 } else if (isTree) {
                   ctx.save();
+                  // Sway-Anker bleibt immer am Boden-Mittelpunkt des Original-Sprites
                   const anchorX = rDrawX + rDestW / 2;
                   const anchorY = rDrawY + rDestH;
                   const w_ = serverWeatherRef.current;
@@ -4682,7 +4800,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   ctx.drawImage(
                     filteredSpriteSheet,
                     coords.sx, coords.sy, coords.sw, coords.sh,
-                    rDrawX, rDrawY, rDestW, rDestH
+                    gDrawX, gDrawY, gDestW, gDestH
                   );
                   ctx.restore();
                 } else if (isFlipped) {
@@ -4859,24 +4977,18 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         } else if (tile.zone === 'residential') {
           if (tile.building.type !== 'grass' && tile.building.type !== 'empty') {
             topColor = '#3d7c3f';
-          } else {
-            topColor = '#2d5a2d';
+            strokeColor = '#22c55e';
           }
-          strokeColor = '#22c55e';
         } else if (tile.zone === 'commercial') {
           if (tile.building.type !== 'grass' && tile.building.type !== 'empty') {
             topColor = '#3a5c7c';
-          } else {
-            topColor = '#2a4a6a';
+            strokeColor = '#3b82f6';
           }
-          strokeColor = '#3b82f6';
         } else if (tile.zone === 'industrial') {
           if (tile.building.type !== 'grass' && tile.building.type !== 'empty') {
             topColor = '#7c5c3a';
-          } else {
-            topColor = '#6a4a2a';
+            strokeColor = '#f59e0b';
           }
-          strokeColor = '#f59e0b';
         }
 
         // Override colors with paint color if set (for grass/empty/tree tiles)
@@ -5691,7 +5803,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
           // Draw service radius circles and building highlights for the active overlay
           if (overlayMode !== 'none' && overlayMode !== 'subway') {
-            const isNewOverlay = overlayMode === 'pollution' || overlayMode === 'trees' || overlayMode === 'houses' || overlayMode === 'parks';
+            // Alle Umwelt-/Gebäude-Overlays nur per Tile-Farbe, keine Kreise
+            const isNewOverlay = false;
 
             if (!isNewOverlay) {
               // ── Standard service-building overlays (power, water, fire, police, health, education) ──
@@ -6575,6 +6688,77 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
 
+    // Draw radius overlay for buildings with coverage areas (woodcutter, fire, police, hospital, school)
+    // Nur wenn ein Overlay aktiv ist — ohne Overlay kein Radius-Highlight beim Klick
+    if (overlayMode !== 'none' && selectedTile && selectedTool === 'select' && selectedTile.x >= 0 && selectedTile.x < gridSize && selectedTile.y >= 0 && selectedTile.y < gridSize) {
+      const selOrigin = grid[selectedTile.y]?.[selectedTile.x];
+      if (selOrigin?.building) {
+        const bType = selOrigin.building.type as string;
+        const bLevel = selOrigin.building.level || 1;
+
+        const WOODCUTTER_RADII: Record<number, number> = { 1: 4, 2: 5, 3: 5, 4: 6 };
+        const SERVICE_BASE_RANGE: Record<string, number> = {
+          police_station: 13, fire_station: 18, hospital: 24, school: 11, university: 19,
+        };
+        const RADIUS_COLOR: Record<string, string> = {
+          woodcutter_house: '#22c55e',
+          fire_station: '#f97316',
+          police_station: '#3b82f6',
+          hospital: '#ec4899',
+          school: '#eab308',
+          university: '#eab308',
+        };
+
+        let currentR = 0;
+        let maxR = 0;
+        const color = RADIUS_COLOR[bType];
+
+        if (bType === 'woodcutter_house') {
+          currentR = WOODCUTTER_RADII[Math.min(bLevel, 4)] ?? 4;
+          maxR = 6;
+        } else if (SERVICE_BASE_RANGE[bType] !== undefined) {
+          const base = SERVICE_BASE_RANGE[bType];
+          currentR = Math.max(1, Math.floor(base * (1 + (bLevel - 1) * 0.2)));
+          maxR    = Math.max(1, Math.floor(base * (1 + (5 - 1) * 0.2)));
+        }
+
+        if (currentR > 0 && color) {
+          const drawRadiusTiles = (radius: number, fillAlpha: string, strokeAlpha: string, dashed: boolean) => {
+            ctx.save();
+            if (dashed) ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            for (let dx = -radius; dx <= radius; dx++) {
+              for (let dy = -radius; dy <= radius; dy++) {
+                if (Math.sqrt(dx * dx + dy * dy) > radius) continue;
+                const tx = selectedTile.x + dx;
+                const ty = selectedTile.y + dy;
+                if (tx < 0 || tx >= gridSize || ty < 0 || ty >= gridSize) continue;
+                const { screenX: sx, screenY: sy } = getTileScreenWithElevation(tx, ty);
+                const w = TILE_WIDTH;
+                const h = TILE_HEIGHT;
+                ctx.fillStyle = color + fillAlpha;
+                ctx.beginPath();
+                ctx.moveTo(sx + w / 2, sy);
+                ctx.lineTo(sx + w, sy + h / 2);
+                ctx.lineTo(sx + w / 2, sy + h);
+                ctx.lineTo(sx, sy + h / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = color + strokeAlpha;
+                ctx.stroke();
+              }
+            }
+            ctx.restore();
+          };
+
+          // Max-level radius first (faint, dashed) — only if not already at max
+          if (maxR > currentR) drawRadiusTiles(maxR, '14', '3F', true);
+          // Current radius (solid)
+          drawRadiusTiles(currentR, '4D', 'B3', false);
+        }
+      }
+    }
+
     // Draw move-mode origin overlay (orange pulsing to show "being moved")
     if (movingBuilding) {
       const size = getBuildingSize(movingBuilding.buildingType);
@@ -7406,6 +7590,79 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           airCtx.restore();
         }
 
+        // ── Kontrolleur NPC Markers: Pulsierender blauer Ring für aktive Parkraum-Kontrolleure ──
+        {
+          const kNpcs = pedestriansRef.current.filter(p => p.npcType === 'kontrolleur');
+          if (kNpcs.length > 0) {
+            const { offset: kOff, zoom: kZoom } = worldStateRef.current;
+            const kDpr = window.devicePixelRatio || 1;
+            const kTime = performance.now() / 1000;
+
+            airCtx.save();
+            airCtx.scale(kDpr * kZoom, kDpr * kZoom);
+            airCtx.translate(kOff.x / kZoom, kOff.y / kZoom);
+
+            for (const npc of kNpcs) {
+              const { screenX, screenY } = gridToScreen(npc.tileX, npc.tileY, 0, 0);
+              const cx = screenX + TILE_WIDTH / 2;
+              const cy = screenY + TILE_HEIGHT / 2 - 6;
+
+              const pulse = 0.5 + 0.5 * Math.sin(kTime * 3 + npc.tileX * 1.1);
+              const outerPulse = 0.5 + 0.5 * Math.sin(kTime * 2 + npc.tileY * 1.4);
+              const isInspecting = npc.activity === 'inspecting';
+
+              // Glow
+              const glowR = 28 + pulse * 6;
+              const glowGrad = airCtx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+              if (isInspecting) {
+                glowGrad.addColorStop(0, 'rgba(250,200,0,0.35)');
+                glowGrad.addColorStop(0.4, 'rgba(250,200,0,0.12)');
+                glowGrad.addColorStop(1, 'rgba(250,200,0,0)');
+              } else {
+                glowGrad.addColorStop(0, 'rgba(59,130,246,0.35)');
+                glowGrad.addColorStop(0.4, 'rgba(59,130,246,0.12)');
+                glowGrad.addColorStop(1, 'rgba(59,130,246,0)');
+              }
+              airCtx.fillStyle = glowGrad;
+              airCtx.beginPath();
+              airCtx.arc(cx, cy, glowR, 0, Math.PI * 2);
+              airCtx.fill();
+
+              // Outer pulsating ring
+              const ringR = 12 + outerPulse * 18;
+              const ringAlpha = (1 - outerPulse) * 0.55;
+              airCtx.beginPath();
+              airCtx.arc(cx, cy, ringR, 0, Math.PI * 2);
+              airCtx.strokeStyle = isInspecting
+                ? `rgba(250,200,0,${ringAlpha.toFixed(2)})`
+                : `rgba(59,130,246,${ringAlpha.toFixed(2)})`;
+              airCtx.lineWidth = 2.5 * (1 - outerPulse * 0.5);
+              airCtx.stroke();
+
+              // Inner solid circle
+              airCtx.beginPath();
+              airCtx.arc(cx, cy, 11, 0, Math.PI * 2);
+              airCtx.fillStyle = isInspecting ? 'rgba(250,200,0,0.25)' : 'rgba(59,130,246,0.25)';
+              airCtx.fill();
+              airCtx.strokeStyle = isInspecting ? 'rgba(250,200,0,0.7)' : 'rgba(59,130,246,0.7)';
+              airCtx.lineWidth = 1.5;
+              airCtx.stroke();
+
+              // Emoji (🔍 inspecting, 🚗 driving)
+              const bounce = Math.sin(kTime * 2.5 + npc.tileX) * 2.5;
+              airCtx.font = '14px serif';
+              airCtx.textAlign = 'center';
+              airCtx.textBaseline = 'middle';
+              airCtx.shadowColor = isInspecting ? '#facc15' : '#3b82f6';
+              airCtx.shadowBlur = 6;
+              airCtx.fillText(isInspecting ? '🔍' : '🚗', cx, cy - 20 + bounce);
+              airCtx.shadowBlur = 0;
+            }
+
+            airCtx.restore();
+          }
+        }
+
         // Draw recreation pedestrians on air canvas (above parks, not other buildings)
         drawRecreationPedestrians(airCtx); // Draw recreation pedestrians (at parks, benches, etc.)
 
@@ -8170,6 +8427,30 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     // Signal that navigation is complete
     onNavigationComplete?.();
   }, [navigationTarget, zoom, canvasSize.width, canvasSize.height, getMapBounds, onNavigationComplete]);
+
+  // Direct navigate-to-tile handler — bypasses Game.tsx prop chain for reliability
+  const navZoomRef = useRef(zoom);
+  navZoomRef.current = zoom;
+  const navCanvasSizeRef = useRef(canvasSize);
+  navCanvasSizeRef.current = canvasSize;
+  const navGetMapBoundsRef = useRef(getMapBounds);
+  navGetMapBoundsRef.current = getMapBounds;
+  useEffect(() => {
+    const onNavigateDirect = (e: Event) => {
+      const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail;
+      const { screenX, screenY } = gridToScreen(x, y, 0, 0);
+      const z = navZoomRef.current;
+      const cw = navCanvasSizeRef.current.width;
+      const ch = navCanvasSizeRef.current.height;
+      const bounds = navGetMapBoundsRef.current(z, cw, ch);
+      setOffset({ // eslint-disable-line
+        x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, cw / 2 - screenX * z)),
+        y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, ch / 2 - screenY * z)),
+      });
+    };
+    window.addEventListener('navigate-to-tile', onNavigateDirect);
+    return () => window.removeEventListener('navigate-to-tile', onNavigateDirect);
+  }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning && panCandidateRef.current) {
@@ -9099,40 +9380,40 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             case 'npc_dealer':
               return {
                 icon: <SafetyIcon size={14} className="text-purple-400" />,
-                title: gt('Drug Deal'),
-                desc: gt('Suspected narcotics transaction. Dealer active in low-coverage area.'),
+                title: m(NPC_TOOLTIP_LABELS.drugDealTitle),
+                desc: m(NPC_TOOLTIP_LABELS.drugDealDesc),
                 borderColor: 'border-purple-500/60',
               };
             case 'npc_gangster':
               return {
                 icon: <AlertIcon size={14} className="text-yellow-400" />,
-                title: gt('Suspicious Activity'),
+                title: m(NPC_TOOLTIP_LABELS.suspiciousTitle),
                 desc: hoveredIncident.npcState === 'burglary'
-                  ? gt('Break-in detected. Suspect operating under cover of night.')
-                  : gt('Suspicious individual loitering near buildings. Low police coverage.'),
+                  ? m(NPC_TOOLTIP_LABELS.breakIn)
+                  : m(NPC_TOOLTIP_LABELS.loitering),
                 borderColor: 'border-yellow-500/60',
               };
             case 'npc_police_chase':
               return {
                 icon: <SafetyIcon size={14} className="text-blue-400" />,
-                title: gt('Police Pursuit'),
-                desc: gt('Suspect fleeing from police. Officers in pursuit.'),
+                title: m(NPC_TOOLTIP_LABELS.pursuitTitle),
+                desc: m(NPC_TOOLTIP_LABELS.pursuitDesc),
                 borderColor: 'border-blue-500/60',
               };
             case 'npc_homeless':
               return {
                 icon: <PopulationIcon size={14} className="text-orange-400" />,
-                title: gt('Homeless Person'),
-                desc: gt('Person without shelter. Housing shortage in the area.'),
+                title: m(NPC_TOOLTIP_LABELS.homelessTitle),
+                desc: m(NPC_TOOLTIP_LABELS.homelessDesc),
                 borderColor: 'border-orange-500/60',
               };
             case 'npc_buenzli':
               return {
                 icon: <AlertIcon size={14} className="text-yellow-500" />,
-                title: 'Büenzli-Inspektor',
+                title: m(NPC_TOOLTIP_LABELS.buenzliTitle),
                 desc: hoveredIncident.npcState === 'illegal_parking'
-                  ? 'Kontrolliert Falschparkieren'
-                  : 'Inspiziert Gebäude',
+                  ? m(NPC_TOOLTIP_LABELS.buenzliParking)
+                  : m(NPC_TOOLTIP_LABELS.buenzliInspect),
                 borderColor: 'border-[#d4a017]/60',
               };
             default:

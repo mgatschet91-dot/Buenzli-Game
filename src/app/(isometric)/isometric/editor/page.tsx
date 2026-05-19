@@ -175,9 +175,9 @@ export default function EditorPage() {
           <button className="tb-btn active" data-tool="select">&#x25b6; Ausw&auml;hlen</button>
           <button className="tb-btn" data-tool="floor">&#x1f7e9; Etage</button>
           <button className="tb-btn" data-tool="stair">&#x1fa9c; Treppe</button>
-          <button className="tb-btn" data-tool="roller">&#x1f504; Roller</button>
           <button className="tb-btn" data-tool="spawn">&#x2b50; Spawn</button>
           <button className="tb-btn" data-tool="hole">&#x2b1c; Tile</button>
+          <button className="tb-btn" data-tool="room">&#x1f3e0; Raum</button>
           <div className="sep"></div>
           <span className="label">Ansicht:</span>
           <button className="tb-btn" id="btn-rot-l">&#x25c0; Drehen</button>
@@ -257,7 +257,7 @@ export default function EditorPage() {
           </div>
         </div>
         <hr className="modal-sep" />
-        <div className="mr">
+        <div className="mr" id="stair-steps-row">
           <div className="row2">
             <div><label>Breite (Kacheln)</label><input type="number" id="stair-width" defaultValue={3} min={1} max={10} /></div>
             <div><label>Anzahl Stufen</label><input type="number" id="stair-steps" defaultValue={14} min={4} max={40} /></div>
@@ -281,25 +281,8 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {/* Roller Modal */}
-      <div id="roller-modal" className="modal hidden">
-        <h3>&#x1f504; Roller platzieren</h3>
-        <div className="mr">
-          <label>Schubrichtung</label>
-          <div className="dir-grid">
-            <button className="db" data-dir="N">&#x2191; Nord</button>
-            <button className="db sel" data-dir="S">&#x2193; S&uuml;d</button>
-            <button className="db" data-dir="W">&#x2190; West</button>
-            <button className="db" data-dir="E">&#x2192; Ost</button>
-          </div>
-        </div>
-        <div className="modal-btns">
-          <button className="ok" id="roller-ok">Roller erstellen</button>
-          <button className="cx" id="roller-cancel">Abbrechen</button>
-        </div>
-      </div>
 
-      <div id="hint"></div>
+<div id="hint"></div>
     </>
   )
 }

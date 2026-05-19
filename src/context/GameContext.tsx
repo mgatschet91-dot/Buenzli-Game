@@ -43,7 +43,7 @@ import {
 } from '@/lib/renderConfig';
 import * as partnershipApi from '@/lib/api/partnershipApi';
 import { getZoneSettings, type BauzoneMode } from '@/lib/api/municipalityAdminApi';
-import { deltaQueue, type BuenzliNpcPayload, type ParkedVehicle, type ParkingConfig, type ParkingViolation, type ParkingFineEvent } from '@/lib/deltaSync';
+import { deltaQueue, type BuenzliNpcPayload, type KontrolleurNpcPayload, type ParkedVehicle, type ParkingConfig, type ParkingViolation, type ParkingFineEvent } from '@/lib/deltaSync';
 import { calcPopJobsWithOccupancy } from '@/lib/buildingOccupancy';
 
 const STORAGE_KEY = 'isocity-game-state';
@@ -232,6 +232,7 @@ type GameContextValue = {
   applyRemoteLandValueUpdate?: (data: { gridSize: number; values: number[] }) => void;
   applyRemoteCrimeUpdate?: (data: { criminals: RemoteCriminalNpc[]; crimeGrid: number[] | null; gridSize: number; crimeEvents: RemoteCrimeEvent[]; homeless?: number; isNight?: boolean }) => void;
   applyRemoteBuenzliUpdate?: (data: BuenzliNpcPayload) => void;
+  applyRemoteKontrolleurUpdate?: (data: KontrolleurNpcPayload) => void;
   clearRemoteStatsOverride?: () => void; // Deaktiviert Remote-Stats-Override (wenn wir Stats-Sender werden)
   // Nachbar-Gemeinden aktualisieren (für Kanton-basierte Gemeinden)
   setAdjacentCities: (cities: AdjacentCity[]) => void;
@@ -287,7 +288,7 @@ type GameContextValue = {
   addNotificationFromParking: (data: ParkingFineEvent) => void;
 };
 
-const GameContext = createContext<GameContextValue | null>(null);
+export const GameContext = createContext<GameContextValue | null>(null);
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -3651,6 +3652,14 @@ export function GameProvider({ children, startFresh = false, municipalitySlug, c
     applyRemoteBuenzliUpdate: useCallback((data: BuenzliNpcPayload) => {
       if (data.npcs && data.npcs.length >= 0) {
         window.dispatchEvent(new CustomEvent('buenzli-npc-authoritative-update', {
+          detail: data
+        }));
+      }
+    }, []),
+    // Server-autoritative Kontrolleur-NPC-Updates an das Pedestrian-System weiterleiten
+    applyRemoteKontrolleurUpdate: useCallback((data: KontrolleurNpcPayload) => {
+      if (Array.isArray(data.npcs)) {
+        window.dispatchEvent(new CustomEvent('kontrolleur-npc-authoritative-update', {
           detail: data
         }));
       }

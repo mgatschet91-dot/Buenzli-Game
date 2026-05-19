@@ -28,7 +28,8 @@ function _buildGroundWalls(geo) {
   const objs = []
   const add  = m => { scene.add(m); objs.push(m); return m }
   const GWALL_H = 2.8
-  const wallMat  = makeMat(0xd8c9a8)
+  const wallHex = geo.wallColor ? parseInt(geo.wallColor.replace('#', ''), 16) : 0xd8c9a8
+  const wallMat  = makeMat(wallHex)
   const frameMat = makeMat(0x4a2e0a)
   const halfG    = (GRID / 2) * TILE
   const wallY    = GWALL_H / 2 + 0.06
@@ -335,7 +336,7 @@ function _edBuildWall(floor, edge, hasDoor, allStairs, floorY) {
   const GWALL_H = 2.8
   const WALL_TH = 0.22
   const DOOR_W  = 1.8, DOOR_H = 2.2
-  const wallMat  = makeMat(0xd8c9a8)
+  const wallMat  = makeMat(window._edWallColor ?? 0xd8c9a8)
   const frameMat = makeMat(0x4a2e0a)
   const doorMat  = makeMat(0x7a4e28)
 
@@ -501,13 +502,14 @@ function _edBuildStair(stair, fromY) {
     }
   })
   scene.add(g)
-  // Alle Kinder-Meshes + Group zurückgeben
-  const objs = [g]
-  return objs
+
+  return [g]
 }
 
 // ── Gesamten Raum im Editor-Format aufbauen ────────────────────────────────────
 function _buildEditorRoom(geo) {
+  // Wandfarbe global merken damit _edBuildWall sie nutzen kann
+  window._edWallColor = geo.wallColor ? parseInt(geo.wallColor.replace('#', ''), 16) : 0xd8c9a8
   // ROOM_FLOORS_DATA + ROOM_STAIRS_DATA_NEW für getFloorY + Level-Tracking befüllen
   ROOM_FLOORS_DATA = geo.floors.map(f => ({
     floor_index: f.floor_index != null ? f.floor_index : (parseInt((f.id || '0').replace(/\D/g, ''), 10) || 0),
@@ -557,6 +559,11 @@ function _buildEditorRoom(geo) {
     char.z     = geo.spawn.z ?? 0
     char.level = spawnFlIdx
     char.target = null
+    if (geo.spawn.facing_idx != null) {
+      const _FD = ['N','E','S','W']
+      const _FY = { N: Math.PI, E: -Math.PI/2, S: 0, W: Math.PI/2 }
+      char.dir = _FY[_FD[geo.spawn.facing_idx]] ?? 0
+    }
     // Parent über Spawn-Position informieren → löst avatar-spawn-request mit korrekten Coords aus
     window.parent?.postMessage({ type: 'CHAR_SPAWN_POS', x: char.x, z: char.z, dir: char.dir ?? 0 }, '*')
   }

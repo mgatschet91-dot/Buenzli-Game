@@ -5,7 +5,7 @@ import { useMultiplayerOptional } from '@/context/MultiplayerContext';
 import { useGame } from '@/context/GameContext';
 import { GameAction, GameActionInput } from '@/lib/multiplayer/types';
 import { Tool, Budget, GameState, SavedCityMeta, BuildingType } from '@/types/game';
-import { deltaQueue, sendDeltaBatch, DeltaAction, DeltaActionInput, DisasterStateUpdate, BuildingStateUpdate, CrimeAuthoritativePayload, BuenzliNpcPayload } from '@/lib/deltaSync';
+import { deltaQueue, sendDeltaBatch, DeltaAction, DeltaActionInput, DisasterStateUpdate, BuildingStateUpdate, CrimeAuthoritativePayload, BuenzliNpcPayload, KontrolleurNpcPayload } from '@/lib/deltaSync';
 import { getBackendType } from '@/lib/multiplayer/provider';
 import { getBuildingSize } from '@/lib/simulation';
 import { spawnCarFromParkingRef } from '@/lib/parkingSpawnBridge';
@@ -493,6 +493,24 @@ export function useMultiplayerSync() {
 
     return () => {
       deltaQueue.setOnBuenzliUpdate(null);
+    };
+  }, [multiplayer?.connectionState, game]);
+
+  // Register callback to receive server-authoritative kontrolleur NPC updates
+  useEffect(() => {
+    if (!multiplayer || multiplayer.connectionState !== 'connected') {
+      deltaQueue.setOnKontrolleurUpdate(null);
+      return;
+    }
+
+    deltaQueue.setOnKontrolleurUpdate((data: KontrolleurNpcPayload) => {
+      if (game.applyRemoteKontrolleurUpdate) {
+        game.applyRemoteKontrolleurUpdate(data);
+      }
+    });
+
+    return () => {
+      deltaQueue.setOnKontrolleurUpdate(null);
     };
   }, [multiplayer?.connectionState, game]);
 

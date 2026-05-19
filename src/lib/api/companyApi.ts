@@ -60,6 +60,7 @@ export interface CompanyMember {
   role: 'owner' | 'manager' | 'employee';
   salary: number;
   xp_earned: number;
+  total_earnings: number;
   contracts_done: number;
   joined_at: string;
   nickname: string;
@@ -120,6 +121,7 @@ export interface CompanyDetails {
   contracts: CompanyContract[];
   applications: CompanyApplication[];
   my_role: string | null;
+  my_user_id: number | null;
 }
 
 // ── API Functions ──────────────────────────────────────
@@ -204,6 +206,11 @@ export async function inviteCompanyMember(companyId: number, userId: number, rol
   });
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'Fehler beim Einladen');
+}
+
+/** Firma verlassen (als Mitarbeiter oder Manager — semantischer Alias für removeCompanyMember) */
+export async function leaveCompany(companyId: number, userId: number): Promise<void> {
+  return removeCompanyMember(companyId, userId);
 }
 
 /** Mitglied entfernen */
@@ -524,6 +531,7 @@ export interface NpcBot {
   hired_at: string;
   contract_started_at: string | null;
   work_duration_seconds: number | null;
+  completable_at: string | null;
   patrol_mode: number;
   patrol_repairs: number;
 }
@@ -578,6 +586,7 @@ export interface MunicipalityCompany {
   total_revenue: number;
   type_code: string;
   emoji: string;
+  member_count: number;
   active_line_count: number;
   active_stop_count: number;
 }

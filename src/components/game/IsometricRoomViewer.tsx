@@ -42,6 +42,10 @@ export interface IsometricRoomViewerProps {
   onExit?: () => void;
   /** Besucher-Liste geändert (für Moderations-Panel) */
   onVisitorsChange?: (visitors: { playerId: string; userId: number | null; name: string }[]) => void;
+  /** Jemand klopft an (nur für Eigentümer) */
+  onKnockReceived?: (fromUserId: number, fromNickname: string) => void;
+  /** Ref um Knock-Accept/Decline via Socket zu senden */
+  knockSocketRef?: React.MutableRefObject<{ accept: (uid: number) => void; decline: (uid: number) => void } | null>;
 }
 
 export function IsometricRoomViewer({
@@ -59,9 +63,15 @@ export function IsometricRoomViewer({
   onTeleportToRoom,
   onExit,
   onVisitorsChange,
+  onKnockReceived,
+  knockSocketRef,
 }: IsometricRoomViewerProps) {
   const iframeRef      = useRef<HTMLIFrameElement>(null);
   const readyRef       = useRef(false);
+  const [roomLoaded, setRoomLoaded] = useState(false);
+  const [lockedDialog, setLockedDialog] = useState<{ needsPassword: boolean; knocking?: boolean; declined?: boolean } | null>(null);
+  const [pwInput, setPwInput] = useState('');
+  const pwInputRef = useRef('');
   const [placements, setPlacements] = useState<unknown[]>([]);
   const placementsRef  = useRef<unknown[]>([]);
   // Möbel-Katalog aus SQL (shop_items Tabelle) — wird einmalig geladen
@@ -90,10 +100,14 @@ export function IsometricRoomViewer({
   const playerNameRef    = useRef<string>(playerName || '');
   // pair_id des aktuell platzierten Teleporters (gesetzt via __TELEPORTER_PAIR_SET)
   const pendingTeleporterPairIdRef = useRef<number | null>(null);
+  // Passwort für passwortgeschützte Räume
+  const roomPasswordRef = useRef<string>('');
   // Besucher-Map: playerId → { userId, name } für Moderations-Panel
   const visitorsRef = useRef<Map<string, { userId: number | null; name: string }>>(new Map());
   const onVisitorsChangeRef = useRef(onVisitorsChange);
   onVisitorsChangeRef.current = onVisitorsChange;
+  const onKnockReceivedRef = useRef(onKnockReceived);
+  onKnockReceivedRef.current = onKnockReceived;
 
   // Avatar-Prop → liveRef aktualisieren + evtl. Spawn nachholen
   useEffect(() => {
@@ -180,17 +194,19 @@ export function IsometricRoomViewer({
 
   // ── Möbel-Platzierungen aus SQL laden (nur wenn kein Socket aktiv) ──────
   useEffect(() => {
-    // Wenn Socket-Modus aktiv: kein HTTP-Fetch nötig, Socket liefert Snapshot beim Join
-    if (municipalitySlug && ownerId) {
-      console.log('[RoomViewer] HTTP furniture fetch SKIPPED — socket mode active');
+    // Wenn Socket-Modus aktiv oder PUB-Raum: kein HTTP-Fetch nötig
+    const isPubRoomCode = (roomCode || '').toUpperCase().startsWith('PUB');
+    if (isPubRoomCode || !ownerId || (municipalitySlug && ownerId)) {
+      console.log('[RoomViewer] HTTP furniture fetch SKIPPED — socket mode active or no owner');
       return;
     }
     async function fetchPlacements() {
       try {
         const token = getAuthToken() || '';
-        const url = ownerId
-          ? `${API_BASE}/api/game/user/room/furniture?user_id=${ownerId}`
-          : `${API_BASE}/api/game/user/room/furniture`;
+        const params = new URLSearchParams();
+        if (ownerId) params.set('user_id', String(ownerId));
+        if (municipalitySlug) params.set('municipality_slug', municipalitySlug);
+        const url = `${API_BASE}/api/game/user/room/furniture?${params.toString()}`;
         console.log('[RoomViewer] HTTP furniture fetch START, readyRef:', readyRef.current);
         const r = await fetch(url, {
           headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
@@ -208,12 +224,19 @@ export function IsometricRoomViewer({
 
   // ── Room NPCs aus SQL laden ─────────────────────────────────────────────
   useEffect(() => {
+    // PUB rooms have no personal NPCs; skip to avoid loading visitor's own NPCs
+    const isPubRoomCode = (roomCode || '').toUpperCase().startsWith('PUB');
+    if (isPubRoomCode || !ownerId) {
+      npcsRef.current = [];
+      return;
+    }
     async function fetchNpcs() {
       try {
         const token = getAuthToken() || '';
-        const url = ownerId
-          ? `${API_BASE}/api/game/user/room/npcs?user_id=${ownerId}`
-          : `${API_BASE}/api/game/user/room/npcs`;
+        const params = new URLSearchParams();
+        params.set('user_id', String(ownerId));
+        if (municipalitySlug) params.set('municipality_slug', municipalitySlug);
+        const url = `${API_BASE}/api/game/user/room/npcs?${params.toString()}`;
         const r = await fetch(url, {
           headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
         });
@@ -222,11 +245,13 @@ export function IsometricRoomViewer({
       } catch { /* ignore */ }
     }
     fetchNpcs();
-  }, [ownerId]);
+  }, [ownerId, municipalitySlug, roomCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Socket.IO Verbindung für Echtzeit-Möbel-Sync ─────────────────────────
   useEffect(() => {
-    if (!municipalitySlug || !ownerId) return;
+    // PUB rooms can connect via socket with just roomCode + municipalitySlug (no personal ownerId needed)
+    const isPubRoom = (roomCode || '').toUpperCase().startsWith('PUB');
+    if (!municipalitySlug || (!ownerId && !isPubRoom)) return;
     const effectiveRoomCode = roomCode || `H${ownerId}`;
     const token = getAuthToken() || '';
 
@@ -251,6 +276,7 @@ export function IsometricRoomViewer({
         isViewOnly:      !isOwner,
         isRoomViewer:    true,
         authToken:       _joinToken,
+        roomPassword:    roomPasswordRef.current || undefined,
       });
     });
 
@@ -264,7 +290,7 @@ export function IsometricRoomViewer({
       // Sonst spawnt CHAR_SPAWN_POS sobald game3d bereit ist — verhindert kurzes Aufflackern in der Mitte.
       if (sp.x !== 0 || sp.z !== 0) {
         sock.emit('avatar-spawn-request', {
-          x: sp.x, y: sp.z,
+          x: sp.x, y: sp.z, dir: sp.dir,
           name: playerNameRef.current || playerName || '',
           avatarConfig: code ? { avatar_code: code } : undefined,
         });
@@ -359,6 +385,44 @@ export function IsometricRoomViewer({
     sock.on('room-kicked', () => { onExit?.(); });
     sock.on('room-banned', () => { onExit?.(); });
 
+    // Raum gesperrt → Passwort/Anklopf-Dialog anzeigen
+    sock.on('room-locked', (data: { needsPassword: boolean }) => {
+      setLockedDialog(data);
+    });
+
+    // Anklopfen: Eigentümer hat jemanden anklopfen lassen → weiter an Parent
+    sock.on('room-knock-received', (data: { fromUserId: number; fromNickname: string }) => {
+      onKnockReceivedRef.current?.(data.fromUserId, data.fromNickname);
+    });
+
+    // Besucher: wurde eingelassen → automatisch neu joinen
+    sock.on('room-knock-accepted', () => {
+      setLockedDialog(null);
+      const tok = getAuthToken() || '';
+      sock.emit('join-room', {
+        roomCode: roomCode || 'MAIN',
+        municipalitySlug,
+        name: playerNameRef.current || playerName || '',
+        ownerUserId: ownerId,
+        isViewOnly: !isOwner,
+        isRoomViewer: true,
+        authToken: tok,
+      });
+    });
+
+    // Besucher: wurde abgelehnt
+    sock.on('room-knock-declined', () => {
+      setLockedDialog(prev => prev ? { ...prev, knocking: false, declined: true } : null);
+    });
+
+    // knockSocketRef befüllen damit Parent accept/decline senden kann
+    if (knockSocketRef) {
+      knockSocketRef.current = {
+        accept: (uid: number) => sock.emit('room-knock-accept', { targetUserId: uid }),
+        decline: (uid: number) => sock.emit('room-knock-decline', { targetUserId: uid }),
+      };
+    }
+
     sock.on('avatar-state', (data: unknown) => {
       iframeRef.current?.contentWindow?.postMessage(
         { type: 'AVATAR_STATE', ...(data as object) },
@@ -402,6 +466,7 @@ export function IsometricRoomViewer({
       localPlayerIdRef.current = null;
       pendingSpawnsRef.current = [];
       visitorsRef.current.clear();
+      setRoomLoaded(false);
       sock.disconnect();
       socketRef.current = null;
     };
@@ -434,6 +499,8 @@ export function IsometricRoomViewer({
         // Auth-Token + API-Base für Motto-Speichern direkt aus dem Iframe
         auth_token:     getAuthToken() || '',
         api_base:       process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100',
+        // Lokale User-ID für Duplikat-Avatar-Filter in game3d (verhindert Z-Fighting)
+        local_user_id:  typeof localStorage !== 'undefined' ? Number(localStorage.getItem('isocity_user_id') || 0) || null : null,
       },
       '*'
     );
@@ -542,6 +609,7 @@ export function IsometricRoomViewer({
         const z = Number(msg.z ?? 0);
         const dir = Number(msg.dir ?? 0);
         spawnPosRef.current = { x, z, dir };
+        setRoomLoaded(true);
         // Immer neu spawnen mit korrekter Position und Richtung (auch ohne Avatar-Code)
         if (roomJoinedRef.current) {
           const code = liveAvatarCodeRef.current ?? sqlAvatarRef.current ?? null;
@@ -625,12 +693,13 @@ export function IsometricRoomViewer({
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
           body:    JSON.stringify({
-            item_code:   msg.item_code,
-            x:           msg.x,
-            z:           msg.z,
-            floor_level: msg.floor_level ?? 0,
-            facing_idx:  msg.facing_idx,
-            wy:          msg.wy ?? null,
+            item_code:        msg.item_code,
+            x:                msg.x,
+            z:                msg.z,
+            floor_level:      msg.floor_level ?? 0,
+            facing_idx:       msg.facing_idx,
+            wy:               msg.wy ?? null,
+            municipality_slug: municipalitySlug || undefined,
             ...(pairId != null ? { pair_id: pairId } : {}),
           }),
         })
@@ -662,12 +731,13 @@ export function IsometricRoomViewer({
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
           body:    JSON.stringify({
-            npc_name:    meta.npc_name,
-            npc_style:   meta.npc_style,
-            x:           msg.x,
-            z:           msg.z,
-            floor_level: msg.floor_level ?? 0,
-            facing_idx:  msg.facing_idx ?? 0,
+            npc_name:         meta.npc_name,
+            npc_style:        meta.npc_style,
+            x:                msg.x,
+            z:                msg.z,
+            floor_level:      msg.floor_level ?? 0,
+            facing_idx:       msg.facing_idx ?? 0,
+            municipality_slug: municipalitySlug || undefined,
           }),
         })
           .then(r => r.json())
@@ -827,13 +897,180 @@ export function IsometricRoomViewer({
   }, [avatarCode]);
 
   return (
-    <iframe
-      ref={iframeRef}
-      id="isometric-iframe"
-      src="/isometric?v=20260412"
-      className="w-full h-full border-0"
-      title="Isometric Room"
-      allow="autoplay"
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <iframe
+        ref={iframeRef}
+        id="isometric-iframe"
+        src="/isometric?v=20260412"
+        className="w-full h-full border-0"
+        title="Isometric Room"
+        allow="autoplay"
+      />
+      {!roomLoaded && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: '#0f1420',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: 20, zIndex: 10, pointerEvents: 'none',
+        }}>
+          {/* Spinner */}
+          <div style={{ position: 'relative', width: 56, height: 56 }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              border: '3px solid rgba(251,191,36,0.15)',
+              borderTopColor: '#f59e0b',
+              borderRadius: '50%',
+              animation: 'rv-spin 0.9s linear infinite',
+            }} />
+            <div style={{
+              position: 'absolute', inset: 8,
+              border: '2px solid rgba(251,191,36,0.1)',
+              borderBottomColor: '#d97706',
+              borderRadius: '50%',
+              animation: 'rv-spin 1.4s linear infinite reverse',
+            }} />
+          </div>
+          {/* Text */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#f59e0b', fontSize: 14, fontWeight: 700, letterSpacing: '0.06em' }}>
+              Raum wird geladen…
+            </div>
+            <div style={{ color: '#475569', fontSize: 11, marginTop: 4 }}>
+              Bitte warten
+            </div>
+          </div>
+          {/* Ladebalken */}
+          <div style={{ width: 180, height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              background: 'linear-gradient(90deg, #f59e0b, #f97316)',
+              borderRadius: 2,
+              animation: 'rv-bar 1.6s ease-in-out infinite',
+            }} />
+          </div>
+          <style>{`
+            @keyframes rv-spin { to { transform: rotate(360deg); } }
+            @keyframes rv-bar {
+              0%   { width: 0%;   margin-left: 0%; }
+              50%  { width: 70%;  margin-left: 15%; }
+              100% { width: 0%;   margin-left: 100%; }
+            }
+          `}</style>
+        </div>
+      )}
+      {lockedDialog && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+        }}>
+          <div style={{
+            background: '#1e2535', border: '1px solid #334155', borderRadius: 12,
+            padding: '28px 32px', minWidth: 300, textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
+              Raum gesperrt
+            </div>
+            {lockedDialog.knocking ? (
+              /* Warte-Zustand nach Anklopfen */
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>🚪</div>
+                <div style={{ color: '#f8fafc', marginBottom: 6 }}>Warte auf Einlass…</div>
+                <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 20 }}>Der Eigentümer wurde benachrichtigt</div>
+                <button
+                  onClick={() => { setLockedDialog(null); onExit?.(); }}
+                  style={{ padding: '7px 20px', background: '#334155', color: '#94a3b8', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                >
+                  Abbrechen
+                </button>
+              </div>
+            ) : lockedDialog.declined ? (
+              /* Abgelehnt */
+              <div>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>🚫</div>
+                <div style={{ color: '#f8fafc', marginBottom: 6 }}>Einlass verweigert</div>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 20 }}>Der Eigentümer hat abgelehnt.</div>
+                <button
+                  onClick={() => { setLockedDialog(null); onExit?.(); }}
+                  style={{ padding: '7px 20px', background: '#334155', color: '#94a3b8', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                >
+                  Zurück
+                </button>
+              </div>
+            ) : lockedDialog.needsPassword ? (
+              <>
+                <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+                  Dieser Raum ist passwortgeschützt.
+                </div>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Passwort eingeben…"
+                  value={pwInput}
+                  onChange={e => { setPwInput(e.target.value); pwInputRef.current = e.target.value; }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      roomPasswordRef.current = pwInputRef.current;
+                      setPwInput(''); setLockedDialog(null);
+                      const tok = getAuthToken() || '';
+                      socketRef.current?.emit('join-room', { roomCode: roomCode || 'MAIN', municipalitySlug, name: playerNameRef.current || playerName || '', ownerUserId: ownerId, isViewOnly: !isOwner, isRoomViewer: true, authToken: tok, roomPassword: roomPasswordRef.current });
+                    } else if (e.key === 'Escape') { setLockedDialog(null); onExit?.(); }
+                  }}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: 14, background: '#0f1420', border: '1px solid #475569', borderRadius: 6, color: '#f8fafc', outline: 'none', marginBottom: 12, boxSizing: 'border-box' }}
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button
+                    onClick={() => {
+                      roomPasswordRef.current = pwInputRef.current;
+                      setPwInput(''); setLockedDialog(null);
+                      const tok = getAuthToken() || '';
+                      socketRef.current?.emit('join-room', { roomCode: roomCode || 'MAIN', municipalitySlug, name: playerNameRef.current || playerName || '', ownerUserId: ownerId, isViewOnly: !isOwner, isRoomViewer: true, authToken: tok, roomPassword: roomPasswordRef.current });
+                    }}
+                    style={{ padding: '7px 20px', background: '#f59e0b', color: '#0f1420', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}
+                  >
+                    Eintreten
+                  </button>
+                  <button
+                    onClick={() => {
+                      setLockedDialog(prev => prev ? { ...prev, knocking: true } : null);
+                      socketRef.current?.emit('room-knock', { ownerUserId: ownerId, fromNickname: playerNameRef.current || playerName || '' });
+                    }}
+                    style={{ padding: '7px 20px', background: '#1e40af', color: '#bfdbfe', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}
+                  >
+                    🚪 Anklopfen
+                  </button>
+                  <button onClick={() => { setLockedDialog(null); onExit?.(); }} style={{ padding: '7px 16px', background: '#334155', color: '#94a3b8', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+                    Zurück
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Gesperrt ohne Passwort — nur Anklopfen möglich */
+              <>
+                <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+                  Dieser Raum ist nur auf Einladung zugänglich.
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button
+                    onClick={() => {
+                      setLockedDialog(prev => prev ? { ...prev, knocking: true } : null);
+                      socketRef.current?.emit('room-knock', { ownerUserId: ownerId, fromNickname: playerNameRef.current || playerName || '' });
+                    }}
+                    style={{ padding: '7px 20px', background: '#1e40af', color: '#bfdbfe', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}
+                  >
+                    🚪 Anklopfen
+                  </button>
+                  <button onClick={() => { setLockedDialog(null); onExit?.(); }} style={{ padding: '7px 16px', background: '#334155', color: '#94a3b8', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+                    Zurück
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

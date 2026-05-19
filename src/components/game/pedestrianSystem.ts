@@ -741,7 +741,7 @@ export function sendPlantationWorkerToPlant(
   if (!spot) return false;
 
   const fullPath = buildWalkablePath(grid, gridSize, ped.tileX, ped.tileY, spot.x, spot.y);
-  if (fullPath.length < 2) return false;
+  if (fullPath.length < 1) return false;
 
   ped.destX = spot.x;
   ped.destY = spot.y;
@@ -751,14 +751,22 @@ export function sendPlantationWorkerToPlant(
   ped.progress = 0;
   ped.tileX = fullPath[0].x;
   ped.tileY = fullPath[0].y;
-  ped.state = 'walking';
   ped.returningHome = false;
   ped.activity = 'planting_tree';
   ped.activityProgress = 0;
   ped.npcWorkProgress = 0;
   ped.npcPlantationPhase = 'planting';
 
-  if (fullPath.length > 1) {
+  if (fullPath.length === 1) {
+    // NPC steht bereits auf dem Ziel-Tile → direkt mit Pflanzen beginnen
+    const houseLevel = grid[ped.homeY]?.[ped.homeX]?.building?.level || 1;
+    const cfg = WOODCUTTER_LEVEL_CONFIG[Math.min(houseLevel, 4)] || WOODCUTTER_LEVEL_CONFIG[1];
+    ped.state = 'npc_working';
+    ped.activityDuration = cfg.plantDuration;
+    ped.activityOffsetX = 0;
+    ped.activityOffsetY = 0;
+  } else {
+    ped.state = 'walking';
     const dir = getDirectionToTile(fullPath[0].x, fullPath[0].y, fullPath[1].x, fullPath[1].y);
     if (dir) ped.direction = dir;
   }
@@ -788,7 +796,7 @@ export function sendPlantationWorkerToHarvest(
   if (!tree) return false;
 
   const fullPath = buildWalkablePath(grid, gridSize, ped.tileX, ped.tileY, tree.x, tree.y);
-  if (fullPath.length < 2) return false;
+  if (fullPath.length < 1) return false;
 
   ped.destX = tree.x;
   ped.destY = tree.y;
@@ -798,14 +806,22 @@ export function sendPlantationWorkerToHarvest(
   ped.progress = 0;
   ped.tileX = fullPath[0].x;
   ped.tileY = fullPath[0].y;
-  ped.state = 'walking';
   ped.returningHome = false;
   ped.activity = 'chopping_tree';
   ped.activityProgress = 0;
   ped.npcWorkProgress = 0;
   ped.npcPlantationPhase = 'harvesting';
 
-  if (fullPath.length > 1) {
+  if (fullPath.length === 1) {
+    // NPC steht bereits auf dem Ziel-Baum → direkt mit Fällen beginnen
+    const houseLevel = grid[ped.homeY]?.[ped.homeX]?.building?.level || 1;
+    const cfg = WOODCUTTER_LEVEL_CONFIG[Math.min(houseLevel, 4)] || WOODCUTTER_LEVEL_CONFIG[1];
+    ped.state = 'npc_working';
+    ped.activityDuration = cfg.chopDuration;
+    ped.activityOffsetX = 8;
+    ped.activityOffsetY = -4;
+  } else {
+    ped.state = 'walking';
     const dir = getDirectionToTile(fullPath[0].x, fullPath[0].y, fullPath[1].x, fullPath[1].y);
     if (dir) ped.direction = dir;
   }
@@ -1688,6 +1704,70 @@ export function createBuenzliNpc(
     beachEdge: null,
     isNpcWorker: true,
     npcType: 'buenzli',
+    npcWorkProgress: 0,
+    npcTreesChopped: 0,
+    npcTreesPlanted: 0,
+    npcInspectionsCount: 0,
+    npcPendingViolations: [],
+    npcInspectedBuildings: [],
+  };
+}
+
+/**
+ * Erstelle einen Kontrolleur-NPC (Parkraum-Security)
+ * state='driving': erscheint als Fahrzeug-Icon das auf Parkfeld zufährt
+ * state='inspecting': erscheint als Fussgänger-NPC der kontrolliert
+ */
+export function createKontrolleurNpc(
+  id: number,
+  tileX: number,
+  tileY: number,
+  npcState: 'driving' | 'inspecting'
+): Pedestrian {
+  return {
+    id,
+    tileX,
+    tileY,
+    direction: 'south',
+    progress: 0,
+    speed: 0.4,
+    age: 0,
+    maxAge: 999999,
+    // Kontrolleur-Look: Blaue Uniform
+    skinColor: '#f0c8a0',
+    shirtColor: '#1a3a6b',   // Dunkelblau
+    pantsColor: '#1a3a6b',   // Dunkelblau
+    hasHat: true,
+    hatColor: '#0f2452',     // Dunkelblaue Mütze
+    walkOffset: Math.random() * Math.PI * 2,
+    sidewalkSide: 'left',
+    destType: 'tree',
+    homeX: tileX,
+    homeY: tileY,
+    destX: tileX,
+    destY: tileY,
+    returningHome: false,
+    path: [],
+    pathIndex: 0,
+    state: npcState === 'inspecting' ? 'npc_working' : 'walking',
+    activity: npcState === 'inspecting' ? 'inspecting' : 'none',
+    activityProgress: 0,
+    activityDuration: 6,
+    buildingEntryProgress: 0,
+    socialTarget: null,
+    activityOffsetX: 0,
+    activityOffsetY: 0,
+    activityAnimTimer: Math.random() * Math.PI * 2,
+    hasBall: false,
+    hasDog: false,
+    hasBag: true,
+    hasBeachMat: false,
+    matColor: '#f0f0f0',
+    beachTileX: -1,
+    beachTileY: -1,
+    beachEdge: null,
+    isNpcWorker: true,
+    npcType: 'kontrolleur',
     npcWorkProgress: 0,
     npcTreesChopped: 0,
     npcTreesPlanted: 0,
@@ -2822,12 +2902,18 @@ function updateIdleState(
           if (found) return true;
         }
 
-        // Nichts zu tun → Vor dem Haus warten (sichtbar versetzt)
+        // Nichts zu tun → erst heimlaufen falls weit weg, dann vor dem Haus warten
         ped.npcPlantationPhase = 'waiting';
+        const distToHouse = Math.abs(ped.tileX - houseX) + Math.abs(ped.tileY - houseY);
+        if (distToHouse > 1) {
+          // Weit weg → Heimweg antreten; idle_outside wird gesetzt sobald NPC ankommt
+          const sent = sendPlantationWorkerHome(ped, grid, gridSize);
+          if (sent) return true;
+        }
+        // Bereits nahe am Haus → direkt warten (leicht versetzt sichtbar)
         ped.activityProgress = 0;
-        ped.activityDuration = 3; // 3 Sekunden warten, dann nochmal pruefen
+        ped.activityDuration = 3; // 3 Sekunden warten, dann nochmal prüfen
         ped.state = 'idle_outside';
-        // NPC leicht versetzt vom Haus positionieren, damit sichtbar
         const idleOffsets = [
           { dx: 0, dy: 1 }, { dx: 1, dy: 0 }, { dx: 0, dy: -1 }, { dx: -1, dy: 0 },
         ];

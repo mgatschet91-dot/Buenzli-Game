@@ -9,6 +9,55 @@ import { BUILDING_STATS } from '@/games/isocity/types/buildings';
 import { RESIDENTIAL_BUILDING_TYPES } from './constants';
 
 // ============================================================================
+// Server-Authoritative Pollution Grid
+// ============================================================================
+
+export type PollutionSource = { x: number; y: number; pollution: number };
+
+// Module-level Cache: exakte Server-Werte, direkt vom Server empfangen
+let _serverPollutionGrid: Map<string, number> = new Map();
+// Flag: true wenn Server pollutionGrid direkt gesendet hat (authoritative), false = Fallback
+let _serverPollutionGridDirect = false;
+
+/**
+ * Direktupdate aus dem Server-pollutionGrid ([[x, y, v], ...]).
+ * Exakte Werte, kein Client-seitiges Neuberechnen.
+ */
+export function updateServerPollutionGridDirect(grid: Array<[number, number, number]>): void {
+  const map = new Map<string, number>();
+  for (const [x, y, v] of grid) {
+    if (v !== 0) map.set(`${x},${y}`, v);
+  }
+  _serverPollutionGrid = map;
+  _serverPollutionGridDirect = true;
+}
+
+/**
+ * Fallback: Wenn Server nur Sources schickt (ältere Version), Client-seitig berechnen.
+ * Wird nicht mehr genutzt wenn pollutionGrid vorhanden.
+ */
+export function updateServerPollutionGrid(sources: PollutionSource[]): void {
+  if (_serverPollutionGridDirect) return; // Direkte Server-Daten haben Vorrang
+  const map = new Map<string, number>();
+  for (const src of sources) {
+    const radius = Math.min(6, Math.max(2, Math.ceil(Math.abs(src.pollution) / 10)));
+    const centerKey = `${src.x},${src.y}`;
+    map.set(centerKey, (map.get(centerKey) ?? 0) + src.pollution);
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+        const falloff = 1 - dist / (radius + 1);
+        const key = `${src.x + dx},${src.y + dy}`;
+        map.set(key, (map.get(key) ?? 0) + src.pollution * falloff * 0.4);
+      }
+    }
+  }
+  _serverPollutionGrid = map;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -39,67 +88,67 @@ export type OverlayConfig = {
 /** Configuration for each overlay mode */
 export const OVERLAY_CONFIG: Record<OverlayMode, OverlayConfig> = {
   none: {
-    label: 'None',
-    title: 'No Overlay',
+    label: 'Keins',
+    title: 'Kein Overlay',
     activeColor: '',
     hoverColor: '',
   },
   power: {
-    label: 'Power',
-    title: 'Power Grid',
+    label: 'Strom',
+    title: 'Stromnetz',
     activeColor: 'bg-amber-500',
     hoverColor: 'hover:bg-amber-600',
   },
   water: {
-    label: 'Water',
-    title: 'Water System',
+    label: 'Wasser',
+    title: 'Wasserversorgung',
     activeColor: 'bg-blue-500',
     hoverColor: 'hover:bg-blue-600',
   },
   fire: {
-    label: 'Fire',
-    title: 'Fire Coverage',
+    label: 'Feuerwehr',
+    title: 'Feuerwehr-Abdeckung',
     activeColor: 'bg-red-500',
     hoverColor: 'hover:bg-red-600',
   },
   police: {
-    label: 'Police',
-    title: 'Police Coverage',
+    label: 'Polizei',
+    title: 'Polizei-Abdeckung',
     activeColor: 'bg-blue-600',
     hoverColor: 'hover:bg-blue-700',
   },
   health: {
-    label: 'Health',
-    title: 'Health Coverage',
+    label: 'Gesundheit',
+    title: 'Gesundheitsversorgung',
     activeColor: 'bg-green-500',
     hoverColor: 'hover:bg-green-600',
   },
   education: {
-    label: 'Education',
-    title: 'Education Coverage',
+    label: 'Bildung',
+    title: 'Bildungsversorgung',
     activeColor: 'bg-purple-500',
     hoverColor: 'hover:bg-purple-600',
   },
   subway: {
-    label: 'Subway',
-    title: 'Subway Coverage',
+    label: 'U-Bahn',
+    title: 'U-Bahn-Abdeckung',
     activeColor: 'bg-yellow-500',
     hoverColor: 'hover:bg-yellow-600',
   },
   pollution: {
-    label: 'Pollution',
-    title: 'Verschmutzung',
+    label: 'Verschmutzung',
+    title: 'Luftverschmutzung',
     activeColor: 'bg-orange-500',
     hoverColor: 'hover:bg-orange-600',
   },
   trees: {
-    label: 'Trees',
+    label: 'Bäume',
     title: 'Bäume & Vegetation',
     activeColor: 'bg-emerald-500',
     hoverColor: 'hover:bg-emerald-600',
   },
   houses: {
-    label: 'Houses',
+    label: 'Häuser',
     title: 'Wohngebäude',
     activeColor: 'bg-cyan-500',
     hoverColor: 'hover:bg-cyan-600',
@@ -175,44 +224,59 @@ export function getOverlayFillStyle(
   
   switch (mode) {
     case 'power':
-      // Red warning only on unpowered buildings
+      // Grün = versorgt, Rot = nicht versorgt, transparent = kein Gebäude
       if (!needsCoverage) return NO_OVERLAY;
-      return tile.building.powered ? NO_OVERLAY : UNCOVERED_WARNING;
+      return tile.building.powered
+        ? 'rgba(34, 197, 94, 0.30)'   // Grün - mit Strom
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - kein Strom
 
     case 'water':
-      // Red warning only on buildings without water
+      // Grün = versorgt, Rot = nicht versorgt
       if (!needsCoverage) return NO_OVERLAY;
-      return tile.building.watered ? NO_OVERLAY : UNCOVERED_WARNING;
+      return tile.building.watered
+        ? 'rgba(56, 189, 248, 0.30)'  // Blau - mit Wasser
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - kein Wasser
 
     case 'fire':
-      // Red warning only on buildings outside fire coverage
+      // Grün = abgedeckt, Rot = nicht abgedeckt
       if (!needsCoverage) return NO_OVERLAY;
-      return coverage.fire > 0 ? NO_OVERLAY : UNCOVERED_WARNING;
+      return coverage.fire > 0
+        ? 'rgba(34, 197, 94, 0.25)'   // Grün - Feuerwehr erreicht hier
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - ausserhalb der Reichweite
 
     case 'police':
-      // Red warning only on buildings outside police coverage
+      // Grün = abgedeckt, Rot = nicht abgedeckt
       if (!needsCoverage) return NO_OVERLAY;
-      return coverage.police > 0 ? NO_OVERLAY : UNCOVERED_WARNING;
+      return coverage.police > 0
+        ? 'rgba(34, 197, 94, 0.25)'   // Grün - Polizei erreicht hier
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - ausserhalb der Reichweite
 
     case 'health':
-      // Red warning only on buildings outside health coverage
+      // Grün = abgedeckt, Rot = nicht abgedeckt
       if (!needsCoverage) return NO_OVERLAY;
-      return coverage.health > 0 ? NO_OVERLAY : UNCOVERED_WARNING;
+      return coverage.health > 0
+        ? 'rgba(34, 197, 94, 0.25)'   // Grün - Spital erreicht hier
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - ausserhalb der Reichweite
 
     case 'education':
-      // Red warning only on buildings outside education coverage
+      // Grün = abgedeckt, Rot = nicht abgedeckt
       if (!needsCoverage) return NO_OVERLAY;
-      return coverage.education > 0 ? NO_OVERLAY : UNCOVERED_WARNING;
+      return coverage.education > 0
+        ? 'rgba(167, 139, 250, 0.30)' // Lila - Schule/Uni erreicht hier
+        : 'rgba(239, 68, 68, 0.55)';  // Rot - ausserhalb der Reichweite
 
     case 'subway':
-      // Underground view overlay - keep existing behavior
-      return tile.hasSubway
-        ? 'rgba(245, 158, 11, 0.7)'  // Bright amber for existing subway
-        : 'rgba(40, 30, 20, 0.4)';   // Dark brown tint for "underground" view
+      // Nur U-Bahn-Tiles hervorheben, rest transparent
+      if (!tile.hasSubway) return NO_OVERLAY;
+      return 'rgba(245, 158, 11, 0.65)'; // Amber - U-Bahn-Linie
 
-    case 'pollution':
-      // Heatmap-Darstellung der Verschmutzung pro Tile
-      return getPollutionHeatmapColor(tile.pollution);
+    case 'pollution': {
+      // Direkte Server-Werte (raw influence, z.B. factory_large Zentrum ≈ 50, Rand ≈ 5-20)
+      // Fallback: tile.pollution (Steady-State, Skala ~3.33x grösser → durch 3.33 zurückrechnen)
+      const serverInf = _serverPollutionGrid.get(`${tile.x},${tile.y}`);
+      const displayVal = serverInf !== undefined ? serverInf : tile.pollution / 3.33;
+      return getPollutionHeatmapColor(displayVal);
+    }
 
     case 'trees':
       // Bäume hervorheben, Rest abdunkeln
@@ -375,12 +439,14 @@ export function getPollutionInfluenceRadius(buildingType: string): number {
  * Grün (sauber) → Gelb (mittel) → Rot (stark verschmutzt)
  */
 export function getPollutionHeatmapColor(pollutionValue: number): string {
-  if (pollutionValue <= 0) return 'rgba(34, 197, 94, 0.35)';   // Grün - sauber
-  if (pollutionValue < 5)  return 'rgba(132, 204, 22, 0.30)';  // Lime - minimal
-  if (pollutionValue < 15) return 'rgba(250, 204, 21, 0.35)';  // Gelb - leicht
-  if (pollutionValue < 30) return 'rgba(251, 146, 60, 0.40)';  // Orange - mittel
-  if (pollutionValue < 50) return 'rgba(239, 68, 68, 0.45)';   // Rot - stark
-  return 'rgba(185, 28, 28, 0.55)';                             // Dunkelrot - sehr stark
+  // Schwellwerte auf raw Server-Influence-Werte kalibriert:
+  // factory_large Zentrum ≈ 50, Rand ≈ 5-20 | park Zentrum ≈ -10 (transparent)
+  if (pollutionValue <= 1.5) return NO_OVERLAY;                   // Sauber / kaum Einfluss
+  if (pollutionValue < 6)    return 'rgba(250, 204, 21, 0.35)';  // Gelb - leichte Verschmutzung
+  if (pollutionValue < 15)   return 'rgba(251, 146, 60, 0.45)';  // Orange - mittel
+  if (pollutionValue < 30)   return 'rgba(239, 68, 68, 0.52)';   // Rot - stark
+  if (pollutionValue < 51)   return 'rgba(185, 28, 28, 0.60)';   // Dunkelrot - sehr stark
+  return 'rgba(127, 0, 0, 0.70)';                                 // Schwarzrot - Fabrik-Zentrum
 }
 
 /**

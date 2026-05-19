@@ -358,7 +358,7 @@ export type Pedestrian = {
   beachEdge: 'north' | 'east' | 'south' | 'west' | null; // Which edge of water tile is beach
   // NPC Worker properties (optional - nur gesetzt wenn isNpcWorker = true)
   isNpcWorker?: boolean;     // Ist ein gesteuerter NPC-Arbeiter (kein Auto-Despawn)
-  npcType?: 'woodcutter' | 'gardener' | 'police' | 'gangster' | 'buenzli' | 'homeless' | 'avatar_test' | 'party_guest'; // Art des NPC-Jobs
+  npcType?: 'woodcutter' | 'gardener' | 'police' | 'gangster' | 'buenzli' | 'homeless' | 'avatar_test' | 'party_guest' | 'kontrolleur'; // Art des NPC-Jobs
   npcWorkProgress?: number;  // Arbeitsfortschritt 0-100
   npcTreesChopped?: number;  // Anzahl gefällter Bäume (Holzfäller)
   npcTreesPlanted?: number;  // Anzahl gepflanzter Bäume (Gärtner)

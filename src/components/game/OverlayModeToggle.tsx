@@ -56,7 +56,7 @@ const OVERLAY_ICONS: Record<OverlayMode, React.ReactNode> = {
 // Translatable Labels
 // ============================================================================
 
-const VIEW_OVERLAY_LABEL = msg('View Overlay');
+const VIEW_OVERLAY_LABEL = msg('Ansicht');
 
 // ============================================================================
 // Component
@@ -82,7 +82,7 @@ export const OverlayModeToggle = React.memo(function OverlayModeToggle({
           size="sm"
           onClick={() => setIsExpanded(true)}
           className="h-7 w-7 p-0"
-          title={m(msg('Overlay einblenden'))}
+          title={m(msg('Kartenansicht wählen'))}
         >
           <Layers size={14} />
         </Button>
@@ -101,7 +101,7 @@ export const OverlayModeToggle = React.memo(function OverlayModeToggle({
           size="sm"
           onClick={() => setIsExpanded(false)}
           className="h-5 w-5 p-0"
-          title={m(msg('Overlay ausblenden'))}
+          title={m(msg('Schliessen'))}
         >
           <ChevronDown size={12} />
         </Button>

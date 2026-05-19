@@ -143,6 +143,25 @@ const fill = new THREE.DirectionalLight(0xaabbff, 0.4)
 fill.position.set(-8, 12, -5)
 scene.add(fill)
 
+// Lichter für applyRoomLighting zugänglich machen
+window._roomLights = { ambient, sun, fill }
+
+// Raum-Licht / Atmosphäre aus roomData.lighting anwenden
+window.applyRoomLighting = function(cfg) {
+  // Immer zuerst auf Defaults zurücksetzen
+  ambient.color.setHex(0xffffff)
+  ambient.intensity = 0.7
+  sun.color.setHex(0xffeedd)
+  scene.fog = null
+  if (!cfg) return
+  if (cfg.ambientColor)          ambient.color.set(cfg.ambientColor)
+  if (cfg.ambientIntensity != null) ambient.intensity = Number(cfg.ambientIntensity)
+  if (cfg.sunColor)              sun.color.set(cfg.sunColor)
+  if (cfg.fogEnabled && cfg.fogColor) {
+    scene.fog = new THREE.Fog(cfg.fogColor, cfg.fogNear ?? 30, cfg.fogFar ?? 80)
+  }
+}
+
 // ─── Room geometry tracker ────────────────────────────────────────────────────
 // Alle Objekte die buildRoomGeometry() erzeugt werden hier gesammelt.
 // Bei rebuild (neuer ROOM_INIT) werden sie erst entfernt, dann neu aufgebaut.

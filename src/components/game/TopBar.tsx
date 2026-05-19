@@ -16,7 +16,6 @@ import {
   CheckIcon,
 } from '@/components/ui/Icons';
 import { copyShareUrl } from '@/lib/shareState';
-import { LanguageSelector } from '@/components/ui/LanguageSelector';
 import { useRealTime } from '@/hooks/useRealTime';
 import { NoticeCenter } from '@/components/ui/NoticeCenter';
 import { AchievementCenter } from '@/components/ui/AchievementCenter';
@@ -430,8 +429,6 @@ export const TopBar = React.memo(function TopBar({ isViewOnly = false, cityNameO
         <AchievementCenter />
         
         <NoticeCenter />
-        
-        <LanguageSelector iconOnly={false} variant="ghost" iconSize={14} />
       </div>
     </div>
   );

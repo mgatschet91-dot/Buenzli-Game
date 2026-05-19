@@ -44,6 +44,7 @@ interface ProfileBadge {
 }
 
 interface ProfileCompany {
+  id?: number;
   name: string;
   level: number;
   reputation: number;
@@ -247,8 +248,8 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                     {mm(UI_LABELS.badgesHeading)} ({profile.badges.length})
                   </h4>
                   <div className="grid grid-cols-2 gap-2">
-                    {profile.badges.map(b => (
-                      <div key={b.badge_code} className={`p-2 rounded-lg border bg-slate-800/50 ${rarityColor(b.rarity)}`}>
+                    {profile.badges.map((b, i) => (
+                      <div key={b.badge_code ?? i} className={`p-2 rounded-lg border bg-slate-800/50 ${rarityColor(b.rarity)}`}>
                         <div className="flex items-center gap-2">
                           {b.image_url ? (
                             <img src={b.image_url} alt={b.name} className="w-6 h-6 object-contain" />
@@ -271,7 +272,7 @@ export function PlayerProfilePanel({ userId, onClose }: PlayerProfilePanelProps)
                 <div>
                   <h4 className="text-sm font-medium text-slate-300 mb-2">{mm(UI_LABELS.companiesHeading)}</h4>
                   {profile.companies.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2 rounded-lg border border-slate-700 bg-slate-800/30 mb-1">
+                    <div key={c.id ?? i} className="flex items-center gap-2 p-2 rounded-lg border border-slate-700 bg-slate-800/30 mb-1">
                       <span>{c.emoji}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-white truncate">{c.name}</div>

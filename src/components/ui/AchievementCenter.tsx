@@ -228,11 +228,13 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
   };
 
   const position = useMemo(() => {
-    if (!buttonRef.current) return { top: 60, right: 16 };
+    if (!buttonRef.current) return { top: 60, right: 16, maxHeight: 460 };
     const rect = buttonRef.current.getBoundingClientRect();
+    const availableHeight = window.innerHeight - rect.bottom - 8 - 12;
     return {
       top: rect.bottom + 8,
       right: window.innerWidth - rect.right,
+      maxHeight: Math.min(460, Math.max(200, availableHeight)),
     };
   }, [isOpen]);
 
@@ -261,7 +263,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
       {mounted && isOpen && createPortal(
         <div
           ref={panelRef}
-          className="fixed z-[9999] w-[360px] max-h-[460px] bg-slate-900/95 backdrop-blur-sm border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
+          className="fixed z-[9999] w-[360px] bg-slate-900/95 backdrop-blur-sm border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
           style={{ top: position.top, right: position.right }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 bg-slate-800/50">
@@ -278,7 +280,7 @@ export function AchievementCenter({ className }: AchievementCenterProps) {
             </button>
           </div>
 
-          <div className="overflow-y-auto max-h-[390px]">
+          <div className="overflow-y-auto" style={{ maxHeight: Math.max(120, position.maxHeight - 80) }}>
             {isLoading ? (
               <div className="flex items-center justify-center gap-2 py-12 text-slate-300 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />

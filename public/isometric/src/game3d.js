@@ -1963,13 +1963,18 @@ window.addEventListener('message', (e) => {
     // Katalog aus SQL-Daten aufbauen (shop_items Tabelle)
     // Raumgeometrie aus SQL aufbauen (grid, Wände, Stockwerke, Treppe)
     buildRoomGeometry(e.data.geometry ?? {})
+    if (typeof window.applyRoomLighting === 'function') {
+      window.applyRoomLighting(e.data.geometry?.lighting ?? null)
+    }
+    if (charGroup) charGroup.visible = true
     if (Array.isArray(e.data.catalog) && e.data.catalog.length > 0) {
       setCatalog(buildCatalogFromItems(e.data.catalog))
     }
     if (e.data.player_name) _localPlayerName = String(e.data.player_name)
     if (e.data.owner_nickname) _roomOwnerName = String(e.data.owner_nickname)
-    if (e.data.auth_token)  window._gameAuthToken = e.data.auth_token
-    if (e.data.api_base)    window._gameApiBase   = e.data.api_base
+    if (e.data.auth_token)   window._gameAuthToken = e.data.auth_token
+    if (e.data.api_base)     window._gameApiBase   = e.data.api_base
+    if (e.data.local_user_id) window._localUserId  = e.data.local_user_id
     _applyLocalNameLabel()  // always call — tags charGroup meshes for click detection
     if (e.data.avatar_code) applyAvatarCode(e.data.avatar_code)
     // Load server-persisted furniture placements
@@ -2034,6 +2039,8 @@ window.addEventListener('message', (e) => {
     const localId = String(e.data.localPlayerId || '')
     for (const av of (e.data.avatars || [])) {
       if (!av || String(av.playerId) === localId) continue
+      // Secondary guard: skip self by userId if localUserId already known
+      if (av.userId != null && window._localUserId != null && Number(av.userId) === Number(window._localUserId)) continue
       _spawnRemoteAvatar(av.playerId, av.name, av.x ?? 0, av.y ?? 0, av.avatarConfig?.avatar_code, av.dir, av.level ?? 0)
       const ra = _remoteAvatars.get(String(av.playerId))
       if (ra) {
@@ -2050,6 +2057,8 @@ window.addEventListener('message', (e) => {
   if (type === 'AVATAR_SPAWNED') {
     const localId = String(e.data.localPlayerId || '')
     if (String(e.data.playerId) === localId) return
+    // Secondary guard: userId match prevents echo-spawned duplicate avatar (Z-fighting)
+    if (e.data.userId != null && window._localUserId != null && Number(e.data.userId) === Number(window._localUserId)) return
     // Bestehende Position beibehalten wenn neuer Spawn bei 0,0 (Name-Update)
     const existing = _remoteAvatars.get(String(e.data.playerId))
     const spawnX = (e.data.x === 0 && e.data.y === 0 && existing) ? existing.x : (e.data.x ?? 0)
@@ -2181,10 +2190,28 @@ window.addEventListener('message', (e) => {
     return
   }
 
+  // Emote-Button oder Chat-Command setzt Avatar-Zustand (z.B. wave, dance, sleep, idle)
+  if (type === 'AVATAR_STATE_REQUEST') {
+    const VALID_EMOTE_STATES = new Set(['idle', 'wave', 'dance', 'sleep'])
+    const req = String(e.data.state || '')
+    if (VALID_EMOTE_STATES.has(req)) {
+      if (req === 'idle') {
+        char.state = 'idle'
+      } else {
+        // Zustand nur setzen wenn kein Lauf-Target aktiv (Sitzen/Jacuzzi nicht unterbrechen durch Emote)
+        if (char.state !== 'sit' && char.state !== 'jacuzzi_undress') {
+          char.state = req
+        }
+      }
+    }
+    return
+  }
+
   // Eigenen lokalen Avatar auf neuen Spawn-Punkt setzen (nach room-joined)
   if (type === 'LOCAL_AVATAR_SPAWN') {
     char.x = e.data.x ?? char.x
     char.z = e.data.z ?? char.z
+    if (e.data.dir != null) char.dir = e.data.dir
     return
   }
 
@@ -2237,6 +2264,15 @@ window.addEventListener('message', (e) => {
       window._pendingNpcMeta = e.data.npc_meta
     }
     pickItem(e.data.item_code)
+    return
+  }
+
+  // Kamera: Screenshot des aktuellen Frames
+  if (type === 'TAKE_SCREENSHOT') {
+    // Einmalig rendern damit der Buffer aktuell ist
+    renderer.render(scene, camera)
+    const dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.85)
+    window.parent?.postMessage({ type: 'ROOM_SCREENSHOT', dataUrl }, '*')
     return
   }
 })

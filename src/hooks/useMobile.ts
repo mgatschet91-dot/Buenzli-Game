@@ -31,8 +31,8 @@ const ELECTRON_DESKTOP: UseMobileReturn = {
 export function useMobile(): UseMobileReturn {
   if (IS_ELECTRON) return ELECTRON_DESKTOP;
 
-  const [screenWidth, setScreenWidth] = useState(0);
-  const [screenHeight, setScreenHeight] = useState(0);
+  const [screenWidth, setScreenWidth] = useState<number | null>(null);
+  const [screenHeight, setScreenHeight] = useState<number | null>(null);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
@@ -69,13 +69,13 @@ export function useMobile(): UseMobileReturn {
   }, []);
 
   return {
-    isMobileDevice: isMobile || isSmallScreen,
-    isTabletDevice: isTablet,
-    isMobileOnly: isMobileOnly,
+    isMobileDevice: screenWidth !== null ? (isMobile || isSmallScreen) : false,
+    isTabletDevice: screenWidth !== null ? isTablet : false,
+    isMobileOnly: screenWidth !== null ? isMobileOnly : false,
     isSmallScreen,
     isTouchDevice,
-    screenWidth,
-    screenHeight,
+    screenWidth: screenWidth ?? 0,
+    screenHeight: screenHeight ?? 0,
     orientation,
   };
 }

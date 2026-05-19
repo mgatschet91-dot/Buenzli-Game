@@ -118,7 +118,10 @@ function ElectronSettings() {
 
   const applyResolution = async (label: string, w: number, h: number) => {
     setResolution(label);
-    if (!fullscreen) await window.electronWindow?.setResolution(w, h);
+    if (!fullscreen) {
+      await window.electronWindow?.setResolution(w, h);
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+    }
   };
 
   const toggleFullscreen = async () => {

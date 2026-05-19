@@ -1,6 +1,7 @@
-'use client';
+﻿'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import type { KontrolleurNpcState } from '@/lib/deltaSync';
 import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -11,18 +12,19 @@ import { Badge } from '@/components/ui/badge';
 import {
   Building2, Star, TrendingUp, Wallet, FileText, Users, ArrowLeft,
   ChevronRight, UserPlus, Trash2, ArrowUp, ArrowDown, Check, X,
-  AlertTriangle, Clock, Briefcase, Shield, Wrench,
+  AlertTriangle, Clock, Briefcase, Shield, Wrench, LogOut,
 } from 'lucide-react';
 import {
   getCompanyTypes, getMyCompanies, createCompany, getCompanyDetails,
-  removeCompanyMember, changeCompanyMemberRole, dissolveCompany,
+  removeCompanyMember, leaveCompany, changeCompanyMemberRole, dissolveCompany,
   respondToApplication, searchUsers, inviteCompanyMember,
   acceptContract, completeContract, createContractFromEvent, getReportedEvents,
   requestCompanyLoan, getMyLoanRequests, cancelLoanRequest, getCompanyLoan,
   getCompanyNpcBots, hireNpcBot, fireNpcBot, toggleNpcPatrol,
+  getMunicipalityCompanies, applyToCompany,
   type CompanyType, type Company, type CompanyDetails, type CompanyContract,
   type CompanyLoanRequest, type CompanyLoan, type CreateCompanyErrorData,
-  type NpcBot, type NpcBotType,
+  type NpcBot, type NpcBotType, type MunicipalityCompany,
 } from '@/lib/api/companyApi';
 import {
   getCompanyBusLines, deleteBusLine, updateBusLine,
@@ -30,7 +32,7 @@ import {
 } from '@/lib/api/busLineApi';
 import { consumeFirmaPrefill } from '@/lib/firmaPrefill';
 
-type View = 'overview' | 'details';
+type View = 'overview' | 'typeDetail' | 'details';
 
 const UI_LABELS = {
   title:              msg('Firma'),
@@ -139,6 +141,29 @@ const UI_LABELS = {
   loanCancelled:      msg('Kredit-Antrag storniert'),
   dissolveConfirm:    msg('Firma wirklich auflösen? Diese Aktion kann nicht rückgängig gemacht werden.'),
   removeConfirm:      msg('Mitglied wirklich entfernen?'),
+  leaveCompany:       msg('Firma verlassen'),
+  leaveConfirm:       msg('Diese Firma wirklich verlassen?'),
+  leftCompany:        msg('Du hast die Firma verlassen.'),
+  meLabel:            msg('(du)'),
+  myCompanyLabel:     msg('Deine Firma'),
+  inMunicipality:     msg('In der Gemeinde ({n})'),
+  noCompanyOfType:    msg('Noch keine {name} in dieser Gemeinde.'),
+  foundNewType:       msg('Neue {name} gründen ({cost} CHF)'),
+  createFormHeader:   msg('Firma gründen'),
+  cancelFormBtn:      msg('Abbrechen'),
+  gruendenShort:      msg('Gründen ({cost} CHF)'),
+  memberStatsRow:     msg('Lv. {level} · {contracts} Aufträge · {xp} XP'),
+  memberEarned:       msg('+{n} CHF verdient'),
+  memberSalaryPer:    msg('{n} CHF/Auftrag'),
+  memberSince:        msg('seit {date}'),
+  tabAllTypes:        msg('Alle Typen'),
+  levelMin:           msg('Lv. {n}+'),
+  noMyCompanies:      msg('Du bist noch in keiner Firma.'),
+  applyBtn:           msg('Bewerben'),
+  applyConfirm:       msg('Bewerbung bei {name} senden?'),
+  applySuccess:       msg('Bewerbung gesendet! Der Admin wird dich benachrichtigen.'),
+  applyPending:       msg('Bewerbung ausstehend'),
+  memberCount:        msg('{n} Mitglieder'),
 };
 
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -152,9 +177,9 @@ function getRoleConfig(role: string) {
 }
 
 export function FirmaPanel() {
-  const { state, setActivePanel } = useGame();
+  const { state, setActivePanel, municipalitySlug } = useGame();
   const m = useMessages();
-  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+  const mm = (key: Parameters<typeof m>[0], vars?: Record<string, unknown>): string => (m(key, vars) ?? String(key)) as string;
 
   const [view, setView] = useState<View>('overview');
   const [loading, setLoading] = useState(true);
@@ -164,8 +189,11 @@ export function FirmaPanel() {
   const [companyTypes, setCompanyTypes] = useState<CompanyType[]>([]);
   const [myCompanies, setMyCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyDetails | null>(null);
+  const [selectedType, setSelectedType] = useState<CompanyType | null>(null);
+  const [municipalityCompanies, setMunicipalityCompanies] = useState<MunicipalityCompany[]>([]);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [overviewTab, setOverviewTab] = useState<'mine' | 'all'>('mine');
 
-  const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const [createName, setCreateName] = useState('');
   const [createTypeId, setCreateTypeId] = useState<number | null>(null);
@@ -195,27 +223,33 @@ export function FirmaPanel() {
     try {
       setLoading(true);
       clearMessages();
-      const [types, companies, loanReqs] = await Promise.all([
+      const [types, companies, loanReqs, munCompanies] = await Promise.all([
         getCompanyTypes(),
         getMyCompanies(),
         getMyLoanRequests().catch(() => [] as CompanyLoanRequest[]),
+        municipalitySlug ? getMunicipalityCompanies(municipalitySlug).catch(() => [] as MunicipalityCompany[]) : Promise.resolve([] as MunicipalityCompany[]),
       ]);
       setCompanyTypes(types);
       setMyCompanies(companies);
       setMyLoanRequests(loanReqs);
+      setMunicipalityCompanies(munCompanies);
       // Deep-Link: Prefill aus BusStationSection o.ä. anwenden
       const prefill = consumeFirmaPrefill();
       if (prefill) {
         const match = types.find(t => t.code === prefill.typeCode);
-        if (match) setCreateTypeId(match.id);
-        setActiveTab('create');
+        if (match) {
+          setSelectedType(match);
+          setCreateTypeId(match.id);
+          setShowCreateForm(true);
+          setView('typeDetail');
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Fehler beim Laden');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [municipalitySlug]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -316,6 +350,20 @@ export function FirmaPanel() {
     }
   };
 
+  const handleLeaveCompany = async (companyId: number, userId: number) => {
+    if (!confirm(mm(UI_LABELS.leaveConfirm))) return;
+    try {
+      clearMessages();
+      await leaveCompany(companyId, userId);
+      setSuccess(mm(UI_LABELS.leftCompany));
+      setView('overview');
+      setSelectedCompany(null);
+      await loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Fehler');
+    }
+  };
+
   const handleChangeRole = async (userId: number, newRole: string) => {
     if (!selectedCompany) return;
     try {
@@ -366,9 +414,37 @@ export function FirmaPanel() {
     }
   };
 
-  const hasCompany = myCompanies.length > 0;
-  const defaultTab = hasCompany ? 'my-company' : 'create';
-  const currentTab = activeTab ?? defaultTab;
+  const handleTypeClick = (ct: CompanyType) => {
+    setSelectedType(ct);
+    setCreateTypeId(ct.id);
+    setShowCreateForm(false);
+    setCreateName('');
+    setShowLoanForm(false);
+    setLoanErrorData(null);
+    setView('typeDetail');
+  };
+
+  const handleBackFromTypeDetail = () => {
+    setSelectedType(null);
+    setCreateTypeId(null);
+    setCreateName('');
+    setShowLoanForm(false);
+    setLoanErrorData(null);
+    setShowCreateForm(false);
+    setView('overview');
+  };
+
+  const handleApply = async (companyId: number, companyName: string) => {
+    if (!confirm(mm(UI_LABELS.applyConfirm, { name: companyName }))) return;
+    try {
+      clearMessages();
+      await applyToCompany(companyId);
+      setSuccess(mm(UI_LABELS.applySuccess));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Fehler beim Bewerben');
+    }
+  };
+
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
@@ -427,262 +503,390 @@ export function FirmaPanel() {
             onInviteSearch={handleInviteSearch}
             onInvite={handleInvite}
             onRefresh={() => loadCompanyDetails(selectedCompany.company.id)}
+            onLeaveCompany={handleLeaveCompany}
           />
-        ) : (
-          <div className="px-3 sm:px-6 py-3 sm:py-5">
-            <Tabs value={currentTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="w-full bg-slate-800/50 border border-slate-700/60 rounded-xl p-1 h-auto">
-                <TabsTrigger value="create" className="flex-1 rounded-lg py-1.5 sm:py-2 text-xs sm:text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-white">
-                  {mm(UI_LABELS.tabCreate)}
-                </TabsTrigger>
-                <TabsTrigger value="my-company" className="flex-1 rounded-lg py-1.5 sm:py-2 text-xs sm:text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-white">
-                  {mm(UI_LABELS.tabMyCompanies)}{hasCompany ? ` (${myCompanies.length})` : ''}
-                </TabsTrigger>
-              </TabsList>
+        ) : view === 'typeDetail' && selectedType ? (
+          /* ── Type Detail View ──────────────────────────────── */
+          <div className="px-3 sm:px-6 py-3 sm:py-5 space-y-3">
+            {/* Back + Header */}
+            <button
+              onClick={handleBackFromTypeDetail}
+              className="flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors mb-1"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {mm(UI_LABELS.backBtn)}
+            </button>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-3xl">{selectedType.emoji}</span>
+              <div>
+                <div className="font-semibold text-white text-base">{selectedType.name}</div>
+                <div className="text-xs text-slate-400">{selectedType.description}</div>
+              </div>
+            </div>
 
-              <TabsContent value="create" className="mt-4">
-                  <div className="space-y-3 pr-2">
-                    <p className="text-sm text-slate-400 mb-1">
-                      {mm(UI_LABELS.createInstruction)}
-                    </p>
-                    <div className="grid gap-3">
-                      {companyTypes.length === 0 && !loading && (
-                        <p className="text-sm text-slate-500 text-center py-4">{mm(UI_LABELS.noTypes)}</p>
-                      )}
-                      {companyTypes.map(ct => {
-                        const isSelected = createTypeId === ct.id;
-                        return (
-                          <div key={ct.id} className={`rounded-xl border transition-all ${
-                            isSelected
-                              ? 'border-emerald-500/40 bg-emerald-500/5 ring-1 ring-emerald-500/20'
-                              : 'border-slate-700/60 hover:border-slate-600/60'
-                          }`}>
-                            <button
-                              onClick={() => setCreateTypeId(isSelected ? null : ct.id)}
-                              className="w-full text-left p-4 hover:bg-slate-800/30 rounded-t-xl transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-2xl">{ct.emoji}</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-semibold text-sm text-white">{ct.name}</div>
-                                  <div className="text-xs text-slate-400 line-clamp-2 mt-0.5">{ct.description}</div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <div className="text-xs text-amber-400 font-mono font-medium">{ct.founding_cost.toLocaleString()} CHF</div>
-                                  <div className="text-[11px] text-slate-500">Lv. {ct.min_level}+</div>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-1.5 mt-2.5">
-                                <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/50">
-                                  Max {ct.max_members} {mm(UI_LABELS.tabMembers).toLowerCase()}
-                                </span>
-                                {ct.can_fix_categories.map(cat => (
-                                  <span key={cat} className="text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                    {cat}
-                                  </span>
-                                ))}
-                              </div>
-                            </button>
+            {/* Meine Firma zuerst */}
+            {(() => {
+              const ownCompanies = myCompanies.filter(c => c.type_code === selectedType.code);
+              const otherCompanies = municipalityCompanies.filter(
+                mc => mc.type_code === selectedType.code && !ownCompanies.some(oc => oc.id === mc.id)
+              );
 
-                            {isSelected && (
-                              <div className="px-4 pb-4 pt-3 border-t border-emerald-500/20 space-y-2.5">
-                                <Input
-                                  value={createName}
-                                  onChange={e => setCreateName(e.target.value)}
-                                  placeholder={mm(UI_LABELS.namePlaceholder)}
-                                  maxLength={64}
-                                  className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-10 focus:border-emerald-500 focus:ring-emerald-500/30"
-                                  autoFocus
-                                />
-                                <Button
-                                  onClick={handleCreate}
-                                  disabled={creating || !createName.trim() || createName.trim().length < 3}
-                                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm h-10"
-                                >
-                                  {creating ? mm(UI_LABELS.creating) : `${mm(UI_LABELS.tabCreate)} (${ct.founding_cost.toLocaleString()} CHF)`}
-                                </Button>
-
-                                {/* Kredit-Formular bei insufficient_funds */}
-                                {showLoanForm && loanErrorData && createTypeId === ct.id && (
-                                  <div className="mt-3 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/5 space-y-2.5">
-                                    <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
-                                      <Wallet className="w-4 h-4" />
-                                      {mm(UI_LABELS.loanTitle)}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs">
-                                      <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">{mm(UI_LABELS.balanceLabel)}</span>
-                                        <div className="font-mono text-red-400">{loanErrorData.user_balance.toLocaleString()} CHF</div>
-                                      </div>
-                                      <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">{mm(UI_LABELS.foundingCostLabel)}</span>
-                                        <div className="font-mono text-white">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
-                                      </div>
-                                      <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">{mm(UI_LABELS.loanAmountLabel)}</span>
-                                        <div className="font-mono text-amber-400">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
-                                      </div>
-                                      <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
-                                        <span className="text-slate-500">{mm(UI_LABELS.weeklyRateLabel)}</span>
-                                        <div className="font-mono text-white">~{Math.ceil(loanErrorData.founding_cost / 12).toLocaleString()} CHF</div>
-                                      </div>
-                                    </div>
-                                    <Input
-                                      value={loanMessage}
-                                      onChange={e => setLoanMessage(e.target.value)}
-                                      placeholder={mm(UI_LABELS.loanMsgPlaceholder)}
-                                      maxLength={500}
-                                      className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-9 focus:border-amber-500 focus:ring-amber-500/30"
-                                    />
-                                    <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3 text-amber-500/60" />
-                                      {mm(UI_LABELS.loanInfo)}
-                                    </div>
-                                    <Button
-                                      onClick={handleRequestLoan}
-                                      disabled={requestingLoan || !createName.trim() || createName.trim().length < 3}
-                                      className="w-full bg-amber-600 hover:bg-amber-500 text-white text-sm h-10"
-                                    >
-                                      {requestingLoan ? mm(UI_LABELS.requestingLoan) : mm(UI_LABELS.requestLoanBtn)}
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-              </TabsContent>
-
-              <TabsContent value="my-company" className="mt-4">
-                  <div className="space-y-3 pr-2">
-                    {/* Pending Loan Requests */}
-                    {myLoanRequests.filter(r => r.status === 'pending').length > 0 && (
-                      <div className="space-y-2 mb-3">
-                        <div className="text-xs font-medium text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Clock className="w-3 h-3" />
-                          {mm(UI_LABELS.pendingLoans)}
-                        </div>
-                        {myLoanRequests.filter(r => r.status === 'pending').map(req => (
-                          <div key={req.id} className="px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/5">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className="text-lg">{req.type_emoji}</span>
-                              <span className="font-medium text-sm text-white flex-1">{req.company_name}</span>
-                              <Badge variant="outline" className="text-[11px] text-amber-400 border-amber-400/30">{mm(UI_LABELS.loanPending)}</Badge>
-                            </div>
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 mb-2">
-                              <span className="text-amber-400 font-mono">{req.loan_amount.toLocaleString()} CHF</span>
-                              <span>{mm(UI_LABELS.weeklyRateLabel).replace('{rate}', req.weekly_repayment.toLocaleString())}</span>
-                              <span>{req.type_name}</span>
-                            </div>
-                            {req.message && (
-                              <p className="text-xs text-slate-400 italic mb-2">&quot;{req.message}&quot;</p>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleCancelLoan(req.id)}
-                              className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
-                            >
-                              <X className="w-3 h-3 mr-1" />
-                              {mm(UI_LABELS.cancelBtn)}
-                            </Button>
-                          </div>
-                        ))}
+              return (
+                <>
+                  {ownCompanies.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-medium text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Star className="w-3 h-3" />
+                        {mm(UI_LABELS.myCompanyLabel)}
                       </div>
-                    )}
-
-                    {/* Rejected/Cancelled loan requests */}
-                    {myLoanRequests.filter(r => r.status === 'rejected').length > 0 && (
-                      <div className="space-y-2 mb-3">
-                        {myLoanRequests.filter(r => r.status === 'rejected').map(req => (
-                          <div key={req.id} className="px-4 py-3 rounded-xl border border-red-500/20 bg-red-500/5">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-lg">{req.type_emoji}</span>
-                              <span className="font-medium text-sm text-white flex-1">{req.company_name}</span>
-                              <Badge variant="outline" className="text-[11px] text-red-400 border-red-400/30">{mm(UI_LABELS.loanRejected)}</Badge>
-                            </div>
-                            {req.reject_reason && (
-                              <p className="text-xs text-red-300/80">{mm(UI_LABELS.rejectionReason)} {req.reject_reason}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {myCompanies.length === 0 && myLoanRequests.filter(r => r.status === 'pending').length === 0 ? (
-                      <div className="text-center py-12">
-                        <div className="w-16 h-16 rounded-2xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center mx-auto mb-4">
-                          <Building2 className="w-8 h-8 text-slate-600" />
-                        </div>
-                        <p className="text-sm text-slate-400 font-medium">{mm(UI_LABELS.noCompanies)}</p>
-                        <p className="text-xs mt-1.5 text-slate-600">{mm(UI_LABELS.createHint)}</p>
-                      </div>
-                    ) : myCompanies.length === 0 ? null : (
-                      myCompanies.map(company => {
+                      {ownCompanies.map(company => {
                         const roleCfg = getRoleConfig(company.my_role || '');
                         return (
                           <button
                             key={company.id}
                             onClick={() => loadCompanyDetails(company.id)}
-                            className="w-full text-left rounded-xl border border-slate-700/50 hover:border-slate-600/50 hover:bg-slate-800/30 transition-all group"
+                            className="w-full text-left rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all group"
                           >
-                            {/* Company header */}
-                            <div className="flex items-center gap-2.5 sm:gap-4 px-3 sm:px-5 pt-3 sm:pt-4 pb-2 sm:pb-3">
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center text-xl sm:text-2xl shrink-0">
+                            <div className="flex items-center gap-3 px-4 py-3">
+                              <div className="w-10 h-10 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center text-xl shrink-0">
                                 {company.type_emoji}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 sm:gap-2">
-                                  <span className="font-semibold text-sm sm:text-base text-white truncate">{company.name}</span>
-                                  <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-sm text-white truncate">{company.name}</span>
+                                  <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
                                 </div>
-                                <span className="text-[11px] sm:text-xs text-slate-500">{company.type_name}</span>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[11px] text-slate-500">Lv. {company.level}</span>
+                                  <span className="text-[11px] text-slate-600">·</span>
+                                  <span className="text-[11px] text-amber-400 font-mono">{company.balance.toLocaleString()} CHF</span>
+                                </div>
                               </div>
-                              <div className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-medium shrink-0 ${roleCfg.bg} ${roleCfg.border} ${roleCfg.color}`}>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-medium shrink-0 ${roleCfg.bg} ${roleCfg.border} ${roleCfg.color}`}>
                                 {company.my_role === 'owner' && <Star className="w-3 h-3" />}
-                                {company.my_role === 'manager' && <Shield className="w-3 h-3" />}
-                                <span className="hidden sm:inline">{roleCfg.label}</span>
+                                {roleCfg.label}
                               </div>
-                            </div>
-
-                            {/* Stats */}
-                            <div className="mx-3 sm:mx-5 mb-2 sm:mb-3">
-                              <CompanyLevelBar level={company.level} reputation={company.reputation} />
-                            </div>
-                            <div className="grid grid-cols-2 gap-px mx-3 sm:mx-5 mb-3 sm:mb-4 rounded-lg overflow-hidden border border-slate-700/40">
-                              <div className="bg-slate-800/40 px-2 sm:px-3 py-2 sm:py-2.5 text-center">
-                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.balanceStatLabel)}</div>
-                                <div className="font-mono font-bold text-xs sm:text-sm text-amber-400">{company.balance.toLocaleString()}</div>
-                              </div>
-                              <div className="bg-slate-800/40 px-2 sm:px-3 py-2 sm:py-2.5 text-center">
-                                <div className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.teamLabel)}</div>
-                                <div className="font-mono font-bold text-xs sm:text-sm text-white">{company.member_count}</div>
-                              </div>
-                            </div>
-
-                            {/* Footer info */}
-                            <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 pb-3 sm:pb-4 text-[11px] sm:text-xs text-slate-500">
-                              <div className="flex items-center gap-1">
-                                <FileText className="w-3 h-3" />
-                                <span>{company.total_contracts} Aufträge</span>
-                              </div>
-                              {company.total_revenue > 0 && (
-                                <div className="flex items-center gap-1">
-                                  <TrendingUp className="w-3 h-3 text-emerald-500/60" />
-                                  <span>{company.total_revenue.toLocaleString()} Fr.</span>
-                                </div>
-                              )}
                             </div>
                           </button>
                         );
-                      })
-                    )}
+                      })}
+                    </div>
+                  )}
+
+                  {otherCompanies.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        {mm(UI_LABELS.inMunicipality, { n: otherCompanies.length })}
+                      </div>
+                      {otherCompanies.map(mc => (
+                        <div
+                          key={mc.id}
+                          className="w-full text-left rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3"
+                        >
+                          <div className="w-9 h-9 rounded-lg bg-slate-800/60 border border-slate-700/50 flex items-center justify-center text-lg shrink-0">
+                            {mc.emoji}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm text-white truncate">{mc.name}</div>
+                            <div className="text-[11px] text-slate-500">
+                              Lv. {mc.level} · {mm(UI_LABELS.memberCount, { n: mc.member_count ?? '?' })}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleApply(mc.id, mc.name)}
+                            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[11px] font-medium transition-all"
+                          >
+                            {mm(UI_LABELS.applyBtn)}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {ownCompanies.length === 0 && otherCompanies.length === 0 && (
+                    <div className="text-center py-6 text-slate-500 text-sm">
+                      {mm(UI_LABELS.noCompanyOfType, { name: selectedType.name })}
+                    </div>
+                  )}
+
+                  {/* Neue Firma gründen */}
+                  {myCompanies.filter(c => c.type_code === selectedType.code).length === 0 && (
+                    <div className="pt-2 border-t border-slate-700/40">
+                      {!showCreateForm ? (
+                        <button
+                          onClick={() => setShowCreateForm(true)}
+                          className="w-full py-3 rounded-xl border border-dashed border-slate-600/60 hover:border-emerald-500/40 hover:bg-emerald-500/5 text-slate-400 hover:text-emerald-400 text-sm transition-all flex items-center justify-center gap-2"
+                        >
+                          <Building2 className="w-4 h-4" />
+                          {mm(UI_LABELS.foundNewType, { name: selectedType.name, cost: selectedType.founding_cost.toLocaleString() })}
+                        </button>
+                      ) : (
+                        <div className="space-y-2.5 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                          <div className="text-sm font-medium text-emerald-400 mb-1">{mm(UI_LABELS.createFormHeader)}</div>
+                          <Input
+                            value={createName}
+                            onChange={e => setCreateName(e.target.value)}
+                            placeholder={mm(UI_LABELS.namePlaceholder)}
+                            maxLength={64}
+                            className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-10 focus:border-emerald-500 focus:ring-emerald-500/30"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => { setShowCreateForm(false); setCreateName(''); setShowLoanForm(false); setLoanErrorData(null); }}
+                              className="flex-1 border-slate-600 text-slate-400 hover:text-white text-sm h-10"
+                            >
+                              {mm(UI_LABELS.cancelFormBtn)}
+                            </Button>
+                            <Button
+                              onClick={handleCreate}
+                              disabled={creating || !createName.trim() || createName.trim().length < 3}
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm h-10"
+                            >
+                              {creating ? mm(UI_LABELS.creating) : mm(UI_LABELS.gruendenShort, { cost: selectedType.founding_cost.toLocaleString() })}
+                            </Button>
+                          </div>
+
+                          {showLoanForm && loanErrorData && (
+                            <div className="mt-2 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/5 space-y-2.5">
+                              <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
+                                <Wallet className="w-4 h-4" />
+                                {mm(UI_LABELS.loanTitle)}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
+                                  <span className="text-slate-500">{mm(UI_LABELS.balanceLabel)}</span>
+                                  <div className="font-mono text-red-400">{loanErrorData.user_balance.toLocaleString()} CHF</div>
+                                </div>
+                                <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
+                                  <span className="text-slate-500">{mm(UI_LABELS.foundingCostLabel)}</span>
+                                  <div className="font-mono text-white">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
+                                </div>
+                                <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
+                                  <span className="text-slate-500">{mm(UI_LABELS.loanAmountLabel)}</span>
+                                  <div className="font-mono text-amber-400">{loanErrorData.founding_cost.toLocaleString()} CHF</div>
+                                </div>
+                                <div className="px-2.5 py-1.5 rounded bg-slate-800/60 border border-slate-700/50">
+                                  <span className="text-slate-500">{mm(UI_LABELS.weeklyRateLabel)}</span>
+                                  <div className="font-mono text-white">~{Math.ceil(loanErrorData.founding_cost / 12).toLocaleString()} CHF</div>
+                                </div>
+                              </div>
+                              <Input
+                                value={loanMessage}
+                                onChange={e => setLoanMessage(e.target.value)}
+                                placeholder={mm(UI_LABELS.loanMsgPlaceholder)}
+                                maxLength={500}
+                                className="bg-slate-800/50 border-slate-600 text-white placeholder:text-slate-500 text-sm h-9 focus:border-amber-500 focus:ring-amber-500/30"
+                              />
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-500/60" />
+                                {mm(UI_LABELS.loanInfo)}
+                              </div>
+                              <Button
+                                onClick={handleRequestLoan}
+                                disabled={requestingLoan || !createName.trim() || createName.trim().length < 3}
+                                className="w-full bg-amber-600 hover:bg-amber-500 text-white text-sm h-10"
+                              >
+                                {requestingLoan ? mm(UI_LABELS.requestingLoan) : mm(UI_LABELS.requestLoanBtn)}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pending Loan Requests für diesen Typ */}
+                  {myLoanRequests.filter(r => r.status === 'pending' && r.type_code === selectedType.code).map(req => (
+                    <div key={req.id} className="px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/5">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">{req.type_emoji}</span>
+                        <span className="font-medium text-sm text-white flex-1">{req.company_name}</span>
+                        <Badge variant="outline" className="text-[11px] text-amber-400 border-amber-400/30">{mm(UI_LABELS.loanPending)}</Badge>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCancelLoan(req.id)}
+                        className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs"
+                      >
+                        <X className="w-3 h-3 mr-1" />
+                        {mm(UI_LABELS.cancelBtn)}
+                      </Button>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          /* ── Overview: Tab-Switcher + Inhalt ──────────────── */
+          <div className="px-3 sm:px-6 py-3 sm:py-4 space-y-3">
+
+            {/* Tab-Leiste */}
+            <div className="flex gap-1 bg-slate-800/50 border border-slate-700/60 rounded-xl p-1">
+              <button
+                onClick={() => setOverviewTab('mine')}
+                className={`flex-1 rounded-lg py-1.5 text-xs sm:text-sm font-medium transition-colors ${
+                  overviewTab === 'mine'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                {mm(UI_LABELS.tabMyCompanies)}{myCompanies.length > 0 ? ` (${myCompanies.length})` : ''}
+              </button>
+              <button
+                onClick={() => setOverviewTab('all')}
+                className={`flex-1 rounded-lg py-1.5 text-xs sm:text-sm font-medium transition-colors ${
+                  overviewTab === 'all'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                {mm(UI_LABELS.tabAllTypes)}
+              </button>
+            </div>
+
+            {/* ── Tab: Meine Firmen ── */}
+            {overviewTab === 'mine' && (
+              <>
+                {/* Pending Loan Requests */}
+                {myLoanRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3 h-3" />
+                      {mm(UI_LABELS.pendingLoans)}
+                    </div>
+                    {myLoanRequests.filter(r => r.status === 'pending').map(req => (
+                      <div key={req.id} className="px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/5 flex items-center gap-3">
+                        <span className="text-lg">{req.type_emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-white">{req.company_name}</div>
+                          <div className="text-xs text-amber-400 font-mono">{req.loan_amount.toLocaleString()} CHF</div>
+                        </div>
+                        <Badge variant="outline" className="text-[11px] text-amber-400 border-amber-400/30 shrink-0">{mm(UI_LABELS.loanPending)}</Badge>
+                        <Button size="sm" variant="outline" onClick={() => handleCancelLoan(req.id)} className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs shrink-0">
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-              </TabsContent>
-            </Tabs>
+                )}
+
+                {/* Meine Firma-Karten */}
+                {myCompanies.length === 0 && myLoanRequests.filter(r => r.status === 'pending').length === 0 ? (
+                  <div className="text-center py-10">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center mx-auto mb-3">
+                      <Building2 className="w-7 h-7 text-slate-600" />
+                    </div>
+                    <p className="text-sm text-slate-400">{mm(UI_LABELS.noMyCompanies)}</p>
+                    <button
+                      onClick={() => setOverviewTab('all')}
+                      className="mt-2 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      {mm(UI_LABELS.tabAllTypes)} →
+                    </button>
+                  </div>
+                ) : (
+                  myCompanies.map(company => {
+                    const roleCfg = getRoleConfig(company.my_role || '');
+                    return (
+                      <button
+                        key={company.id}
+                        onClick={() => loadCompanyDetails(company.id)}
+                        className="w-full text-left rounded-xl border border-slate-700/50 hover:border-slate-600/50 hover:bg-slate-800/30 transition-all group"
+                      >
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center text-xl shrink-0">
+                            {company.type_emoji}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-sm text-white truncate">{company.name}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
+                            </div>
+                            <span className="text-[11px] text-slate-500">{company.type_name}</span>
+                          </div>
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-medium shrink-0 ${roleCfg.bg} ${roleCfg.border} ${roleCfg.color}`}>
+                            {company.my_role === 'owner' && <Star className="w-3 h-3" />}
+                            {company.my_role === 'manager' && <Shield className="w-3 h-3" />}
+                            <span className="hidden sm:inline">{roleCfg.label}</span>
+                          </div>
+                        </div>
+                        <div className="mx-4 mb-3">
+                          <CompanyLevelBar level={company.level} reputation={company.reputation} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-px mx-4 mb-3 rounded-lg overflow-hidden border border-slate-700/40">
+                          <div className="bg-slate-800/40 px-3 py-2 text-center">
+                            <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.balanceStatLabel)}</div>
+                            <div className="font-mono font-bold text-xs text-amber-400">{company.balance.toLocaleString()}</div>
+                          </div>
+                          <div className="bg-slate-800/40 px-3 py-2 text-center">
+                            <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">{mm(UI_LABELS.teamLabel)}</div>
+                            <div className="font-mono font-bold text-xs text-white">{company.member_count}</div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </>
+            )}
+
+            {/* ── Tab: Alle Typen ── */}
+            {overviewTab === 'all' && (
+              <>
+                {companyTypes.length === 0 && !loading && (
+                  <p className="text-sm text-slate-500 text-center py-4">{mm(UI_LABELS.noTypes)}</p>
+                )}
+                {companyTypes.map(ct => {
+                  const count = municipalityCompanies.filter(mc => mc.type_code === ct.code).length;
+                  const hasOwn = myCompanies.some(c => c.type_code === ct.code);
+                  return (
+                    <button
+                      key={ct.id}
+                      onClick={() => handleTypeClick(ct)}
+                      className={`w-full text-left rounded-xl border transition-all group hover:border-slate-600/60 hover:bg-slate-800/30 ${
+                        hasOwn ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-700/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 px-4 py-3.5">
+                        <span className="text-2xl shrink-0">{ct.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm text-white">{ct.name}</span>
+                            {hasOwn && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 font-medium">
+                                {mm(UI_LABELS.myCompanyLabel)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-400 line-clamp-1 mt-0.5">{ct.description}</div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {count > 0 && (
+                            <span className="text-[11px] px-2 py-1 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 font-mono">
+                              {count}
+                            </span>
+                          )}
+                          <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 px-4 pb-3">
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-500 border border-slate-700/50">
+                          {mm(UI_LABELS.maxMembers, { n: ct.max_members })}
+                        </span>
+                        <span className="text-[11px] text-slate-600">·</span>
+                        <span className="text-[11px] text-amber-500/70 font-mono">{ct.founding_cost.toLocaleString()} CHF</span>
+                        <span className="text-[11px] text-slate-600">·</span>
+                        <span className="text-[11px] text-slate-600">{mm(UI_LABELS.levelMin, { n: ct.min_level })}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
         </div>
@@ -716,7 +920,7 @@ const COMPANY_LEVEL_THRESHOLDS = [0, 20, 60, 120, 200, 320, 480, 700, 1000, 1400
 
 function CompanyLevelBar({ level, reputation }: { level: number; reputation: number }) {
   const m = useMessages();
-  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+  const mm = (key: Parameters<typeof m>[0], vars?: Record<string, unknown>): string => (m(key, vars) ?? String(key)) as string;
 
   const currentThreshold = COMPANY_LEVEL_THRESHOLDS[level - 1] || 0;
   const nextThreshold = level < 10 ? COMPANY_LEVEL_THRESHOLDS[level] : null;
@@ -770,6 +974,7 @@ interface CompanyDetailViewProps {
   onInviteSearch: (query: string) => void;
   onInvite: (userId: number) => void;
   onRefresh: () => void;
+  onLeaveCompany: (companyId: number, userId: number) => void;
 }
 
 const BUS_LINE_COLORS = ['#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#9333ea', '#ec4899', '#06b6d4', '#f97316'];
@@ -795,9 +1000,9 @@ const FINANCE_REASON_LABELS: Record<string, string> = {
 function CompanyDetailView({
   details, onBack, onRemoveMember, onChangeRole, onDissolve,
   onApplicationResponse, inviteQuery, inviteResults, inviting,
-  onInviteSearch, onInvite, onRefresh,
+  onInviteSearch, onInvite, onRefresh, onLeaveCompany,
 }: CompanyDetailViewProps) {
-  const { company, members, finances, contracts, applications, my_role } = details;
+  const { company, members, finances, contracts, applications, my_role, my_user_id } = details;
   const isOwner = my_role === 'owner';
   const isManager = my_role === 'manager';
   const canManage = isOwner || isManager;
@@ -805,7 +1010,7 @@ function CompanyDetailView({
   const { startBusLineCreation, loadTransportCompanyStatus, state: gameState, addNotification, setActivePanel } = useGame();
 
   const m = useMessages();
-  const mm = (key: Parameters<typeof m>[0]): string => (m(key) ?? String(key)) as string;
+  const mm = (key: Parameters<typeof m>[0], vars?: Record<string, unknown>): string => (m(key, vars) ?? String(key)) as string;
 
   // NPC-Bot State
   const [npcBots, setNpcBots] = useState<NpcBot[]>([]);
@@ -821,7 +1026,34 @@ function CompanyDetailView({
       return () => clearInterval(id);
     }
   }, [npcBots]);
+
+  // Wenn ein NPC-Bot fertig sein sollte (completable_at überschritten), alle 5s neu laden
+  useEffect(() => {
+    const overdueBots = npcBots.filter(b =>
+      b.status === 'working' && b.completable_at && new Date(b.completable_at) <= new Date()
+    );
+    if (overdueBots.length === 0) return;
+    const id = setInterval(() => {
+      getCompanyNpcBots(company.id)
+        .then(d => { setNpcBots(d.bots); setNpcTypes(d.types); })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [npcBots, company.id]);
   const [npcSuccess, setNpcSuccess] = useState<string | null>(null);
+
+  // Aktive Kontrolleur-NPCs dieser Firma (für Map-Navigation)
+  const [activeKontrolleurNpcs, setActiveKontrolleurNpcs] = useState<KontrolleurNpcState[]>([]);
+  const companyIdRef = useRef(company.id);
+  companyIdRef.current = company.id;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { npcs } = (e as CustomEvent<{ npcs: KontrolleurNpcState[] }>).detail;
+      setActiveKontrolleurNpcs(npcs.filter(n => n.companyId === companyIdRef.current));
+    };
+    window.addEventListener('kontrolleur-npc-authoritative-update', handler);
+    return () => window.removeEventListener('kontrolleur-npc-authoritative-update', handler);
+  }, []);
 
   // Bus line state (only for transport companies)
   const [busLines, setBusLines] = useState<ServerBusLine[]>([]);
@@ -967,38 +1199,82 @@ function CompanyDetailView({
             <div className="space-y-2">
               {members.map(member => {
                 const roleCfg = getRoleConfig(member.role);
+                const isMyRow = my_user_id !== null && my_user_id !== undefined && member.user_id === my_user_id;
+                const canKickThisMember =
+                  (isOwner && member.role !== 'owner') ||
+                  (isManager && member.role === 'employee' && !isMyRow);
+
                 return (
-                  <div key={member.user_id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border border-slate-700/50 hover:bg-slate-800/30 transition-colors">
-                    <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold shrink-0 border ${roleCfg.bg} ${roleCfg.border}`}>
-                      <span className={roleCfg.color}>
-                        {member.nickname?.charAt(0).toUpperCase() || '?'}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-xs sm:text-sm text-white truncate">{member.nickname}</div>
-                      <div className="text-[10px] sm:text-xs text-slate-500">
-                        Lv. {member.user_level || '?'} · {member.contracts_done} Aufträge
+                  <div key={member.user_id} className="flex flex-col gap-1 px-3 sm:px-4 py-2.5 rounded-xl border border-slate-700/50 hover:bg-slate-800/30 transition-colors">
+                    {/* Haupt-Zeile */}
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold shrink-0 border ${roleCfg.bg} ${roleCfg.border}`}>
+                        <span className={roleCfg.color}>
+                          {member.nickname?.charAt(0).toUpperCase() || '?'}
+                        </span>
                       </div>
-                    </div>
-                    <div className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg border text-[10px] sm:text-[11px] font-medium ${roleCfg.bg} ${roleCfg.border} ${roleCfg.color}`}>
-                      <span>{roleCfg.label}</span>
-                    </div>
-                    {isOwner && member.role !== 'owner' && (
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={() => onChangeRole(member.user_id, member.role === 'manager' ? 'employee' : 'manager')}
-                          className="p-1.5 rounded-lg hover:bg-slate-700/60 text-slate-500 hover:text-white transition-all"
-                          title={member.role === 'manager' ? mm(UI_LABELS.demoteTooltip) : mm(UI_LABELS.promoteTooltip)}
-                        >
-                          {member.role === 'manager' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUp className="w-3.5 h-3.5" />}
-                        </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-xs sm:text-sm text-white truncate">
+                          {member.nickname}
+                          {isMyRow && <span className="ml-1.5 text-[10px] text-slate-500">{mm(UI_LABELS.meLabel)}</span>}
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-slate-500">
+                          {mm(UI_LABELS.memberStatsRow, { level: member.user_level || '?', contracts: member.contracts_done, xp: member.xp_earned })}
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg border text-[10px] sm:text-[11px] font-medium shrink-0 ${roleCfg.bg} ${roleCfg.border} ${roleCfg.color}`}>
+                        <span>{roleCfg.label}</span>
+                      </div>
+                      {/* Owner: Befördern/Degradieren + Kick */}
+                      {isOwner && member.role !== 'owner' && (
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => onChangeRole(member.user_id, member.role === 'manager' ? 'employee' : 'manager')}
+                            className="p-1.5 rounded-lg hover:bg-slate-700/60 text-slate-500 hover:text-white transition-all"
+                            title={member.role === 'manager' ? mm(UI_LABELS.demoteTooltip) : mm(UI_LABELS.promoteTooltip)}
+                          >
+                            {member.role === 'manager' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUp className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => onRemoveMember(member.user_id)}
+                            className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-all"
+                            title={mm(UI_LABELS.removeTooltip)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                      {/* Manager: Angestellte kicken (nicht Owner, nicht sich selbst) */}
+                      {canKickThisMember && !isOwner && (
                         <button
                           onClick={() => onRemoveMember(member.user_id)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-all"
+                          className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-all shrink-0"
                           title={mm(UI_LABELS.removeTooltip)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
+                      )}
+                      {/* Eigene Zeile (Mitarbeiter/Manager): Firma verlassen */}
+                      {isMyRow && member.role !== 'owner' && (
+                        <button
+                          onClick={() => onLeaveCompany(company.id, member.user_id)}
+                          className="p-1.5 rounded-lg hover:bg-amber-500/15 text-slate-500 hover:text-amber-400 transition-all shrink-0"
+                          title={mm(UI_LABELS.leaveCompany)}
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Stats-Zeile für Admin oder eigene Zeile */}
+                    {(canManage || isMyRow) && (member.total_earnings > 0 || member.salary > 0) && (
+                      <div className="flex flex-wrap gap-3 pl-10 sm:pl-11 text-[10px] text-slate-500">
+                        {member.total_earnings > 0 && (
+                          <span className="text-amber-500/70 font-mono">{mm(UI_LABELS.memberEarned, { n: member.total_earnings.toLocaleString() })}</span>
+                        )}
+                        {member.salary > 0 && (
+                          <span>{mm(UI_LABELS.memberSalaryPer, { n: member.salary.toLocaleString() })}</span>
+                        )}
+                        <span>{mm(UI_LABELS.memberSince, { date: new Date(member.joined_at).toLocaleDateString('de-CH') })}</span>
                       </div>
                     )}
                   </div>
@@ -1177,7 +1453,7 @@ function CompanyDetailView({
                             {mm(UI_LABELS.selectStops)}
                           </Button>
                           <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowNewLineForm(false)}>
-                            {mm(UI_LABELS.cancelBtn)}
+                            {mm(UI_LABELS.cancelFormBtn)}
                           </Button>
                         </div>
                         <p className="text-[10px] text-slate-500">
@@ -1222,9 +1498,9 @@ function CompanyDetailView({
                     {/* Aktive NPCs */}
                     {npcBots.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider">{mm(UI_LABELS.activeWorkers).replace('{n}', String(npcBots.length))}</div>
+                        <div className="text-[10px] text-slate-500 uppercase tracking-wider">{mm(UI_LABELS.activeWorkers, { n: npcBots.length })}</div>
                         <div className="space-y-2 pr-0.5">
-                        {npcBots.map(bot => {
+                        {npcBots.map((bot, botIndex) => {
                           const lvl = getNpcLevel(bot.xp_earned ?? 0);
                           // Echtzeit-Fortschritt aus contract_started_at + work_duration_seconds
                           const liveProgress = (bot.status === 'working' && bot.contract_started_at && bot.work_duration_seconds)
@@ -1232,15 +1508,33 @@ function CompanyDetailView({
                             : (bot.work_progress_pct ?? 0);
                           // npcTick referenced to force re-render every second
                           void npcTick;
+                          // Aktiver NPC auf der Map (für Kontrolleur: 1 NPC pro Bot-Index)
+                          const activeNpc = activeKontrolleurNpcs[botIndex] ?? null;
                           return (
-                          <div key={bot.id} className={`border rounded-xl overflow-hidden transition-colors ${bot.patrol_mode ? 'bg-amber-500/8 border-amber-500/40' : 'bg-slate-800/60 border-slate-700/50'}`}>
+                          <div key={bot.id} className={`border rounded-xl overflow-hidden transition-colors ${bot.patrol_mode ? (activeNpc ? 'bg-blue-500/8 border-blue-500/40' : 'bg-amber-500/8 border-amber-500/40') : 'bg-slate-800/60 border-slate-700/50'}`}>
                             {/* Patrol-Banner oben wenn aktiv */}
                             {bot.patrol_mode && (
-                              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/15 border-b border-amber-500/30">
-                                <span className="text-sm">🚛</span>
-                                <span className="text-[11px] font-semibold text-amber-300">{mm(UI_LABELS.patrolActive)}</span>
-                                <span className="text-[10px] text-amber-400/70 ml-auto">{mm(UI_LABELS.patrolRepairInfo)}</span>
-                              </div>
+                              company.type_code === 'parkraum_security' ? (
+                                <div
+                                  className={`flex items-center gap-2 px-3 py-1.5 border-b ${activeNpc ? 'bg-blue-500/15 border-blue-500/30 cursor-pointer hover:bg-blue-500/25 transition-colors' : 'bg-slate-700/30 border-slate-600/30'}`}
+                                  onClick={activeNpc ? () => window.dispatchEvent(new CustomEvent('navigate-to-tile', { detail: { x: activeNpc.x, y: activeNpc.y } })) : undefined}
+                                  title={activeNpc ? 'Auf Karte zeigen' : undefined}
+                                >
+                                  <span className="text-sm">{activeNpc ? (activeNpc.state === 'driving' ? '🚗' : '🔍') : '🅿️'}</span>
+                                  <span className={`text-[11px] font-semibold ${activeNpc ? 'text-blue-300' : 'text-slate-400'}`}>
+                                    {activeNpc ? (activeNpc.state === 'driving' ? 'Fährt zum Parkplatz…' : 'Kontrolliert vor Ort') : 'Wartet auf Einsatz'}
+                                  </span>
+                                  {activeNpc && (
+                                    <span className="text-[10px] text-blue-400/70 ml-auto">📍 Auf Karte</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/15 border-b border-amber-500/30">
+                                  <span className="text-sm">🚛</span>
+                                  <span className="text-[11px] font-semibold text-amber-300">{mm(UI_LABELS.patrolActive)}</span>
+                                  <span className="text-[10px] text-amber-400/70 ml-auto">{mm(UI_LABELS.patrolRepairInfo)}</span>
+                                </div>
+                              )
                             )}
                             <div className="p-3">
                               <div className="flex items-center gap-3">
@@ -1275,9 +1569,19 @@ function CompanyDetailView({
                                   {/* Arbeits-Status */}
                                   <div className="flex items-center gap-3 mt-1.5">
                                     {bot.patrol_mode ? (
-                                      <div className="flex items-center gap-1.5 flex-1">
-                                        <span className="text-[10px] text-amber-400">🔧 {bot.patrol_repairs ?? 0} Reparaturen</span>
-                                      </div>
+                                      company.type_code === 'parkraum_security' ? (
+                                        <button
+                                          className={`flex items-center gap-1 flex-1 text-left rounded px-1 py-0.5 transition-colors ${activeNpc ? 'text-blue-400 hover:bg-blue-500/10 cursor-pointer' : 'text-slate-500 cursor-default'}`}
+                                          onClick={activeNpc ? () => window.dispatchEvent(new CustomEvent('navigate-to-tile', { detail: { x: activeNpc.x, y: activeNpc.y } })) : undefined}
+                                          disabled={!activeNpc}
+                                        >
+                                          <span className="text-[10px]">{activeNpc ? (activeNpc.state === 'driving' ? '🚗 Unterwegs' : '🔍 Aktiv') : '● Bereit'}</span>
+                                        </button>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5 flex-1">
+                                          <span className="text-[10px] text-amber-400">🔧 {bot.patrol_repairs ?? 0} Reparaturen</span>
+                                        </div>
+                                      )
                                     ) : bot.status === 'working' ? (
                                       <div className="flex items-center gap-1.5 flex-1">
                                         <div className="flex-1 bg-slate-700 rounded-full h-1.5">
@@ -1499,6 +1803,8 @@ function SettingsTab({ companyName, companyId, onDissolve }: {
   companyId: number;
   onDissolve: (id: number) => void;
 }) {
+  const m = useMessages();
+  const mm = (key: Parameters<typeof m>[0], vars?: Record<string, unknown>): string => (m(key, vars) ?? String(key)) as string;
   const [confirmName, setConfirmName] = useState('');
   const [showDissolve, setShowDissolve] = useState(false);
 
@@ -1551,7 +1857,7 @@ function SettingsTab({ companyName, companyId, onDissolve }: {
                 onClick={() => { setShowDissolve(false); setConfirmName(''); }}
                 className="border-slate-600 hover:bg-slate-700 text-slate-400 text-xs"
               >
-                Abbrechen
+                {mm(UI_LABELS.cancelFormBtn)}
               </Button>
             </div>
           </div>

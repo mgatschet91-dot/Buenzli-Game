@@ -34,7 +34,7 @@ export interface RoomGeometrySystem {
   /** buildGameRoller callback injected by rollers module */
   setBuildRoller: (fn: BuildRollerFn) => void
   /** setCharPos callback so spawn point applies */
-  setCharPos: (fn: (x: number, z: number, level: number) => void) => void
+  setCharPos: (fn: (x: number, z: number, level: number, facingIdx?: number) => void) => void
 }
 
 type AddSolidFn = (x0: number, x1: number, z0: number, z1: number, level?: number, ref?: unknown) => void
@@ -48,7 +48,7 @@ const _ED_FAC_Y: Record<string, number> = { N: Math.PI, S: 0, E: -Math.PI/2, W: 
 export function createRoomGeometry(scene: THREE.Scene): RoomGeometrySystem {
   let _addSolid:    AddSolidFn    = () => {}
   let _buildRoller: BuildRollerFn = () => {}
-  let _setCharPos:  (x: number, z: number, level: number) => void = () => {}
+  let _setCharPos:  (x: number, z: number, level: number, facingIdx?: number) => void = () => {}
 
   const objs: THREE.Object3D[] = []
 
@@ -497,7 +497,7 @@ export function createRoomGeometry(scene: THREE.Scene): RoomGeometrySystem {
     }
     if (geo.spawn) {
       const spawnFlIdx = geo.spawn.floor_idx ?? 0
-      _setCharPos(geo.spawn.x, geo.spawn.z, spawnFlIdx)
+      _setCharPos(geo.spawn.x, geo.spawn.z, spawnFlIdx, geo.spawn.facing_idx ?? 0)
     }
   }
 

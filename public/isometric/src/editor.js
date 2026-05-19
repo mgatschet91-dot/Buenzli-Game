@@ -35,8 +35,18 @@ function defaultRoom() {
       holes: []
     }],
     stairs: [],
-    rollers: [],
-    spawn: { x: 0, z: 0, floorId: 'f0' }
+    wallColor:       '#d8c9a8',
+    lighting: {
+      ambientColor: '#ffffff', ambientIntensity: 0.7,
+      sunColor: '#ffeedd',
+      fogEnabled: false, fogColor: '#c0d0e0', fogNear: 30, fogFar: 80,
+    },
+    roomDisplayName: null,
+    roomDescription: null,
+    maxVisitors:     25,
+    isLocked:        false,
+    roomPassword:    null,
+    spawn: { x: 0, z: 0, floorId: 'f0', facing_idx: 0 }
   }
 }
 
@@ -108,9 +118,9 @@ function mkBox(w, h, d, mat, x, y, z) {
 }
 
 // ─── Scene Rebuild ────────────────────────────────────────────────────────────
-let hitMeshes = []        // all clickable meshes (floors, stairs, spawn, rollers)
+let hitMeshes = []        // all clickable meshes (floors, stairs, spawn)
 let selOverlay = null
-let rollerBeltMeshes = [] // animated belt slats [{mesh, dir, cx, cz, halfT}]
+const rollerBeltMeshes = []  // Roller-Slats für Animation (im Editor immer leer)
 
 function rebuild() {
   // Dispose & clear
@@ -118,11 +128,8 @@ function rebuild() {
   sceneRoot.clear()
   hitMeshes = []
   selOverlay = null
-  rollerBeltMeshes = []
-
-  for (const floor  of roomData.floors)  buildFloor(floor)
-  for (const stair  of roomData.stairs)  buildStair(stair)
-  for (const roller of (roomData.rollers || [])) buildRoller(roller)
+  for (const floor of roomData.floors) buildFloor(floor)
+  for (const stair of roomData.stairs) buildStair(stair)
   buildSpawn()
 
   if (selectedId && selectedType === 'floor') {
@@ -130,6 +137,8 @@ function rebuild() {
     if (f) addSelOverlay(f)
   }
 
+  // Beleuchtung live anwenden (Licht ändert sich nicht durch buildFloor/buildStair)
+  if (typeof window.applyRoomLighting === 'function') window.applyRoomLighting(roomData.lighting)
   refreshList()
   refreshProps()
   refreshCode()
@@ -480,6 +489,10 @@ function buildSpawn() {
   const floor = roomData.floors.find(f => f.id === sp.floorId) || roomData.floors[0]
   const y     = floor ? floor.y + 0.06 : 0.06
 
+  const FACING_DIRS = ['N','E','S','W']
+  const FACING_Y    = { N: Math.PI, E: -Math.PI/2, S: 0, W: Math.PI/2 }
+  const facingY = FACING_Y[FACING_DIRS[sp.facing_idx ?? 0]] ?? 0
+
   const mat  = makeMat(0xffcc00)
   const cone = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.55, 4), mat)
   cone.position.set(sp.x, y + 0.28, sp.z)
@@ -494,109 +507,23 @@ function buildSpawn() {
   ring.rotation.x = -Math.PI / 2
   ring.position.set(sp.x, y + 0.08, sp.z)
   sceneRoot.add(ring)
+
+  // Richtungs-Pfeil: zeigt die Blickrichtung beim Spawn
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0xff6600 })
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.55, 6), arrowMat)
+  shaft.rotation.x = Math.PI / 2
+  const tip   = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.25, 6), arrowMat)
+  tip.rotation.x = Math.PI / 2
+  tip.position.z = 0.4
+
+  const arrow = new THREE.Group()
+  arrow.add(shaft)
+  arrow.add(tip)
+  arrow.position.set(sp.x, y + 0.09, sp.z)
+  arrow.rotation.y = facingY
+  sceneRoot.add(arrow)
 }
 
-// ── Roller (conveyor tile) ────────────────────────────────────────────────────
-function buildRoller(roller) {
-  const floor  = roomData.floors.find(f => f.id === roller.floorId) || roomData.floors[0]
-  const baseY  = (floor ? floor.y : 0) + 0.06  // sits on top of floor tile
-
-  const g = new THREE.Group()
-  g.userData = { type: 'roller', id: roller.id }
-
-  const BH   = 0.22             // total roller body height
-  const TW   = TILE * 0.92      // tile footprint (leaves small gap)
-  const halfT = TW / 2
-  const cx   = roller.x
-  const cz   = roller.z
-  const topY = baseY + BH       // y of the very top surface
-
-  const isNS = roller.dir === 'N' || roller.dir === 'S'
-
-  // ── Body (dark charcoal) ───────────────────────────────────────────────
-  const body = new THREE.Mesh(new THREE.BoxGeometry(TW, BH, TW), makeMat(0x1e1e1e))
-  body.position.set(cx, baseY + BH / 2, cz)
-  body.receiveShadow = true
-  body.userData = { type: 'roller', id: roller.id, floorId: roller.floorId }
-  g.add(body)
-  hitMeshes.push(body)
-
-  // ── Red side rails (on the two sides perpendicular to travel) ──────────
-  const rimMat = makeMat(0xcc1818)
-  const RH = BH * 0.55, RT = 0.055
-  for (const side of [-1, 1]) {
-    const rim = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        isNS ? TW + 0.04 : RT,
-        RH,
-        isNS ? RT : TW + 0.04
-      ),
-      rimMat
-    )
-    rim.position.set(
-      cx + (isNS ? 0 : side * (halfT + RT / 2)),
-      baseY + BH * 0.5,
-      cz + (isNS ? side * (halfT + RT / 2) : 0)
-    )
-    g.add(rim)
-  }
-
-  // ── Belt slats (animated, clipped to roller bounds) ────────────────────
-  const clippingPlanes = [
-    new THREE.Plane(new THREE.Vector3( 1, 0, 0), -(cx - halfT)),
-    new THREE.Plane(new THREE.Vector3(-1, 0, 0),   cx + halfT),
-    new THREE.Plane(new THREE.Vector3( 0, 0, 1), -(cz - halfT)),
-    new THREE.Plane(new THREE.Vector3( 0, 0,-1),   cz + halfT),
-  ]
-  const beltMat = new THREE.MeshLambertMaterial({ color: 0x111111, clippingPlanes })
-
-  const SLATS = 4
-  for (let i = 0; i < SLATS; i++) {
-    const t = (i / SLATS) * TW - halfT    // initial offset along travel axis
-    const slat = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        isNS ? TW * 0.80 : 0.055,
-        0.018,
-        isNS ? 0.055 : TW * 0.80
-      ),
-      beltMat
-    )
-    slat.position.set(
-      cx + (isNS ? 0 : t),
-      topY + 0.003,
-      cz + (isNS ? t : 0)
-    )
-    // store animation info on userData
-    slat.userData = { beltDir: roller.dir, cx, cz, halfT, speed: 1.1, slatOffset: (i / SLATS) * halfT * 2 }
-    g.add(slat)
-    rollerBeltMeshes.push(slat)
-  }
-
-  // ── Yellow direction arrow ─────────────────────────────────────────────
-  const arrowGroup = new THREE.Group()
-  arrowGroup.position.set(cx, topY + 0.022, cz)
-  const arrowMesh = new THREE.Mesh(
-    new THREE.ConeGeometry(0.16, 0.26, 3),
-    makeMat(0xddcc00)
-  )
-  arrowMesh.rotation.x = Math.PI / 2  // lay flat, tip points +Z
-  arrowGroup.add(arrowMesh)
-  const arrowYRot = { N: Math.PI, S: 0, E: -Math.PI / 2, W: Math.PI / 2 }
-  arrowGroup.rotation.y = arrowYRot[roller.dir]
-  g.add(arrowGroup)
-
-  // Selection highlight
-  if (selectedId === roller.id) {
-    const sel = new THREE.Mesh(
-      new THREE.BoxGeometry(TW + 0.06, 0.04, TW + 0.06),
-      new THREE.MeshBasicMaterial({ color: 0x3a7bd5, transparent: true, opacity: 0.45 })
-    )
-    sel.position.set(cx, topY + 0.025, cz)
-    g.add(sel)
-  }
-
-  sceneRoot.add(g)
-}
 
 // ── Styled Stair Builders ─────────────────────────────────────────────────────
 // Built in local space ascending +Z then rotated by facY.
@@ -812,24 +739,30 @@ let activeTool    = 'select'
 let stairAnchor   = null
 let stairModalDir = 'N'
 let floorAnchor   = null   // {x, z} world click position for new floor
-let rollerAnchor   = null   // {x, z, floorId} for roller placement
-let rollerModalDir  = 'S'   // last chosen roller direction
 let stairModalStyle = 'classic'
 
 function setTool(tool) {
-  activeTool   = tool
-  stairAnchor  = null
-  floorAnchor  = null
-  rollerAnchor = null
+  activeTool  = tool
+  stairAnchor = null
+  floorAnchor = null
   document.querySelectorAll('.tb-btn[data-tool]').forEach(b =>
     b.classList.toggle('active', b.dataset.tool === tool)
   )
+  // Raum-Einstellungen: kein echtes Placement-Tool, direkt Panel öffnen + zu select zurück
+  if (tool === 'room') {
+    select('room', 'room')
+    activeTool = 'select'
+    document.querySelectorAll('.tb-btn[data-tool]').forEach(b =>
+      b.classList.toggle('active', b.dataset.tool === 'select')
+    )
+    setHint('')
+    return
+  }
   const hints = {
     select: '',
     stair:  'Klicke irgendwo in die Szene für den Treppenanfang',
     floor:  'Klicke in die Szene um die Etage zu platzieren',
     spawn:  'Klicken oder ziehen um den Spawn-Punkt zu setzen',
-    roller: 'Klicke auf eine Etage um einen Roller zu platzieren',
     hole:   'Klicke auf ein Tile um es zu entfernen / wiederherzustellen'
   }
   setHint(hints[tool] || '')
@@ -883,29 +816,10 @@ renderer.domElement.addEventListener('click', e => {
     if (!hit) { select(null, null); rebuild(); return }
     const { type, id } = hit.object.userData
     if (type === 'spawn')  { select('spawn', 'spawn'); rebuild(); return }
-    if (type === 'roller') { select(id, 'roller'); rebuild(); return }
     if (type === 'floor' || type === 'stair' || type === 'wall') {
       select(id, type === 'wall' ? 'floor' : type)  // wall click → select floor
       rebuild()
     }
-    return
-  }
-
-  if (activeTool === 'roller') {
-    // Snap to tile center
-    const floorHit = hit && hit.object.userData.type === 'floor'
-    const floorId  = floorHit
-      ? hit.object.userData.id
-      : (roomData.floors.length ? roomData.floors[0].id : null)
-    if (!floorId) { setHint('Erst eine Etage erstellen!'); return }
-    const raw = floorHit ? hit.point : getWorldPoint(e, 0)
-    if (!raw) return
-    rollerAnchor = {
-      x: Math.round(raw.x),   // snap to whole tile
-      z: Math.round(raw.z),
-      floorId
-    }
-    openRollerModal()
     return
   }
 
@@ -1011,7 +925,7 @@ function placeSpawnAt(e) {
 
   const pt = getWorldPoint(e, floor.y)
   if (!pt) return
-  roomData.spawn = { x: Math.round(pt.x * 2) / 2, z: Math.round(pt.z * 2) / 2, floorId: floor.id }
+  roomData.spawn = { x: Math.round(pt.x * 2) / 2, z: Math.round(pt.z * 2) / 2, floorId: floor.id, facing_idx: roomData.spawn?.facing_idx ?? 0 }
   rebuild()
 }
 
@@ -1092,37 +1006,6 @@ function closeStairModal() {
   setTool('select')
 }
 
-// ─── Roller modal ─────────────────────────────────────────────────────────────
-function openRollerModal() {
-  // Highlight the current direction button
-  document.querySelectorAll('#roller-modal .db').forEach(b => {
-    b.classList.toggle('sel', b.dataset.dir === rollerModalDir)
-  })
-  document.getElementById('roller-modal').classList.remove('hidden')
-  setHint('')
-}
-function closeRollerModal() {
-  document.getElementById('roller-modal').classList.add('hidden')
-  rollerAnchor = null
-  setTool('select')
-}
-function confirmRoller() {
-  if (!rollerAnchor) { closeRollerModal(); return }
-  if (!roomData.rollers) roomData.rollers = []
-  const newRoller = {
-    id: uid('r'),
-    x: rollerAnchor.x,
-    z: rollerAnchor.z,
-    dir: rollerModalDir,
-    floorId: rollerAnchor.floorId
-  }
-  roomData.rollers.push(newRoller)
-  select(newRoller.id, 'roller')
-  closeRollerModal()
-  rebuild()
-}
-window.confirmRoller  = confirmRoller
-window.closeRollerModal = closeRollerModal
 
 function confirmStair() {
   if (!stairAnchor) { closeStairModal(); return }
@@ -1225,12 +1108,9 @@ function deleteSelected() {
   if (!selectedId || selectedType === 'spawn') return
   if (selectedType === 'floor') {
     roomData.floors  = roomData.floors.filter(f => f.id !== selectedId)
-    roomData.stairs  = roomData.stairs.filter(s => s.fromFloorId !== selectedId && s.toFloorId !== selectedId)
-    if (roomData.rollers) roomData.rollers = roomData.rollers.filter(r => r.floorId !== selectedId)
+    roomData.stairs = roomData.stairs.filter(s => s.fromFloorId !== selectedId && s.toFloorId !== selectedId)
   } else if (selectedType === 'stair') {
     roomData.stairs = roomData.stairs.filter(s => s.id !== selectedId)
-  } else if (selectedType === 'roller') {
-    if (roomData.rollers) roomData.rollers = roomData.rollers.filter(r => r.id !== selectedId)
   }
   select(null, null)
   rebuild()
@@ -1477,37 +1357,14 @@ function refreshProps() {
       }
     }
 
-  } else if (selectedType === 'roller') {
-    const roller = (roomData.rollers || []).find(r => r.id === selectedId)
-    if (!roller) return
-    const floor = roomData.floors.find(f => f.id === roller.floorId)
-    const DIRS  = ['N','S','E','W']
-    const DLBL  = { N:'↑ Nord', S:'↓ Süd', E:'→ Ost', W:'← West' }
-    container.innerHTML = `
-      <div class="psec">
-        <h5>Roller</h5>
-        <div class="pr"><label>Etage</label><div class="pval">${floor ? escHtml(floor.name) : '?'}</div></div>
-        <div class="pr two">
-          <div><label>X</label><input type="number" id="p-rx" value="${roller.x}" step="1"></div>
-          <div><label>Z</label><input type="number" id="p-rz" value="${roller.z}" step="1"></div>
-        </div>
-      </div>
-      <div class="psec">
-        <h5>Schubrichtung</h5>
-        <div class="dir-grid">
-          ${DIRS.map(d => `<button class="db${roller.dir===d?' sel':''}" onclick="setRollerDir('${roller.id}','${d}')">${DLBL[d]}</button>`).join('')}
-        </div>
-      </div>
-      <div class="psec">
-        <button class="del-btn" onclick="deleteSelected()">🗑️ Roller löschen</button>
-      </div>
-    `
-    document.getElementById('p-rx').onchange = e => { roller.x = Math.round(parseFloat(e.target.value)||0); rebuild() }
-    document.getElementById('p-rz').onchange = e => { roller.z = Math.round(parseFloat(e.target.value)||0); rebuild() }
-
   } else if (selectedType === 'spawn') {
     const sp    = roomData.spawn
     const floor = roomData.floors.find(f => f.id === sp.floorId)
+    const fi    = sp.facing_idx ?? 0
+    const FACING_LABELS = ['N ↑', 'E →', 'S ↓', 'W ←']
+    const dirBtns = FACING_LABELS.map((lbl, i) =>
+      `<button onclick="setSpawnFacing(${i})" style="flex:1;padding:4px 2px;border-radius:4px;border:1px solid ${i===fi?'#f97316':'#334155'};background:${i===fi?'#7c3a1a':'#1e293b'};color:${i===fi?'#fff':'#94a3b8'};cursor:pointer;font-size:11px">${lbl}</button>`
+    ).join('')
     container.innerHTML = `
       <div class="psec">
         <h5>Spawn-Punkt</h5>
@@ -1517,25 +1374,99 @@ function refreshProps() {
           <div><label>X</label><input type="number" id="p-sx" value="${sp.x}"></div>
           <div><label>Z</label><input type="number" id="p-sz" value="${sp.z}"></div>
         </div>
+        <div class="pr" style="flex-direction:column;gap:4px">
+          <label>Blickrichtung</label>
+          <div style="display:flex;gap:4px;width:100%">${dirBtns}</div>
+        </div>
         <p class="pdesc" style="margin-top:6px">Oder Spawn-Tool aktivieren und auf ein Tile klicken.</p>
       </div>
     `
     document.getElementById('p-sx').onchange = e => { sp.x = parseInt(e.target.value)||0; rebuild() }
     document.getElementById('p-sz').onchange = e => { sp.z = parseInt(e.target.value)||0; rebuild() }
+
+  } else if (selectedType === 'room') {
+    const lt = roomData.lighting || {}
+    container.innerHTML = `
+      <div class="psec">
+        <h5>Raum-Einstellungen</h5>
+        <div class="pr"><label>Raumname</label><input type="text" id="p-room-name" maxlength="60" placeholder="Mein Zimmer" value="${escHtml(roomData.roomDisplayName || '')}" style="flex:1;min-width:0"></div>
+        <div class="pr"><label>Beschreibung</label><textarea id="p-room-desc" maxlength="200" placeholder="Kurze Beschreibung..." style="flex:1;min-width:0;resize:vertical;height:48px;font-size:11px">${escHtml(roomData.roomDescription || '')}</textarea></div>
+        <div class="pr"><label>Max. Besucher</label><input type="range" id="p-max-vis" min="5" max="50" step="1" value="${roomData.maxVisitors ?? 25}" style="flex:1"><span id="p-max-vis-val" style="width:28px;text-align:right">${roomData.maxVisitors ?? 25}</span></div>
+        <div class="pr" style="margin-top:6px"><label>Türschloss</label><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="p-room-locked" ${roomData.isLocked ? 'checked' : ''}><span id="p-room-locked-label">${roomData.isLocked ? '🔒 Gesperrt' : '🔓 Offen'}</span></label></div>
+        <div class="pr" id="p-pw-row" style="${roomData.isLocked ? '' : 'display:none'}"><label>Passwort</label><input type="password" id="p-room-pw" maxlength="100" placeholder="${roomData.hasPassword ? '(gesetzt — neu eingeben um zu ändern)' : 'Neues Passwort...'}" style="flex:1;min-width:0"></div>
+        <div class="pr" id="p-pw-clear-row" style="${(roomData.isLocked && roomData.hasPassword) ? '' : 'display:none'}"><label></label><button id="p-room-pw-clear" style="font-size:11px;padding:2px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">Passwort entfernen</button></div>
+        <div class="pr" style="margin-top:10px"><label style="font-weight:700;color:#f97316">Optik</label></div>
+        <div class="pr"><label>Wandfarbe</label><input type="color" id="p-wall-col" value="${roomData.wallColor || '#d8c9a8'}"></div>
+        <div class="pr" style="margin-top:10px"><label style="font-weight:700;color:#f97316">Beleuchtung</label></div>
+        <div class="pr"><label>Umgebungslicht</label><input type="color" id="p-amb-col" value="${lt.ambientColor || '#ffffff'}"></div>
+        <div class="pr"><label>Helligkeit</label><input type="range" id="p-amb-int" min="0.1" max="2" step="0.05" value="${lt.ambientIntensity ?? 0.7}" style="flex:1"></div>
+        <div class="pr"><label>Sonnenlicht</label><input type="color" id="p-sun-col" value="${lt.sunColor || '#ffeedd'}"></div>
+        <div class="pr"><label>Nebel</label><input type="checkbox" id="p-fog-on" ${lt.fogEnabled ? 'checked' : ''}></div>
+        <div id="p-fog-wrap" style="display:${lt.fogEnabled ? 'contents' : 'none'}">
+          <div class="pr"><label>Nebelfarbe</label><input type="color" id="p-fog-col" value="${lt.fogColor || '#c0d0e0'}"></div>
+          <div class="pr"><label>Nah</label><input type="number" id="p-fog-near" value="${lt.fogNear ?? 30}" min="1" max="200" style="width:60px"></div>
+          <div class="pr"><label>Fern</label><input type="number" id="p-fog-far"  value="${lt.fogFar ?? 80}"  min="1" max="500" style="width:60px"></div>
+        </div>
+        <p class="pdesc" style="margin-top:6px">Änderungen werden beim Speichern übernommen.</p>
+      </div>
+    `
+    const _relight = () => {
+      if (typeof window.applyRoomLighting === 'function') window.applyRoomLighting(roomData.lighting)
+    }
+    const _rewalls = () => rebuild()
+
+    document.getElementById('p-room-name').oninput = e => { roomData.roomDisplayName = e.target.value || null }
+    document.getElementById('p-room-desc').oninput = e => { roomData.roomDescription = e.target.value || null }
+    document.getElementById('p-max-vis').oninput   = e => {
+      roomData.maxVisitors = parseInt(e.target.value) || 25
+      document.getElementById('p-max-vis-val').textContent = roomData.maxVisitors
+    }
+    document.getElementById('p-room-locked').onchange = e => {
+      roomData.isLocked = e.target.checked
+      document.getElementById('p-room-locked-label').textContent = roomData.isLocked ? '🔒 Gesperrt' : '🔓 Offen'
+      document.getElementById('p-pw-row').style.display = roomData.isLocked ? '' : 'none'
+      const hasPw = roomData.isLocked && roomData.hasPassword
+      document.getElementById('p-pw-clear-row').style.display = hasPw ? '' : 'none'
+    }
+    document.getElementById('p-room-pw').oninput = e => { roomData.roomPassword = e.target.value || null }
+    document.getElementById('p-room-pw-clear')?.addEventListener('click', () => {
+      roomData.roomPassword = ''   // leerer String → Server löscht den Hash
+      roomData.hasPassword  = false
+      document.getElementById('p-room-pw').value = ''
+      document.getElementById('p-room-pw').placeholder = 'Neues Passwort...'
+      document.getElementById('p-pw-clear-row').style.display = 'none'
+      toast('Passwort wird beim Speichern entfernt')
+    })
+
+    document.getElementById('p-wall-col').oninput = e => { roomData.wallColor = e.target.value; _rewalls() }
+
+    document.getElementById('p-amb-col').oninput = e => { roomData.lighting.ambientColor = e.target.value; _relight() }
+    document.getElementById('p-amb-int').oninput = e => { roomData.lighting.ambientIntensity = parseFloat(e.target.value); _relight() }
+    document.getElementById('p-sun-col').oninput = e => { roomData.lighting.sunColor = e.target.value; _relight() }
+    document.getElementById('p-fog-on').onchange = e => {
+      roomData.lighting.fogEnabled = e.target.checked
+      document.getElementById('p-fog-wrap').style.display = e.target.checked ? 'contents' : 'none'
+      _relight()
+    }
+    document.getElementById('p-fog-col').oninput  = e => { roomData.lighting.fogColor = e.target.value; _relight() }
+    document.getElementById('p-fog-near').onchange = e => { roomData.lighting.fogNear = parseFloat(e.target.value)||30; _relight() }
+    document.getElementById('p-fog-far').onchange  = e => { roomData.lighting.fogFar  = parseFloat(e.target.value)||80; _relight() }
   }
 }
 
-function setRollerDir(id, dir) {
-  const r = (roomData.rollers || []).find(r => r.id === id)
-  if (r) { r.dir = dir; rebuild() }
-}
-window.setRollerDir = setRollerDir
 
 function setStairStyle(id, style) {
   const s = roomData.stairs.find(s => s.id === id)
   if (s) { s.style = style; rebuild() }
 }
 window.setStairStyle = setStairStyle
+
+function setSpawnFacing(idx) {
+  roomData.spawn.facing_idx = idx
+  rebuild()
+  refreshProps() // Panel neu rendern damit Button-Highlight aktualisiert
+}
+window.setSpawnFacing = setSpawnFacing
 
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 
@@ -1553,8 +1484,8 @@ function refreshList() {
   for (const f of roomData.floors)  add(f.id, 'floor',  '🟩', f.name)
   const STAIR_ICONS = { classic:'🪜', wood:'🪵', stone:'🧱', metal:'⚙️', open:'✨', down:'⬇️' }
   for (const s of roomData.stairs)  add(s.id, 'stair',  STAIR_ICONS[s.style||'classic']||'🪜', 'Treppe ' + (s.style||'classic') + ' ' + s.dir)
-  for (const r of (roomData.rollers||[])) add(r.id, 'roller', '🔄', 'Roller ' + r.dir + ' (' + r.x + ',' + r.z + ')')
   add('spawn', 'spawn', '⭐', 'Spawn-Punkt')
+  add('room',  'room',  '🏠', 'Raum-Einstellungen')
 }
 
 // ─── Code bar (entfernt — wird in DB gespeichert) ─────────────────────────────
@@ -1582,7 +1513,8 @@ let panStartMouse = { x: 0, y: 0 }
 let panStartTarget = new THREE.Vector3()
 
 let spaceDown = false
-window.addEventListener('keydown', e => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { spaceDown = true; e.preventDefault() } }, true)
+const _isTextTarget = e => e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable
+window.addEventListener('keydown', e => { if (e.code === 'Space' && !_isTextTarget(e)) { spaceDown = true; e.preventDefault() } }, true)
 window.addEventListener('keyup',   e => { if (e.code === 'Space') spaceDown = false })
 
 renderer.domElement.addEventListener('mousedown', e => {
@@ -1622,7 +1554,7 @@ renderer.domElement.addEventListener('wheel', e => {
 
 // ─── Keyboard ─────────────────────────────────────────────────────────────────
 window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return
+  if (_isTextTarget(e)) return
   if (e.code === 'Delete' || e.code === 'Backspace') deleteSelected()
   if (e.code === 'Escape')  setTool('select')
   if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) { e.preventDefault() }
@@ -1670,8 +1602,6 @@ document.querySelectorAll('#roller-modal .db').forEach(btn => {
 })
 document.getElementById('stair-ok').addEventListener('click', confirmStair)
 document.getElementById('stair-cancel').addEventListener('click', closeStairModal)
-document.getElementById('roller-ok').addEventListener('click', confirmRoller)
-document.getElementById('roller-cancel').addEventListener('click', closeRollerModal)
 
 document.getElementById('fm-ok').addEventListener('click', confirmFloor)
 document.getElementById('fm-cancel').addEventListener('click', closeFloorModal)
@@ -1686,6 +1616,14 @@ defaultRoom()
 const _urlParams  = new URLSearchParams(window.location.search)
 const _authToken  = _urlParams.get('token') || ''
 const _apiBase    = _urlParams.get('api') || 'http://127.0.0.1:4100'
+const _roomCode   = (_urlParams.get('room_code') || '').trim().toUpperCase()  // PUB01 etc., leer = privater Raum
+const _slug       = (_urlParams.get('slug') || '').trim()
+
+// Unterscheidet ob privater Raum (user-Layout) oder öffentlicher Raum (pub-Layout)
+const _isPubRoom  = _roomCode.startsWith('PUB')
+const _layoutUrl  = _isPubRoom
+  ? `${_apiBase}/api/game/pub-room/layout?slug=${encodeURIComponent(_slug)}&room_code=${encodeURIComponent(_roomCode)}`
+  : `${_apiBase}/api/game/user/room/layout`
 
 rebuild()
 
@@ -1696,7 +1634,7 @@ const btnClose = document.getElementById('btn-close')
 // Layout vom Server laden
 ;(async function loadFromServer() {
   try {
-    const r = await fetch(_apiBase + '/api/game/user/room/layout', {
+    const r = await fetch(_layoutUrl, {
       headers: {
         'Authorization': 'Bearer ' + _authToken,
         'X-Game-Token':  _authToken,
@@ -1705,12 +1643,19 @@ const btnClose = document.getElementById('btn-close')
     const d = await r.json()
     if (d.ok && d.data && d.data.v === 1) {
       roomData = d.data
-      if (!roomData.rollers) roomData.rollers = []
-      if (!roomData.spawn)   roomData.spawn   = { x: 0, z: 0, floorId: 'f0', floor_idx: 0 }
+      if (!roomData.spawn)    roomData.spawn    = { x: 0, z: 0, floorId: 'f0', floor_idx: 0, facing_idx: 0 }
+      if (roomData.spawn.facing_idx == null) roomData.spawn.facing_idx = 0
+      if (!roomData.wallColor)      roomData.wallColor      = '#d8c9a8'
+      if (!roomData.lighting)       roomData.lighting       = { ambientColor: '#ffffff', ambientIntensity: 0.7, sunColor: '#ffeedd', fogEnabled: false, fogColor: '#c0d0e0', fogNear: 30, fogFar: 80 }
+      if (roomData.roomDisplayName === undefined) roomData.roomDisplayName = null
+      if (roomData.roomDescription  === undefined) roomData.roomDescription  = null
+      if (roomData.maxVisitors      == null)      roomData.maxVisitors      = 25
+      if (roomData.isLocked         == null)      roomData.isLocked         = false
+      if (roomData.hasPassword      == null)      roomData.hasPassword      = false
+      roomData.roomPassword = null  // niemals vom Server übertragen
       _uid = Math.max(0,
         ...roomData.floors.map(f => parseInt((f.id || '0').replace(/\D/g,'')) || 0),
-        ...roomData.stairs.map(s => parseInt((s.id || '0').replace(/\D/g,'')) || 0),
-        ...roomData.rollers.map(r => parseInt((r.id || '0').replace(/\D/g,'')) || 0)
+        ...roomData.stairs.map(s => parseInt((s.id || '0').replace(/\D/g,'')) || 0)
       ) + 1
       select(null, null)
       rebuild()
@@ -1725,7 +1670,7 @@ const btnClose = document.getElementById('btn-close')
 async function saveToServer() {
   if (btnSave) { btnSave.textContent = '⏳…'; btnSave.disabled = true }
   try {
-    const r = await fetch(_apiBase + '/api/game/user/room/layout', {
+    const r = await fetch(_layoutUrl, {
       method:  'PUT',
       headers: {
         'Content-Type':  'application/json',

@@ -165,11 +165,14 @@ export function TileInfoPanel({
   // Parking config (free/paid + rate) — polled from ref
   const getConfigForTile = React.useCallback(() => {
     if (!isParking) return null;
+    // Search any sub-tile in the footprint (handles satellite-tile click coords)
     const cfg = (parkingConfigRef?.current ?? []).find(
-      (c) => c.tileX === tile.x && c.tileY === tile.y
+      (c) =>
+        c.tileX >= tile.x && c.tileX < tile.x + parkingSize &&
+        c.tileY >= tile.y && c.tileY < tile.y + parkingSize
     );
     return { isFree: cfg?.isFree ?? false, feeRate: cfg?.feeRate ?? 3 };
-  }, [isParking, tile.x, tile.y, parkingConfigRef]);
+  }, [isParking, parkingSize, tile.x, tile.y, parkingConfigRef]);
 
   const [parkingCfg, setParkingCfg] = React.useState(getConfigForTile);
   const [cfgDirty, setCfgDirty] = React.useState(false);
@@ -196,7 +199,12 @@ export function TileInfoPanel({
   const stored = !isMobile ? getStoredLayout() : null;
   const DEFAULT_Y = 160;
   const [panelPos, setPanelPos] = useState<{ x: number; y: number }>(
-    stored?.x != null ? { x: stored.x, y: Math.max(64, stored.y) } : { x: window.innerWidth - 304, y: DEFAULT_Y }
+    stored?.x != null
+      ? {
+          x: Math.max(8, Math.min(window.innerWidth - (stored.w ?? 288) - 8, stored.x)),
+          y: Math.max(64, Math.min(window.innerHeight - 100, stored.y)),
+        }
+      : { x: window.innerWidth - 304, y: DEFAULT_Y }
   );
   const [panelSize, setPanelSize] = useState<{ w: number; h: number }>(
     stored?.w != null ? { w: stored.w, h: stored.h } : { w: 288, h: 0 }
@@ -250,6 +258,18 @@ export function TileInfoPanel({
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, [isMobile, panelPos, panelSize, saveLayout]);
+
+  React.useEffect(() => {
+    if (isMobile) return;
+    const onResize = () => {
+      setPanelPos(p => ({
+        x: Math.max(8, Math.min(window.innerWidth - panelSize.w - 8, p.x)),
+        y: Math.max(64, Math.min(window.innerHeight - 100, p.y)),
+      }));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isMobile, panelSize.w]);
 
   const [residenceLoading, setResidenceLoading] = useState(false);
   const [residenceMsg, setResidenceMsg] = useState('');
@@ -693,13 +713,11 @@ export function TileInfoPanel({
       }}
     >
     <Card
-      className={`${isMobile ? 'fixed left-0 right-0 w-full rounded-none border-x-0 border-t border-b z-30' : 'relative w-full rounded-xl border-white/10 bg-[hsl(220,20%,9%)] shadow-xl shadow-black/50 overflow-hidden'}${isLandmark ? ' border-amber-500/50 shadow-amber-500/10' : ''}`}
+      className={`${isMobile ? 'fixed left-0 right-0 w-full rounded-none border-x-0 border-t border-b z-30' : 'relative w-full rounded-xl border-white/10 bg-[hsl(220,20%,9%)] shadow-xl shadow-black/50 overflow-hidden flex flex-col'}${isLandmark ? ' border-amber-500/50 shadow-amber-500/10' : ''}`}
       style={isMobile
         ? { top: 'calc(72px + env(safe-area-inset-top, 0px))' }
         : {
             maxHeight: panelSize.h > 0 ? panelSize.h : 'calc(100vh - 80px)',
-            overflowY: 'auto',
-            scrollbarWidth: 'none',
           }}
       onClick={handleCardClick}
       onMouseDown={blockPointerToGrid}
@@ -707,7 +725,7 @@ export function TileInfoPanel({
       onTouchStart={blockPointerToGrid}
     >
       <CardHeader
-        className={`pb-2 flex flex-row items-center justify-between border-b border-white/5 sticky top-0 z-10 bg-[hsl(220,20%,9%)]${isLandmark ? ' border-amber-500/20' : ''} ${isMobile ? '' : 'cursor-grab active:cursor-grabbing select-none'}`}
+        className={`pb-2 flex flex-row items-center justify-between border-b border-white/5 shrink-0 bg-[hsl(220,20%,9%)]${isLandmark ? ' border-amber-500/20' : ''} ${isMobile ? '' : 'cursor-grab active:cursor-grabbing select-none'}`}
         onMouseDown={isMobile ? undefined : onDragStart}
       >
         <CardTitle className="text-sm font-sans">Info</CardTitle>
@@ -715,6 +733,7 @@ export function TileInfoPanel({
           <CloseIcon size={14} />
         </Button>
       </CardHeader>
+      <div style={{ overflowY: 'auto', scrollbarWidth: 'thin', flex: 1, minHeight: 0 }}>
       {isLandmark && (
         <>
           <style>{`
@@ -1248,11 +1267,10 @@ export function TileInfoPanel({
           </>
         )}
         
-        {!isNatureTile && (
-        <>
         {(() => {
           const bz = tile.bauzone;
           const z  = tile.zone;
+          if (!bz && (z === 'none' || !z) && isNatureTile) return null;
           const bzMap: Record<string, { label: string; cls: string }> = {
             residential:    { label: 'Wohngebiet',    cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
             commercial:     { label: 'Gewerbe',       cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
@@ -1266,6 +1284,7 @@ export function TileInfoPanel({
             z === 'commercial'  ? bzMap.commercial :
             z === 'industrial'  ? bzMap.industrial : null
           );
+          if (!entry && isNatureTile) return null;
           return (
             <div className="flex justify-between items-center">
               <span className="text-muted-foreground text-xs uppercase tracking-wider">Zone</span>
@@ -1276,10 +1295,12 @@ export function TileInfoPanel({
           );
         })()}
 
+        {!isNatureTile && (
+        <>
         {!isMansion && !isStandaloneBuilding && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Level</span>
-            <span>{tile.building.level}/5</span>
+            <span>{tile.building.level}/{tile.building.type === 'woodcutter_house' ? 4 : 5}</span>
           </div>
         )}
         {constructionInfo.isUnderConstruction && !(tile.building.upgradeStartedAt && tile.building.upgradeTargetLevel) && (
@@ -1418,7 +1439,12 @@ export function TileInfoPanel({
               <button
                 onClick={() => {
                   if (parkingCfg) {
-                    emitSetParkingConfig(tile.x, tile.y, parkingCfg.isFree, parkingCfg.feeRate);
+                    // Save config for every sub-tile in the footprint
+                    for (let dy = 0; dy < parkingSize; dy++) {
+                      for (let dx = 0; dx < parkingSize; dx++) {
+                        emitSetParkingConfig(tile.x + dx, tile.y + dy, parkingCfg.isFree, parkingCfg.feeRate);
+                      }
+                    }
                     setCfgDirty(false);
                   }
                 }}
@@ -1520,7 +1546,7 @@ export function TileInfoPanel({
 
         {/* Bauzone — nur anzeigen wenn eine Zone gesetzt ist, auch auf leeren Grids */}
         {tile.bauzone && (() => {
-          const canManage = municipalityRole === 'owner' || municipalityRole === 'council';
+          const canManage = !isViewOnly && (municipalityRole === 'owner' || municipalityRole === 'council');
           const bzLabels: Record<string, { label: string; color: string; dot: string }> = {
             residential:    { label: 'Wohngebiet',    color: 'text-green-400',  dot: 'bg-green-500' },
             commercial:     { label: 'Gewerbegebiet', color: 'text-blue-400',   dot: 'bg-blue-500' },
@@ -2290,6 +2316,7 @@ export function TileInfoPanel({
           </>
         )}
       </CardContent>
+      </div>
     </Card>
     {!isMobile && (
       <div

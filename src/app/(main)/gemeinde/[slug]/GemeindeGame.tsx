@@ -13,6 +13,7 @@ import { preloadGameAssets } from '@/components/game/imageLoader';
 import { getActiveSpritePack } from '@/lib/renderConfig';
 import { WATER_ASSET_PATH, AIRPLANE_SPRITE_SRC } from '@/components/game/constants';
 import { generateAdjacentCitiesFromCanton } from '@/lib/simulation';
+import { LobbyScreen } from '@/components/game/LobbyScreen';
 
 interface GameUser {
   id: number;
@@ -173,6 +174,9 @@ function GemeindeGameContent({ slug, onNotAuthenticated }: { slug: string; onNot
 
   // Pre-gefetchte Canton-Gemeinden für Adjacent Cities
   const [cantonMunicipalities, setCantonMunicipalities] = useState<Array<{ name: string; slug: string }> | null>(null);
+
+  // Lobby-State: null = Hauptseite anzeigen, sonst Raum-Info
+  const [lobbyView, setLobbyView] = useState<{ slug: string; roomCode: string; roomName: string } | null>(null);
   const [cantonDataReady, setCantonDataReady] = useState(false);
 
   // ── Auth Check ──
@@ -304,7 +308,8 @@ function GemeindeGameContent({ slug, onNotAuthenticated }: { slug: string; onNot
   }, [cantonMunicipalities, slug]);
 
   const handleExitGame = () => {
-    router.push('/');
+    // Zurück zur Hauptseite (Lobby) statt zur Startseite
+    setLobbyView(null);
   };
 
   // ── Render: Loading States ──
@@ -346,24 +351,39 @@ function GemeindeGameContent({ slug, onNotAuthenticated }: { slug: string; onNot
     ? () => router.push(`/gemeinde/${ownSlug}`)
     : undefined;
 
+  // Raum-Code ermitteln: Lobby-Auswahl oder URL-Default
+  const activeRoomSlug = lobbyView?.slug ?? slug;
+  const activeRoomCode = lobbyView?.roomCode ?? roomCode;
+
   return (
     <GameErrorBoundary municipalitySlug={slug}>
     <MultiplayerContextProvider playerName={authStatus.user?.nickname || authStatus.user?.name}>
       <GameProvider
         startFresh={false}
-        municipalitySlug={slug}
-        cityName={municipalityData.name || slug}
+        municipalitySlug={activeRoomSlug}
+        cityName={lobbyView?.roomName ?? municipalityData.name ?? slug}
         userId={authStatus.user?.id}
         isOwner={isOwner}
         municipalityRole={municipalityRole}
         canton={municipalityData.canton}
         initialAdjacentCities={initialAdjacentCities}
       >
+        {/* Hauptseite (Lobby) — wird gezeigt bis User einen Raum betritt */}
+        {!lobbyView ? (
+          <LobbyScreen
+            username={authStatus.user?.nickname || authStatus.user?.name || 'Spieler'}
+            onEnterRoom={(enterSlug, enterRoomCode, enterRoomName) =>
+              setLobbyView({ slug: enterSlug, roomCode: enterRoomCode, roomName: enterRoomName })
+            }
+            isAdmin={isAdmin}
+            isMod={String(authStatus.user?.global_role || '').toLowerCase() === 'moderator'}
+          />
+        ) : (
         <main className="h-screen w-screen overflow-hidden">
           <AutoJoinMultiplayerGame
-            roomCode={roomCode}
-            cityName={municipalityData.name || slug}
-            currentSlug={slug}
+            roomCode={activeRoomCode}
+            cityName={lobbyView.roomName || municipalityData.name || slug}
+            currentSlug={activeRoomSlug}
             onExit={handleExitGame}
             onBackToHome={handleBackToHome}
             cannotEditSettings={!canEditSettings}
@@ -371,12 +391,13 @@ function GemeindeGameContent({ slug, onNotAuthenticated }: { slug: string; onNot
             isOwner={isOwner}
             canUseDebug={canUseDebug}
             ownerName={municipalityData.owner?.nickname}
-            municipalityName={municipalityData.name}
+            municipalityName={lobbyView.roomName || municipalityData.name}
             memberCount={municipalityData.memberCount}
             administrators={municipalityData.administrators}
             coatOfArms={municipalityData.coatOfArms}
           />
         </main>
+        )}
       </GameProvider>
     </MultiplayerContextProvider>
     </GameErrorBoundary>

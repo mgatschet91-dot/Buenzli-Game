@@ -7,7 +7,7 @@ export type VehicleEntry = {
   y: number;
   angle: number;
   color: string;
-  type: 'car' | 'bus' | 'emergency_fire' | 'emergency_police' | 'emergency_ambulance' | 'werkhof_truck' | 'garbage_truck';
+  type: 'car' | 'bus' | 'emergency_fire' | 'emergency_police' | 'emergency_ambulance' | 'werkhof_truck' | 'garbage_truck' | 'parking_inspector';
   flashTimer?: number;
 };
 
@@ -31,6 +31,7 @@ export class PixiVehicleRenderer {
   private fireTexture: Texture | null = null;
   private policeTexture: Texture | null = null;
   private ambulanceTexture: Texture | null = null;
+  private parkingInspectorTexture: Texture | null = null;
   private headlightTexture: Texture | null = null;
   private emergencyGlowWhiteTexture: Texture | null = null;
   private emergencyGlowRedTexture: Texture | null = null;
@@ -271,6 +272,10 @@ export class PixiVehicleRenderer {
           this.busTexCache.set('__garbage__', tex);
         }
         return tex;
+      }
+      case 'parking_inspector': {
+        if (!this.parkingInspectorTexture) this.parkingInspectorTexture = this.renderParkingInspectorTexture();
+        return this.parkingInspectorTexture;
       }
     }
   }
@@ -578,6 +583,42 @@ export class PixiVehicleRenderer {
     return sprite;
   }
 
+  private renderParkingInspectorTexture(): Texture {
+    // Weiss-blauer Parkraum-Kontrolleur-Wagen (kleiner PKW, blau-weiß)
+    const s = 0.6;
+    const length = 11;
+    const pad = 10;
+    const w = (length * 2 + pad * 2) * s;
+    const h = (14 + pad * 2) * s;
+    const g = new Graphics();
+    const ox = w / 2;
+    const oy = h / 2;
+
+    // Karosserie weiss
+    g.poly([
+      { x: ox + -length * s, y: oy + -5 * s },
+      { x: ox + length * s,  y: oy + -5 * s },
+      { x: ox + (length + 2) * s, y: oy },
+      { x: ox + length * s,  y: oy + 5 * s },
+      { x: ox + -length * s, y: oy + 5 * s },
+    ]);
+    g.fill('#ffffff');
+
+    // Blauer Streifen (Parkraum-Security-Markierung)
+    g.rect(ox + -length * s * 0.5, oy + -3 * s, length * s, 6 * s * 0.3);
+    g.fill('#1d4ed8');
+
+    // Windschutzscheibe
+    g.rect(ox + -2 * s, oy + -3 * s, 5 * s, 6 * s);
+    g.fill('rgba(200,220,255,0.7)');
+
+    // Räder
+    g.rect(ox + -length * s, oy + -4 * s, 2 * s, 8 * s);
+    g.fill('#111827');
+
+    return this.app!.renderer.generateTexture({ target: g, resolution: 2 });
+  }
+
   destroy(): void {
     this._destroyed = true;
     this._initialized = false;
@@ -591,6 +632,7 @@ export class PixiVehicleRenderer {
     this.fireTexture = null;
     this.policeTexture = null;
     this.ambulanceTexture = null;
+    this.parkingInspectorTexture = null;
     this.headlightTexture = null;
     this.emergencyGlowRedTexture = null;
     this.emergencyGlowBlueTexture = null;

@@ -64,6 +64,7 @@ export interface RoomSpawn {
   x: number; z: number
   floorId?: string
   floor_idx?: number
+  facing_idx?: number
 }
 
 // ─── Furniture (SQL: room_furniture / shop_items) ─────────────────────────────

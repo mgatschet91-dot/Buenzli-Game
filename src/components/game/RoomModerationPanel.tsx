@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Shield, UserX, Ban, Loader2, X, Trash2 } from 'lucide-react';
+import { Shield, UserX, Ban, Loader2, X, Trash2, VolumeX, Volume2 } from 'lucide-react';
 import { getAuthToken } from '@/lib/api/coreApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100';
@@ -29,6 +29,7 @@ export function RoomModerationPanel({ visitors, onClose }: RoomModerationPanelPr
   const [busy, setBusy]       = useState<number | null>(null);
   const [toast, setToast]     = useState('');
   const [tab, setTab]         = useState<'visitors' | 'bans'>('visitors');
+  const [mutedIds, setMutedIds] = useState<Set<number>>(new Set());
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -94,6 +95,32 @@ export function RoomModerationPanel({ visitors, onClose }: RoomModerationPanelPr
     finally { setBusy(null); }
   }, [showToast, loadBans]);
 
+  const toggleMute = useCallback(async (userId: number, name: string) => {
+    const isMuted = mutedIds.has(userId);
+    setMutedIds(prev => {
+      const next = new Set(prev);
+      isMuted ? next.delete(userId) : next.add(userId);
+      return next;
+    });
+    try {
+      const token = getAuthToken() || '';
+      if (isMuted) {
+        await fetch(`${API_BASE}/api/game/user/room/mute/${userId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}`, 'X-Game-Token': token },
+        });
+        showToast(`${name} ist nicht mehr stummgeschaltet`);
+      } else {
+        await fetch(`${API_BASE}/api/game/user/room/mute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
+          body: JSON.stringify({ target_user_id: userId }),
+        });
+        showToast(`${name} wurde stummgeschaltet`);
+      }
+    } catch { showToast('Verbindungsfehler'); }
+  }, [mutedIds, showToast]);
+
   // Visitors excludes self (no userId = anonymous / view-only, skip)
   const actionableVisitors = visitors.filter(v => v.userId !== null);
 
@@ -144,6 +171,13 @@ export function RoomModerationPanel({ visitors, onClose }: RoomModerationPanelPr
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
                 <span className="flex-1 text-xs text-slate-200 truncate">{v.name}</span>
+                <button
+                  title={mutedIds.has(v.userId!) ? 'Stummschaltung aufheben' : 'Stummschalten'}
+                  onClick={() => toggleMute(v.userId!, v.name)}
+                  className={`p-1 rounded transition-colors ${mutedIds.has(v.userId!) ? 'text-sky-400 bg-sky-900/30 hover:bg-sky-800/40' : 'text-slate-400 hover:bg-slate-700/40 hover:text-sky-300'}`}
+                >
+                  {mutedIds.has(v.userId!) ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+                </button>
                 <button
                   title="Kicken"
                   disabled={busy === v.userId}

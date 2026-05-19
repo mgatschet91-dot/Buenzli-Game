@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { msg, useMessages } from 'gt-next';
@@ -70,11 +70,42 @@ const UI_LABELS = {
   ledgerExpandCity:        msg('Stadterweiterung'),
   ledgerWoodcutterHarvest: msg('🪵 Holzfäller-Ernte'),
   ledgerEnergySpotSell:    msg('⚡ Energieverkauf'),
+  // Stat Tooltips
+  statTipsTitle:           msg('Wie verbessern?'),
+  statTipsSecurity:        msg('Sicherheitsereignisse beheben · Polizei schicken · Polizeistation bauen'),
+  statTipsAttractiveness:  msg('Meldungen schnell beheben · Sauberkeit hoch halten · Parks bauen'),
+  statTipsCleanliness:     msg('Ordnungsereignisse beheben · Reinigungsfirma beauftragen'),
+  statTipsInfrastructure:  msg('Infrastruktur-Meldungen beheben · Gebäude upgraden'),
+  statTipsTransparency:    msg('Verwaltungsereignisse beheben · min. 30 für Kantonal-Beilegung'),
+  // Bulk-Beheben
+  allResolveBtn:           msg('Alle offenen Events beheben'),
+  allResolveSuccess:       msg('Events behoben!'),
+  // Kantonale Untersuchung — Banner
+  cantonTitle:             msg('Kantonale Untersuchung'),
+  cantonStage1Label:       msg('Stufe 1 — Aktiv'),
+  cantonStage2Label:       msg('Stufe 2 — Verschärft'),
+  cantonStage3Label:       msg('Stufe 3 — Kritisch'),
+  cantonStage1Desc:        msg('Event-Rate ×2, -1 Transparenz/-1 Attraktivität pro Stunde.'),
+  cantonStage2Desc:        msg('Event-Rate ×3, -2 Transparenz/-1 Attraktivität/-1 Sicherheit pro Stunde.'),
+  cantonStage3Desc:        msg('Event-Rate ×3, -3/-2/-2 pro Stunde + CHF 2000/Tag Busse!'),
+  cantonEndsIn:            msg('Endet in'),
+  cantonSettle:            msg('Beilegen'),
+  // Kantonale Untersuchung — Schritte
+  cantonStepsTitle:        msg('Wie beenden?'),
+  cantonStep1:             msg('Offene Events beheben (erhöht Transparenz)'),
+  cantonStep1Open:         msg('offen'),
+  cantonStep2Label:        msg('Transparenz mind. 30'),
+  cantonStep2Hint:         msg('Verwaltungs-Events beheben erhöht Transparenz'),
+  cantonStep3Label:        msg('Kasse ausreichend'),
+  cantonStep3Needed:       msg('nötig'),
+  cantonStep4:             msg('Beilegen klicken'),
+  cantonSettleBlocked:     msg('Erst alle offenen Events beheben'),
 };
 import { PowerStatusWidget } from './PowerStatusWidget';
 import { WaterStatusWidget } from './WaterStatusWidget';
 import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -98,7 +129,7 @@ import {
 } from '@/lib/api/municipalityAdminApi';
 import { TOOL_INFO } from '@/games/isocity/types/game';
 import {
-  fetchVerwaltungMeldungen, beauftragen, selbstBeheben, notfallreparatur, kaufeSchutzschild,
+  fetchVerwaltungMeldungen, beauftragen, selbstBeheben, selbstBehebenAlle, notfallreparatur, kaufeSchutzschild,
   externalResponse, polizeiSchicken, resolveCantonalInvestigation,
   type VerwaltungEvent, type VerwaltungCompany, type MunicipalityStats, type EventStatus,
 } from '@/lib/api/verwaltungsApi';
@@ -489,6 +520,7 @@ function MeldungenContent() {
   const [shieldLoading, setShieldLoading] = useState<number | null>(null);
   const [externCount, setExternCount] = useState(0);
   const [abgelaufenCount, setAbgelaufenCount] = useState(0);
+  const [openEvents, setOpenEvents] = useState<VerwaltungEvent[]>([]);
 
   const loadData = useCallback(async (statusFilter: string) => {
     try {
@@ -503,11 +535,13 @@ function MeldungenContent() {
     } finally {
       setLoading(false);
     }
+    fetchVerwaltungMeldungen('reported').then(d => setOpenEvents(d.events)).catch(() => {});
   }, []);
 
   useEffect(() => { loadData(STATUS_TAB_MAP[tab]); }, [tab, loadData]);
   useEffect(() => { fetchVerwaltungMeldungen('external_reported,disputed').then(d => setExternCount(d.events.length)).catch(() => {}); }, []);
   useEffect(() => { fetchVerwaltungMeldungen('expired').then(d => setAbgelaufenCount(d.events.length)).catch(() => {}); }, []);
+  useEffect(() => { fetchVerwaltungMeldungen('reported').then(d => setOpenEvents(d.events)).catch(() => {}); }, []);
 
   // Echtzeit-Update der Kantonal-Felder via Socket-Broadcast
   useEffect(() => {
@@ -598,6 +632,22 @@ function MeldungenContent() {
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Fehler beim Kauf'); } finally { setShieldLoading(null); }
   };
 
+  const handleAlleBeheben = async () => {
+    const totalCost = openEvents.reduce((sum, e) => sum + e.fix_cost, 0);
+    if (!window.confirm(`Alle ${openEvents.length} offenen Events für CHF ${totalCost.toLocaleString('de-CH')} selbst beheben?`)) return;
+    setActionLoading(true);
+    try {
+      const res = await selbstBehebenAlle();
+      setSuccess(`${res.resolved_count} ${mm(UI_LABELS.allResolveSuccess)} Kosten: ${res.total_cost.toLocaleString('de-CH')} CHF`);
+      await loadData(STATUS_TAB_MAP[tab]);
+      fetchVerwaltungMeldungen('reported').then(d => setOpenEvents(d.events)).catch(() => {});
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Fehler beim Beheben aller Events');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const getMatchingCompanies = (event: VerwaltungEvent): VerwaltungCompany[] => {
     if (!event.company_type_required) return companies;
     return companies.filter(c => c.type_code === event.company_type_required);
@@ -607,48 +657,58 @@ function MeldungenContent() {
     <div className="px-3 sm:px-5 py-3 sm:py-4 space-y-3 sm:space-y-4">
       {/* Stats Overview */}
       {stats && (
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 text-center">
-          {[
-            { label: 'Sicherheit', value: stats.security, emoji: '\uD83D\uDEE1' },
-            { label: 'Attraktivität', value: stats.attractiveness, emoji: '\u2B50' },
-            { label: 'Sauberkeit', value: stats.cleanliness, emoji: '\uD83E\uDDF9' },
-            { label: 'Infrastruktur', value: stats.infrastructure, emoji: '\uD83C\uDFD7' },
-            { label: 'Transparenz', value: stats.transparency, emoji: '\uD83D\uDD0D' },
-          ].map(s => {
-            const diff = s.value - 50;
-            const effectLabel = diff > 0 ? `+${Math.round(diff * 0.3)}` : diff < 0 ? `${Math.round(diff * 0.3)}` : '\u00B10';
-            return (
-              <div key={s.label} className={`px-1 py-1.5 rounded-lg bg-slate-800/50 border ${
-                s.value < 40 ? 'border-red-500/30' : s.value < 50 ? 'border-amber-500/20' : 'border-slate-700'
-              }`}>
-                <div className="text-[9px] sm:text-[10px] text-slate-400 truncate">{s.emoji} {s.label}</div>
-                <div className={`font-mono font-bold text-sm ${
-                  s.value >= 60 ? 'text-emerald-400' : s.value >= 40 ? 'text-amber-400' : 'text-red-400'
-                }`}>{s.value}</div>
-                <div className={`text-[9px] font-mono ${
-                  diff > 0 ? 'text-emerald-500/60' : diff < 0 ? 'text-red-500/60' : 'text-slate-600'
-                }`}>{effectLabel} Sim</div>
-              </div>
-            );
-          })}
-        </div>
+        <TooltipProvider>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 text-center">
+            {([
+              { label: 'Sicherheit', value: stats.security, tipsKey: UI_LABELS.statTipsSecurity, emoji: '\uD83D\uDEE1' },
+              { label: 'Attraktivität', value: stats.attractiveness, tipsKey: UI_LABELS.statTipsAttractiveness, emoji: '⭐' },
+              { label: 'Sauberkeit',    value: stats.cleanliness,    tipsKey: UI_LABELS.statTipsCleanliness,    emoji: '🧹' },
+              { label: 'Infrastruktur', value: stats.infrastructure, tipsKey: UI_LABELS.statTipsInfrastructure, emoji: '🏗' },
+              { label: 'Transparenz',   value: stats.transparency,   tipsKey: UI_LABELS.statTipsTransparency,   emoji: '🔍' },
+            ] as const).map(s => {
+              const diff = s.value - 50;
+              const effectLabel = diff > 0 ? `+${Math.round(diff * 0.3)}` : diff < 0 ? `${Math.round(diff * 0.3)}` : '\u00B10';
+              return (
+                <Tooltip key={s.label}>
+                  <TooltipTrigger asChild>
+                    <div className={`px-1 py-1.5 rounded-lg bg-slate-800/50 border cursor-help ${
+                      s.value < 40 ? 'border-red-500/30' : s.value < 50 ? 'border-amber-500/20' : 'border-slate-700'
+                    }`}>
+                      <div className="text-[9px] sm:text-[10px] text-slate-400 truncate">{s.emoji} {s.label}</div>
+                      <div className={`font-mono font-bold text-sm ${
+                        s.value >= 60 ? 'text-emerald-400' : s.value >= 40 ? 'text-amber-400' : 'text-red-400'
+                      }`}>{s.value}</div>
+                      <div className={`text-[9px] font-mono ${
+                        diff > 0 ? 'text-emerald-500/60' : diff < 0 ? 'text-red-500/60' : 'text-slate-600'
+                      }`}>{effectLabel} Sim</div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[200px] text-xs">
+                    <p className="font-semibold mb-1">{mm(UI_LABELS.statTipsTitle)}</p>
+                    <p className="text-slate-300 leading-relaxed">{mm(s.tipsKey)}</p>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
       )}
 
       {/* Kantonale Untersuchung — 3 Stufen */}
       {stats?.cantonal_investigation_until && new Date(stats.cantonal_investigation_until) > new Date() && (() => {
         const stage = (stats.cantonal_investigation_stage || 1) as 1 | 2 | 3;
         const STAGE_CONFIG = {
-          1: { label: 'Stufe 1 — Aktiv',      border: 'border-yellow-500/40', bg: 'bg-yellow-500/10', text: 'text-yellow-300', desc: 'Event-Rate x2, -1 Transp./-1 Attr. pro Stunde.' },
-          2: { label: 'Stufe 2 — Verschärft', border: 'border-orange-500/40', bg: 'bg-orange-500/10', text: 'text-orange-300', desc: 'Event-Rate x3, -2 Transp./-1 Attr./-1 Sicherheit pro Stunde.' },
-          3: { label: 'Stufe 3 — Kritisch',   border: 'border-red-500/40',    bg: 'bg-red-500/10',    text: 'text-red-300',    desc: 'Event-Rate x3, -3/-2/-2 pro Stunde + CHF 2000/Tag Busse!' },
+          1: { labelKey: UI_LABELS.cantonStage1Label, border: 'border-yellow-500/40', bg: 'bg-yellow-500/10', text: 'text-yellow-300', descKey: UI_LABELS.cantonStage1Desc },
+          2: { labelKey: UI_LABELS.cantonStage2Label, border: 'border-orange-500/40', bg: 'bg-orange-500/10', text: 'text-orange-300', descKey: UI_LABELS.cantonStage2Desc },
+          3: { labelKey: UI_LABELS.cantonStage3Label, border: 'border-red-500/40',    bg: 'bg-red-500/10',    text: 'text-red-300',    descKey: UI_LABELS.cantonStage3Desc },
         } as const;
         const RESOLUTION_COSTS = { 1: 5000, 2: 10000, 3: 20000 } as const;
         const cfg = STAGE_CONFIG[stage];
         const cost = RESOLUTION_COSTS[stage];
-        const canResolve = (stats.transparency ?? 0) >= 30 && (stats.treasury ?? 0) >= cost;
+        const canResolve = openEvents.length === 0 && (stats.treasury ?? 0) >= cost;
 
         const handleResolve = async () => {
-          if (!window.confirm(`Untersuchung für CHF ${cost.toLocaleString('de-CH')} beilegen?`)) return;
+          if (!window.confirm(`${mm(UI_LABELS.cantonTitle)}: CHF ${cost.toLocaleString('de-CH')} ${mm(UI_LABELS.cantonSettle)}?`)) return;
           setActionLoading(true);
           try {
             const res = await resolveCantonalInvestigation();
@@ -665,23 +725,69 @@ function MeldungenContent() {
         return (
           <div className={`p-2.5 rounded-lg border ${cfg.border} ${cfg.bg} ${cfg.text} text-xs`}>
             <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 font-bold"><Gavel className="w-4 h-4" /> Kantonale Untersuchung — {cfg.label}</div>
+              <div className="flex items-center gap-2 font-bold"><Gavel className="w-4 h-4" /> {mm(UI_LABELS.cantonTitle)} — {mm(cfg.labelKey)}</div>
             </div>
-            <p className="mb-1.5">{cfg.desc}</p>
-            <p className="text-[10px] opacity-70 mb-2">Endet in {timeRemaining(stats.cantonal_investigation_until, mm)}.</p>
+            <p className="mb-1.5">{mm(cfg.descKey)}</p>
+            <p className="text-[10px] opacity-70 mb-2">{mm(UI_LABELS.cantonEndsIn)} {timeRemaining(stats.cantonal_investigation_until, mm)}.</p>
+
+            {/* Schritte zur Beendigung */}
+            <div className="mb-2 space-y-1">
+              <p className="text-[10px] font-semibold opacity-80 mb-1">{mm(UI_LABELS.cantonStepsTitle)}</p>
+              {[
+                {
+                  done: openEvents.length === 0,
+                  label: mm(UI_LABELS.cantonStep1),
+                  detail: openEvents.length > 0 ? `${openEvents.length} ${mm(UI_LABELS.cantonStep1Open)}` : null,
+                  hint: mm(UI_LABELS.cantonStep1),
+                },
+                {
+                  done: (stats.treasury ?? 0) >= cost,
+                  label: mm(UI_LABELS.cantonStep3Label),
+                  detail: `CHF ${cost.toLocaleString('de-CH')} ${mm(UI_LABELS.cantonStep3Needed)}`,
+                  hint: null,
+                },
+                {
+                  done: canResolve,
+                  label: mm(UI_LABELS.cantonStep4),
+                  detail: null,
+                  hint: null,
+                },
+              ].map((step, i) => (
+                <div key={i} className="flex flex-col gap-0.5">
+                  <div className="flex items-start gap-1.5 text-[10px]">
+                    <span className={`mt-0.5 flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold ${
+                      step.done ? 'bg-emerald-500/30 text-emerald-300' : 'bg-white/10 opacity-50'
+                    }`}>{step.done ? '✓' : i + 1}</span>
+                    <span className={step.done ? 'line-through opacity-40' : 'opacity-80'}>
+                      {step.label}
+                      {step.detail && !step.done && <span className="ml-1 opacity-60">({step.detail})</span>}
+                    </span>
+                  </div>
+                  {step.hint && !step.done && (
+                    <p className="text-[9px] opacity-50 pl-5 italic">{step.hint}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
             <button
               onClick={handleResolve}
               disabled={!canResolve || actionLoading}
-              className="w-full py-1 px-2 rounded text-[10px] font-medium bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed border border-white/20 transition-colors"
+              className="w-full py-1 px-2 rounded text-[10px] font-medium bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed border border-white/20 transition-colors"
             >
-              {actionLoading ? '...' : `Beilegen — CHF ${cost.toLocaleString('de-CH')}`}
+              {actionLoading ? '...' : `${mm(UI_LABELS.cantonSettle)} — CHF ${cost.toLocaleString('de-CH')}`}
             </button>
             {!canResolve && (
-              <p className="text-[10px] opacity-60 mt-1 text-center">
-                {(stats.transparency ?? 0) < 30
-                  ? `⚠ Transparenz zu niedrig (${stats.transparency}/100, min. 30)`
-                  : `⚠ Kasse zu leer (${cost.toLocaleString('de-CH')} CHF nötig)`}
-              </p>
+              <p className="text-[9px] opacity-50 text-center mt-1">⚠ {mm(UI_LABELS.cantonSettleBlocked)}</p>
+            )}
+            {openEvents.length > 0 && (
+              <button
+                onClick={handleAlleBeheben}
+                disabled={actionLoading}
+                className="w-full mt-1.5 py-1 px-2 rounded text-[10px] font-medium bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed border border-white/20 transition-colors"
+              >
+                {actionLoading ? '...' : `${mm(UI_LABELS.allResolveBtn)} (${openEvents.length} Events · CHF ${openEvents.reduce((s, e) => s + e.fix_cost, 0).toLocaleString('de-CH')})`}
+              </button>
             )}
           </div>
         );
@@ -765,6 +871,18 @@ function MeldungenContent() {
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Erledigt
             </TabsTrigger>
           </TabsList>
+          {tab === 'offen' && openEvents.length > 0 && (
+            <div className="mt-2">
+              <button
+                onClick={handleAlleBeheben}
+                disabled={actionLoading}
+                className="w-full py-1.5 px-3 rounded-lg text-[11px] font-medium bg-emerald-900/30 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-700/40 text-emerald-300 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {actionLoading ? '...' : `${mm(UI_LABELS.allResolveBtn)} — ${openEvents.length} Events · CHF ${openEvents.reduce((s, e) => s + e.fix_cost, 0).toLocaleString('de-CH')}`}
+              </button>
+            </div>
+          )}
           {(['offen', 'extern', 'in_bearbeitung', 'abgelaufen', 'erledigt'] as StatusTab[]).map(tabKey => (
             <TabsContent key={tabKey} value={tabKey}>
               {loading ? (

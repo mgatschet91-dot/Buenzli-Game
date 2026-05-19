@@ -3,14 +3,13 @@ import type { MetadataRoute } from 'next'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://localhost:4100'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://localhost:4100'
 const BASE_URL = 'https://buenzlifight.ch'
 
 interface Municipality {
   slug: string
-  canton_code: string
   updated_at?: string
-  members_count?: number
+  member_count?: number
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -41,7 +40,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Aktive Gemeinden (mit Spielern) erhalten hoehere Prioritaet.
   let dynamicUrls: MetadataRoute.Sitemap = []
   try {
-    const res = await fetch(`${API_BASE}/api/municipalities`, {
+    const res = await fetch(`${API_BASE}/api/municipalities/public?limit=all`, {
       cache: 'no-store',
     })
     if (res.ok) {
@@ -51,7 +50,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         url: `${BASE_URL}/gemeinde/${m.slug}`,
         lastModified: m.updated_at ? new Date(m.updated_at) : new Date(),
         changeFrequency: 'weekly' as const,
-        priority: Number(m.members_count || 0) > 0 ? 0.7 : 0.5,
+        priority: Number(m.member_count || 0) > 0 ? 0.7 : 0.5,
       }))
     } else {
       console.error(`[Sitemap] API Fehler: ${res.status} ${res.statusText}`)

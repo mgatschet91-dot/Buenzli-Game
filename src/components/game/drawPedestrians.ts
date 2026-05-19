@@ -344,7 +344,9 @@ export function drawPedestrians(
         ctx.restore();
         continue;
       case 'inspecting':
-        if (ped.state === 'npc_working') { drawBuenzliInspecting(ctx, ped); } else { drawBuenzliWalking(ctx, ped); }
+        if (ped.npcType === 'kontrolleur') { drawKontrolleur(ctx, ped); }
+        else if (ped.state === 'npc_working') { drawBuenzliInspecting(ctx, ped); }
+        else { drawBuenzliWalking(ctx, ped); }
         ctx.restore();
         continue;
       case 'playing_basketball':
@@ -412,6 +414,8 @@ export function drawPedestrians(
           drawPoliceRunning(ctx, ped);
         } else if (ped.isNpcWorker && ped.npcType === 'gangster') {
           drawGangsterRunning(ctx, ped);
+        } else if (ped.isNpcWorker && ped.npcType === 'kontrolleur') {
+          drawKontrolleur(ctx, ped);
         } else if (ped.state === 'socializing') {
           drawSocializingPerson(ctx, ped);
         } else if (ped.state === 'idle') {
@@ -3852,12 +3856,204 @@ export function drawSinglePedestrian(ctx: CanvasRenderingContext2D, ped: Pedestr
       else if (ped.isNpcWorker && ped.npcType === 'gardener') { drawGardener(ctx, ped); }
       else if (ped.isNpcWorker && ped.npcType === 'police') { drawPoliceRunning(ctx, ped); }
       else if (ped.isNpcWorker && ped.npcType === 'gangster') { drawGangsterRunning(ctx, ped); }
+      else if (ped.isNpcWorker && ped.npcType === 'kontrolleur') { drawKontrolleur(ctx, ped); }
       else if (ped.state === 'socializing') { drawSocializingPerson(ctx, ped); }
       else if (ped.state === 'idle') { drawIdlePerson(ctx, ped); }
       else if (ped.state === 'approaching_shop') { drawShopperQueuing(ctx, ped); }
       else if (ped.state === 'waiting_at_stop') { drawBusWaiter(ctx, ped); }
       else { drawWalkingPedestrian(ctx, ped); }
   }
+}
+
+/** Parkraum-Kontrolleur gehend — gelbe Warnweste, blaue Mütze, Klemmbrett */
+function drawKontrolleur(ctx: CanvasRenderingContext2D, ped: Pedestrian): void {
+  const sc = 0.40;
+  const bob = Math.sin(ped.walkOffset) * 0.8;
+  const sway = Math.sin(ped.walkOffset * 0.5) * 0.5;
+  const leg = Math.sin(ped.walkOffset) * 3.5;
+  const arm = Math.sin(ped.walkOffset + Math.PI) * 3;
+
+  // Schatten
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, 6 * sc, 4 * sc, 1.5 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kopf
+  ctx.fillStyle = ped.skinColor || '#f0c8a0';
+  ctx.beginPath();
+  ctx.arc(sway * sc, (-12 + bob) * sc, 3.0 * sc, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Blaue Kappe (Sicherheitsmütze)
+  ctx.fillStyle = '#1e3a8a';
+  ctx.beginPath();
+  ctx.ellipse(sway * sc, (-15 + bob) * sc, 4 * sc, 1.7 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1e40af';
+  ctx.beginPath();
+  ctx.arc(sway * sc, (-14.5 + bob) * sc, 2.5 * sc, Math.PI, 0);
+  ctx.fill();
+  // Gelber Streifen auf Mütze
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect((sway - 2.5) * sc, (-15.5 + bob) * sc, 5 * sc, 0.8 * sc);
+
+  // Blaues Hemd / Körper
+  ctx.fillStyle = '#1d4ed8';
+  ctx.beginPath();
+  ctx.ellipse(sway * sc, (-5 + bob) * sc, 2.8 * sc, 4.5 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Gelbe Warnweste (dreieckige Streifen vorne)
+  ctx.fillStyle = '#facc15';
+  ctx.beginPath();
+  ctx.moveTo((sway - 2.5) * sc, (-8.5 + bob) * sc);
+  ctx.lineTo((sway + 2.5) * sc, (-8.5 + bob) * sc);
+  ctx.lineTo((sway + 2.8) * sc, (-1 + bob) * sc);
+  ctx.lineTo((sway - 2.8) * sc, (-1 + bob) * sc);
+  ctx.closePath();
+  ctx.fill();
+  // Reflektionsstreifen (weiss)
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillRect((sway - 2.5) * sc, (-6.5 + bob) * sc, 5 * sc, 0.9 * sc);
+  ctx.fillRect((sway - 2.5) * sc, (-4 + bob) * sc, 5 * sc, 0.9 * sc);
+
+  // Dunkelblaue Hose (Beine)
+  ctx.strokeStyle = '#1e3a5f';
+  ctx.lineWidth = 2.2 * sc;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(sway * sc, (-1 + bob) * sc);
+  ctx.lineTo((sway - 1 + leg) * sc, (5 + bob) * sc);
+  ctx.moveTo(sway * sc, (-1 + bob) * sc);
+  ctx.lineTo((sway + 1 - leg) * sc, (5 + bob) * sc);
+  ctx.stroke();
+
+  // Schwarze Schuhe
+  ctx.fillStyle = '#111827';
+  ctx.beginPath();
+  ctx.ellipse((sway - 1 + leg) * sc, (5.5 + bob) * sc, 1.6 * sc, 0.8 * sc, 0, 0, Math.PI * 2);
+  ctx.ellipse((sway + 1 - leg) * sc, (5.5 + bob) * sc, 1.6 * sc, 0.8 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Arme
+  ctx.strokeStyle = ped.skinColor || '#f0c8a0';
+  ctx.lineWidth = 1.6 * sc;
+  ctx.beginPath();
+  ctx.moveTo((sway - 2.8) * sc, (-6 + bob) * sc);
+  ctx.lineTo((sway - 3.5 - arm) * sc, (-2 + bob) * sc);
+  ctx.moveTo((sway + 2.8) * sc, (-6 + bob) * sc);
+  ctx.lineTo((sway + 3.5 + arm) * sc, (-2 + bob) * sc);
+  ctx.stroke();
+
+  // Klemmbrett in rechter Hand
+  ctx.fillStyle = '#d4a76a';
+  ctx.fillRect((sway + 3 + arm) * sc, (-3.5 + bob) * sc, 2.5 * sc, 3 * sc);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect((sway + 3.3 + arm) * sc, (-3.2 + bob) * sc, 1.8 * sc, 1.8 * sc);
+  ctx.fillStyle = '#374151';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillRect((sway + 3.4 + arm) * sc, (-2.9 + i * 0.55 + bob) * sc, 1.5 * sc, 0.25 * sc);
+  }
+}
+
+/** Parkraum-Kontrolleur inspizierend — steht vor Auto, schreibt Ticket */
+function drawKontrolleurInspecting(ctx: CanvasRenderingContext2D, ped: Pedestrian): void {
+  const sc = 0.40;
+  const t = ped.activityAnimTimer ?? 0;
+  const writeAnim = Math.sin(t * 3) * 1.5;
+
+  // Schatten
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, 6 * sc, 4 * sc, 1.5 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kopf — leicht nach vorne geneigt (schreiben)
+  ctx.fillStyle = ped.skinColor || '#f0c8a0';
+  ctx.beginPath();
+  ctx.arc(1 * sc, -12 * sc, 3.0 * sc, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Blaue Kappe
+  ctx.fillStyle = '#1e3a8a';
+  ctx.beginPath();
+  ctx.ellipse(1 * sc, -15 * sc, 4 * sc, 1.7 * sc, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1e40af';
+  ctx.beginPath();
+  ctx.arc(1 * sc, -14.5 * sc, 2.5 * sc, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(-1.5 * sc, -15.8 * sc, 5 * sc, 0.8 * sc);
+
+  // Körper
+  ctx.fillStyle = '#1d4ed8';
+  ctx.beginPath();
+  ctx.ellipse(0.5 * sc, -5 * sc, 2.8 * sc, 4.5 * sc, 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Warnweste
+  ctx.fillStyle = '#facc15';
+  ctx.beginPath();
+  ctx.moveTo(-2 * sc, -8.5 * sc);
+  ctx.lineTo(3 * sc, -8.5 * sc);
+  ctx.lineTo(3.3 * sc, -1 * sc);
+  ctx.lineTo(-2.3 * sc, -1 * sc);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillRect(-2 * sc, -6.5 * sc, 5 * sc, 0.9 * sc);
+  ctx.fillRect(-2 * sc, -4 * sc, 5 * sc, 0.9 * sc);
+
+  // Beine (stehend, leicht gespreizt)
+  ctx.strokeStyle = '#1e3a5f';
+  ctx.lineWidth = 2.2 * sc;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, -1 * sc);
+  ctx.lineTo(-1.5 * sc, 5 * sc);
+  ctx.moveTo(0, -1 * sc);
+  ctx.lineTo(2 * sc, 5 * sc);
+  ctx.stroke();
+  ctx.fillStyle = '#111827';
+  ctx.beginPath();
+  ctx.ellipse(-1.5 * sc, 5.5 * sc, 1.6 * sc, 0.8 * sc, 0, 0, Math.PI * 2);
+  ctx.ellipse(2 * sc, 5.5 * sc, 1.6 * sc, 0.8 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Linker Arm (hält Klemmbrett)
+  ctx.strokeStyle = ped.skinColor || '#f0c8a0';
+  ctx.lineWidth = 1.6 * sc;
+  ctx.beginPath();
+  ctx.moveTo(-2.5 * sc, -6 * sc);
+  ctx.lineTo(-4 * sc, -2 * sc);
+  ctx.stroke();
+
+  // Klemmbrett
+  ctx.fillStyle = '#d4a76a';
+  ctx.fillRect(-6 * sc, -4 * sc, 3.5 * sc, 4.5 * sc);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-5.7 * sc, -3.7 * sc, 2.8 * sc, 3.5 * sc);
+  ctx.fillStyle = '#374151';
+  for (let i = 0; i < 4; i++) {
+    ctx.fillRect(-5.5 * sc, (-3.4 + i * 0.75) * sc, 2.3 * sc, 0.3 * sc);
+  }
+
+  // Rechter Arm — schreibt (animiert)
+  ctx.strokeStyle = ped.skinColor || '#f0c8a0';
+  ctx.lineWidth = 1.6 * sc;
+  ctx.beginPath();
+  ctx.moveTo(3 * sc, -6 * sc);
+  ctx.lineTo((4 + writeAnim) * sc, (-2 + writeAnim * 0.3) * sc);
+  ctx.stroke();
+  // Stift
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 0.8 * sc;
+  ctx.beginPath();
+  ctx.moveTo((4 + writeAnim) * sc, (-2 + writeAnim * 0.3) * sc);
+  ctx.lineTo((3.5 + writeAnim) * sc, (-4 + writeAnim * 0.3) * sc);
+  ctx.stroke();
 }
 
 /** Pedestrian waiting at a bus stop - standing still with small idle animation */

@@ -654,8 +654,8 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
 
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-5xl w-[90vw] bg-slate-900/95 border-slate-700 text-white max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl w-[90vw] bg-slate-900/95 border-slate-700 text-white max-h-[90vh]" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <ShieldAlert className="w-5 h-5 text-red-400" />
             Admin-Dashboard
@@ -665,7 +665,7 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
         {error && <div className="px-3 py-2 bg-red-500/15 border border-red-500/30 rounded text-red-400 text-sm">{error}<button className="ml-2 underline" onClick={() => setError(null)}>x</button></div>}
         {msg && <div className="px-3 py-2 bg-emerald-500/15 border border-emerald-500/30 rounded text-emerald-400 text-sm">{msg}<button className="ml-2 underline" onClick={() => setMsg(null)}>x</button></div>}
 
-        <div className="flex overflow-x-auto border-b border-slate-700/60 -mx-1 px-1 scrollbar-none">
+        <div className="flex overflow-x-auto border-b border-slate-700/60 -mx-1 px-1 scrollbar-none shrink-0">
           {([
             ['stats', BarChart3, 'Statistiken'],
             ['sessions', Wifi, 'Sessions'],
@@ -700,11 +700,11 @@ export function AdminPanel({ onVisitMunicipality }: { onVisitMunicipality?: (slu
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12 text-slate-400">
+          <div className="flex-1 flex items-center justify-center py-12 text-slate-400">
             <CircleDashed className="w-8 h-8 animate-spin" />
           </div>
         ) : (
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="flex-1 min-h-0">
             {/* ─── STATS TAB ─── */}
             {tab === 'stats' && stats && (
               <div className="space-y-3 pr-2">

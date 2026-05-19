@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { msg, useMessages } from 'gt-next';
 import { useGame } from '@/context/GameContext';
 import { useMultiplayerOptional } from '@/context/MultiplayerContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Users, MapPin, Crown, Loader2, X } from 'lucide-react';
+import { Search, Users, MapPin, Crown, Loader2, X, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+
 import * as publicMapsApi from '@/lib/api/publicMapsApi';
 import { RegionalStatsWidget } from './RegionalStatsWidget';
 import { MunicipalityRankingWidget } from './MunicipalityRankingWidget';
@@ -34,7 +35,9 @@ const UI_LABELS = {
 };
 
 interface PublicNavigatorPanelProps {
-  onVisitMunicipality?: (slug: string, roomCode?: string, roomName?: string) => void;
+  onVisitMunicipality?: (slug: string, roomCode?: string, roomName?: string, ownerId?: number) => void;
+  /** Wenn true, wird nur der Inhalt gerendert (kein Dialog-Wrapper) */
+  embedded?: boolean;
 }
 
 /** Typ für das WebSocket Navigator-Event */
@@ -48,7 +51,7 @@ interface NavigatorRoomCountEvent {
 }
 
 
-export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPanelProps) {
+export function PublicNavigatorPanel({ onVisitMunicipality, embedded = false }: PublicNavigatorPanelProps) {
   const { state, setActivePanel } = useGame();
   const multiplayer = useMultiplayerOptional();
   const currentRoomCode = multiplayer?.roomCode ?? null;
@@ -58,7 +61,15 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canCreateMaps, setCanCreateMaps] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [hideFullRooms, setHideFullRooms] = useState(false);
+
+  // Admin: Raum erstellen
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const FULL_ROOM_THRESHOLD = 8;
 
@@ -83,7 +94,7 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
       }
     }, query.trim().length > 0 ? 180 : 0);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, refreshTick]);
 
   // WebSocket-basierte Echtzeit-Aktualisierung der Spielerzahlen
   useEffect(() => {
@@ -109,6 +120,33 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
     };
   }, []);
 
+  const forceRefresh = () => setRefreshTick((n) => n + 1);
+
+  const handleCreate = async () => {
+    const name = createName.trim();
+    if (!name) { nameInputRef.current?.focus(); return; }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('isocity_auth_token') || '' : '';
+      const apiBase = (process.env.NEXT_PUBLIC_CORE_API_URL || process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://127.0.0.1:4100').replace(/\/+$/, '');
+      const res = await fetch(`${apiBase}/api/game/public-maps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Game-Token': token },
+        body: JSON.stringify({ room_name: name, region_name: name }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || `HTTP ${res.status}`);
+      setCreateName('');
+      setShowCreate(false);
+      forceRefresh();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Fehler beim Erstellen');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const sortedMaps = useMemo(
     () => [...maps].sort((a, b) => Number(b.player_count || 0) - Number(a.player_count || 0)),
     [maps]
@@ -118,40 +156,20 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
     [hideFullRooms, sortedMaps]
   );
 
-  return (
-    <Dialog open={state.activePanel === 'navigator'} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-[760px] h-[680px] overflow-hidden p-0 border border-amber-300/70 dark:border-amber-500/40 bg-gradient-to-b from-amber-50/95 to-white dark:from-slate-900 dark:to-slate-950 rounded-xl">
-        <DialogHeader className="px-4 pt-3 pb-2 border-b border-amber-200/80 dark:border-amber-500/30">
-          <div className="flex items-center justify-between gap-2">
-            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
-              <MapPin size={17} />
-              {m(UI_LABELS.title)}
-            </DialogTitle>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="h-7 w-7 text-amber-600 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded"
-              onClick={() => setActivePanel('none')}
-              title="Schliessen"
-            >
-              <X size={14} />
-            </Button>
-          </div>
-        </DialogHeader>
+  const innerContent = (
+    <div className="h-full rounded-lg border border-amber-300/80 dark:border-amber-500/35 bg-white/95 dark:bg-slate-900 p-3 flex flex-col shadow-[0_0_0_1px_rgba(251,191,36,0.12)]">
 
-        <div className="h-[calc(680px-56px)] p-3 bg-gradient-to-br from-amber-100/60 via-amber-50/40 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-          <div className="h-full rounded-lg border border-amber-300/80 dark:border-amber-500/35 bg-white/95 dark:bg-slate-900 p-3 flex flex-col shadow-[0_0_0_1px_rgba(251,191,36,0.12)]">
-
-            <div className="mb-2 space-y-2">
-              <RegionalStatsWidget />
-              <MunicipalityRankingWidget
-                onVisit={(slug) => {
-                  onVisitMunicipality?.(slug);
-                  setActivePanel('none');
-                }}
-              />
-            </div>
+            {!embedded && (
+              <div className="mb-2 space-y-2">
+                <RegionalStatsWidget />
+                <MunicipalityRankingWidget
+                  onVisit={(slug) => {
+                    onVisitMunicipality?.(slug);
+                    setActivePanel('none');
+                  }}
+                />
+              </div>
+            )}
 
             <div className="rounded-md border border-amber-200/80 dark:border-amber-500/25 bg-amber-50/60 dark:bg-slate-950/80 p-2">
               <div className="flex items-center gap-2">
@@ -235,7 +253,7 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
                           }`}
                           disabled={isFull}
                           onClick={() => {
-                            onVisitMunicipality?.(entry.municipality_slug, entry.room_code, entry.room_name);
+                            onVisitMunicipality?.(entry.municipality_slug, entry.room_code, entry.room_name, entry.owner?.id);
                             setActivePanel('none');
                           }}
                         >
@@ -258,17 +276,84 @@ export function PublicNavigatorPanel({ onVisitMunicipality }: PublicNavigatorPan
               </div>
             </div>
 
-            <div className="pt-2 text-xs">
-              {canCreateMaps ? (
-                <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
-                  <Crown size={12} />
-                  {m(UI_LABELS.adminCreateReady)}
-                </span>
-              ) : (
-                <span className="text-amber-600/60 dark:text-amber-400/60">{m(UI_LABELS.adminCreateHint)}</span>
-              )}
-            </div>
+            {canCreateMaps && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate((v) => !v); setCreateError(null); }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-amber-400/60 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5"><Crown size={13} /> Offiziellen Raum erstellen</span>
+                  {showCreate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                {showCreate && (
+                  <div className="mt-2 p-3 rounded-lg border border-amber-300/70 dark:border-amber-500/40 bg-white dark:bg-slate-800 space-y-2">
+                    <div>
+                      <label className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1 block">Raumname</label>
+                      <Input
+                        ref={nameInputRef}
+                        value={createName}
+                        onChange={(e) => setCreateName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                        placeholder="z.B. Treffpunkt Zürich"
+                        className="h-8 text-sm border-amber-300/80 dark:border-amber-500/40 bg-white dark:bg-slate-900"
+                        maxLength={60}
+                        autoFocus
+                      />
+                    </div>
+{createError && <p className="text-xs text-red-500">{createError}</p>}
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleCreate}
+                        disabled={creating || !createName.trim()}
+                        className="flex-1 h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                      >
+                        {creating ? <Loader2 size={13} className="animate-spin" /> : <><Plus size={13} /> Erstellen</>}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => { setShowCreate(false); setCreateError(null); setCreateName(''); }}
+                        className="h-8 px-3 text-xs text-slate-500 hover:text-slate-700"
+                      >
+                        Abbrechen
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+    </div>
+  );
+
+  if (embedded) {
+    return innerContent;
+  }
+
+  return (
+    <Dialog open={state.activePanel === 'navigator'} onOpenChange={() => setActivePanel('none')}>
+      <DialogContent className="max-w-[760px] h-[680px] overflow-hidden p-0 border border-amber-300/70 dark:border-amber-500/40 bg-gradient-to-b from-amber-50/95 to-white dark:from-slate-900 dark:to-slate-950 rounded-xl">
+        <DialogHeader className="px-4 pt-3 pb-2 border-b border-amber-200/80 dark:border-amber-500/30">
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+              <MapPin size={17} />
+              {m(UI_LABELS.title)}
+            </DialogTitle>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="h-7 w-7 text-amber-600 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded"
+              onClick={() => setActivePanel('none')}
+              title="Schliessen"
+            >
+              <X size={14} />
+            </Button>
           </div>
+        </DialogHeader>
+        <div className="h-[calc(680px-56px)] p-3 bg-gradient-to-br from-amber-100/60 via-amber-50/40 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+          {innerContent}
         </div>
       </DialogContent>
     </Dialog>

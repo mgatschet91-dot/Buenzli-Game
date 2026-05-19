@@ -35,8 +35,8 @@ import { getAuthToken, setAuthToken } from '@/lib/api/coreApi';
 
 // Import game components
 import { OverlayMode } from '@/components/game/types';
-import { getOverlayForTool } from '@/components/game/overlays';
 import { OverlayModeToggle } from '@/components/game/OverlayModeToggle';
+import { getOverlayForTool } from '@/components/game/overlays';
 import { Sidebar } from '@/components/game/Sidebar';
 import {
   StatisticsPanel,
@@ -391,6 +391,14 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
     return () => window.removeEventListener('force-disconnect', onForceDisconnect);
   }, [addNotification]);
 
+  useEffect(() => {
+    const onNavigate = (e: Event) => {
+      const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail;
+      setNavigationTarget({ x, y });
+    };
+    window.addEventListener('navigate-to-tile', onNavigate);
+    return () => window.removeEventListener('navigate-to-tile', onNavigate);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -947,49 +955,11 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
     }
   }, []); // Only run once on mount
   
-  // Auto-set overlay when selecting utility tools (but not on initial page load)
+  // Overlay wird ausschliesslich manuell über das OverlayModeToggle-Menü gesteuert.
+  // Kein automatisches Aktivieren/Deaktivieren beim Tool-Wechsel.
+  // (Früher wurde Police/Fire/etc. Overlay automatisch beim Auswählen des entsprechenden Bautools aktiviert.)
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    
-    // Select tool always resets overlay to none (user is explicitly switching to select)
-    if (state.selectedTool === 'select') {
-      setTimeout(() => {
-        setOverlayMode('none');
-      }, 0);
-      previousSelectedToolRef.current = state.selectedTool;
-      return;
-    }
-    
-    // Don't auto-set overlay until we've captured the initial tool
-    if (!hasCapturedInitialTool.current) {
-      return;
-    }
-    
-    // Don't auto-set overlay if this matches the initial tool from localStorage
-    if (initialSelectedToolRef.current !== null && 
-        initialSelectedToolRef.current === state.selectedTool) {
-      return;
-    }
-    
-    // Don't auto-set overlay if tool hasn't changed
-    if (previousSelectedToolRef.current === state.selectedTool) {
-      return;
-    }
-    
-    // Update previous tool reference
-    previousSelectedToolRef.current = state.selectedTool;
-    
-    setTimeout(() => {
-      const nextOverlay = getOverlayForTool(state.selectedTool);
-      // Subway overlay should only be shown when the user activates it manually.
-      if (nextOverlay === 'subway') {
-        return;
-      }
-      setOverlayMode(nextOverlay);
-    }, 0);
+    // Nichts tun – Overlay bleibt wie vom User manuell eingestellt
   }, [state.selectedTool]);
   
   useEffect(() => {
@@ -1529,7 +1499,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
 
           {/* Habbo-Style Footer Bar - nur in Public Rooms */}
           {disablePartnerships && (
-            <PublicRoomFooterBar onBackToHome={onBackToHome ?? onExit} onToggleMessenger={toggleMessenger} />
+            <PublicRoomFooterBar onBackToHome={onBackToHome ?? onExit} onToggleMessenger={toggleMessenger} overlayMode={overlayMode} setOverlayMode={!isFullyViewOnly ? setOverlayMode : undefined} />
           )}
 
           {/* Floating Messenger Button (Mobile, nur wenn keine PublicRoomFooterBar) */}
@@ -1599,12 +1569,15 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
           {/* Tutorial */}
           {!disablePartnerships && !isFullyViewOnly && <TutorialOverlay />}
 
+          {/* Overlay-Modus Auswahl (nur Hauptkarte, nicht Public Room) */}
+          {!disablePartnerships && !isFullyViewOnly && <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />}
+
           {/* Messenger - nur fuer Mitglieder */}
           {!isFullyViewOnly && <MessengerContainer visible={showMessenger} onClose={() => setShowMessenger(false)} />}
-          
+
           <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
           {profileUserId && <PlayerProfilePanel userId={profileUserId} onClose={() => setProfileUserId(null)} />}
-          
+
           {wsOfflineOverlay}
         </div>
       </TooltipProvider>
@@ -1678,7 +1651,6 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
               currentRoomCode={roomCode ?? 'MAIN'}
               onViewPlayerProfile={(userId) => setProfileUserId(userId)}
             />
-            {!disablePartnerships && !isFullyViewOnly && <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />}
             {!disablePartnerships && <MiniMap onNavigate={(x, y) => setNavigationTarget({ x, y })} viewport={viewport} />}
             
             {/* Multiplayer Players Indicator (Desktop) */}
@@ -1708,7 +1680,7 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
 
         {/* Habbo-Style Footer Bar - nur in Public Rooms (Desktop) */}
         {disablePartnerships && (
-          <PublicRoomFooterBar onBackToHome={onBackToHome ?? onExit} onToggleMessenger={toggleMessenger} />
+          <PublicRoomFooterBar onBackToHome={onBackToHome ?? onExit} onToggleMessenger={toggleMessenger} overlayMode={overlayMode} setOverlayMode={!isFullyViewOnly ? setOverlayMode : undefined} />
         )}
         
         {!disablePartnerships && (state.activePanel === 'statistics' || state.activePanel === 'growth_debug') && <StatisticsPanel />}
@@ -1754,9 +1726,12 @@ export default function Game({ onExit, onBackToHome, onSessionInvalid, isViewOnl
         {/* Tutorial */}
         {!disablePartnerships && !isFullyViewOnly && <TutorialOverlay />}
 
+        {/* Overlay-Modus Auswahl (nur Hauptkarte, nicht Public Room) */}
+        {!disablePartnerships && !isFullyViewOnly && <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />}
+
         {/* Messenger - nur fuer Mitglieder */}
         {!isFullyViewOnly && <MessengerContainer visible={showMessenger} onClose={() => setShowMessenger(false)} />}
-        
+
         <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
         {profileUserId && <PlayerProfilePanel userId={profileUserId} onClose={() => setProfileUserId(null)} />}
         <CommandMenu />

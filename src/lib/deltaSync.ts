@@ -15,6 +15,7 @@ import { Tool } from '@/types/game';
 import { io, Socket } from 'socket.io-client';
 import type { AvatarAppearanceConfig } from '@/lib/avatarConfig';
 import { updateFromRepairQueue, setHasWerkhofNpc } from '@/lib/werkhofConditionStore';
+import { updateServerPollutionGrid, updateServerPollutionGridDirect } from '@/components/game/overlays';
 
 export type ParkedVehicle    = { tileX: number; tileY: number; slot: number; color: string };
 export type ParkingConfig    = { tileX: number; tileY: number; isFree: boolean; feeRate: number };
@@ -282,6 +283,21 @@ export interface BuenzliNpcPayload {
   npcs: Array<{ id: number; x: number; y: number; eventType: string; severity: number; status: string; fixCost?: number }>;
 }
 
+export interface KontrolleurNpcState {
+  id: number;
+  x: number;
+  y: number;
+  state: 'driving' | 'inspecting';
+  targetX: number;
+  targetY: number;
+  companyId: number;
+}
+
+export interface KontrolleurNpcPayload {
+  npcs: KontrolleurNpcState[];
+  serverTimestamp: number;
+}
+
 export interface AvatarSyncState {
   id: string;
   ownerPlayerId: string;
@@ -419,6 +435,9 @@ class DeltaQueue {
 
   // Callback für server-autoritative Büenzli-NPC-Updates
   private onBuenzliUpdate: ((payload: BuenzliNpcPayload) => void) | null = null;
+
+  // Callback für server-autoritative Kontrolleur-NPC-Updates
+  private onKontrolleurUpdate: ((payload: KontrolleurNpcPayload) => void) | null = null;
 
   // Callback für Party-Events (Mansion-Parties)
   private onPartyUpdate: ((data: { parties: import('@/components/game/types').MansionParty[] }) => void) | null = null;
@@ -644,6 +663,17 @@ class DeltaQueue {
         if (this.onStatsUpdate) {
           this.onStatsUpdate(stats);
         }
+        // Verschmutzungs-Heatmap direkt vom Server übernehmen (exakte per-Tile-Werte)
+        const pollGrid = (stats as any).pollutionGrid;
+        if (Array.isArray(pollGrid)) {
+          updateServerPollutionGridDirect(pollGrid as Array<[number, number, number]>);
+        } else {
+          // Fallback: Sources empfangen und client-seitig approximieren
+          const sources = (stats as any).pollutionSources;
+          if (Array.isArray(sources)) {
+            updateServerPollutionGrid(sources);
+          }
+        }
         // Kantonal-Felder an GemeindePanel weiterleiten (eigenes Stats-Objekt per CustomEvent)
         if ('cantonal_investigation_stage' in stats || 'cantonal_investigation_until' in stats) {
           if (typeof window !== 'undefined') {
@@ -758,6 +788,16 @@ class DeltaQueue {
         (payload: BuenzliNpcPayload) => {
           if (this.onBuenzliUpdate) {
             this.onBuenzliUpdate(payload);
+          }
+        }
+      );
+
+      // Server-autoritative Kontrolleur-NPC-Updates (Parkraum-Kontrolleure)
+      this.wsSocket.on(
+        'kontrolleur-npc-authoritative',
+        (payload: KontrolleurNpcPayload) => {
+          if (this.onKontrolleurUpdate) {
+            this.onKontrolleurUpdate(payload);
           }
         }
       );
@@ -1688,6 +1728,10 @@ class DeltaQueue {
 
   setOnBuenzliUpdate(callback: ((payload: BuenzliNpcPayload) => void) | null): void {
     this.onBuenzliUpdate = callback;
+  }
+
+  setOnKontrolleurUpdate(callback: ((payload: KontrolleurNpcPayload) => void) | null): void {
+    this.onKontrolleurUpdate = callback;
   }
 
   setOnLandValueUpdate(callback: ((data: { gridSize: number; values: number[] }) => void) | null): void {

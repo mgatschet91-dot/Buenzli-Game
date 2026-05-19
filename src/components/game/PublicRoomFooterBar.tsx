@@ -5,6 +5,7 @@ import { useGame } from '@/context/GameContext';
 import { deltaQueue } from '@/lib/deltaSync';
 import { loadAvatarAppearanceFromStorage } from '@/lib/avatarConfig';
 import { requestAvatarCanvas } from '@/lib/avatarImager/avatarRenderer';
+import { OverlayMode } from '@/components/game/types';
 
 type FooterPanel = 'navigator' | 'chat' | 'settings' | 'messenger';
 
@@ -30,6 +31,8 @@ const MAX_CHAT_LENGTH = 95;
 interface PublicRoomFooterBarProps {
   onBackToHome?: () => void;
   onToggleMessenger?: () => void;
+  overlayMode?: OverlayMode;
+  setOverlayMode?: (mode: OverlayMode) => void;
 }
 
 /**
@@ -70,12 +73,13 @@ function useAvatarHeadUrl(): string | null {
   return headUrl;
 }
 
-export function PublicRoomFooterBar({ onBackToHome, onToggleMessenger }: PublicRoomFooterBarProps) {
+export function PublicRoomFooterBar({ onBackToHome, onToggleMessenger, overlayMode = 'none', setOverlayMode }: PublicRoomFooterBarProps) {
   const { state, setActivePanel } = useGame();
   const [chatText, setChatText] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const avatarHeadUrl = useAvatarHeadUrl();
+  const pollutionActive = overlayMode === 'pollution';
 
   const focusChatInput = useCallback(() => {
     inputRef.current?.focus();
@@ -322,6 +326,22 @@ export function PublicRoomFooterBar({ onBackToHome, onToggleMessenger }: PublicR
 
           {/* Right Section */}
           <div className="right_section">
+            {/* Verschmutzungs-Overlay Toggle */}
+            {setOverlayMode && (
+              <button
+                onClick={() => setOverlayMode(pollutionActive ? 'none' : 'pollution')}
+                title={pollutionActive ? 'Verschmutzung ausblenden' : 'Verschmutzung einblenden'}
+                className={pollutionActive ? 'active' : ''}
+                style={{ position: 'relative' }}
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={pollutionActive ? '#f59e0b' : '#aaaaaa'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                  <path d="M8 12c0-2.21 1.79-4 4-4s4 1.79 4 4"/>
+                  <path d="M5 16c1.5-1 3.5-2 7-2s5.5 1 7 2"/>
+                </svg>
+                {pollutionActive && <span className="active-dot" />}
+              </button>
+            )}
             {RIGHT_BUTTONS.map((btn) => (
               <button
                 key={btn.id}

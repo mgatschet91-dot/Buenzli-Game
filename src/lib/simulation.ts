@@ -171,14 +171,14 @@ export function calculatePollutionInfluence(grid: Tile[][], size: number): Float
 /**
  * Setzt die Verschmutzung aller Tiles auf den Steady-State-Wert,
  * damit bei Client-Start nicht alles bei 0 anfaengt und sich langsam aufbaut.
- * Steady-State-Formel: p = p * 0.95 + influenceVal  =>  p = influenceVal / 0.05 = influenceVal * 20
+ * Steady-State-Formel: p = p * 0.7 + influenceVal  =>  p = influenceVal / 0.3 ≈ influenceVal * 3.33
  * Mutiert das grid in-place.
  */
 export function initializeSteadyStatePollution(grid: Tile[][], size: number): void {
   const influence = calculatePollutionInfluence(grid, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      grid[y][x].pollution = Math.max(0, influence[y][x] * 20);
+      grid[y][x].pollution = Math.max(0, influence[y][x] / 0.3);
     }
   }
 }
@@ -2827,7 +2827,7 @@ export function simulateTick(state: GameState): GameState {
       // Update pollution using influence map (includes spatial spreading from neighbors)
       // pollutionMap[y][x] already contains this tile's building pollution + influence from nearby buildings
       const influenceVal = pollutionMap[y][x];
-      tile.pollution = Math.max(0, tile.pollution * 0.95 + influenceVal);
+      tile.pollution = Math.max(0, tile.pollution * 0.7 + influenceVal);
 
       // Fire simulation
       if (ENABLE_CLIENT_DISASTER_SIMULATION && state.disastersEnabled && tile.building.onFire) {

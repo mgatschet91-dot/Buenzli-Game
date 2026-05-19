@@ -194,6 +194,17 @@ export async function selbstBeheben(eventId: number): Promise<{ event: Verwaltun
   return json.data;
 }
 
+/** Alle offenen Events direkt selbst beheben (Gemeinde zahlt, max. 20) */
+export async function selbstBehebenAlle(): Promise<{ resolved_count: number; total_cost: number; failed: number[] }> {
+  const res = await fetch(`${AUTH_API_BASE_URL}/api/verwaltung/selbst-beheben-alle`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Fehler beim Beheben aller Events');
+  return json.data;
+}
+
 /** Notfallreparatur: Abgelaufenes Event nachtraeglich beheben (2x Kosten) */
 export async function notfallreparatur(eventId: number): Promise<{
   event_id: number; cost: number; original_cost: number;
